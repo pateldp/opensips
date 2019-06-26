@@ -30,6 +30,7 @@
 
 #include "../../mem/shm_mem.h"
 #include "../../dprint.h"
+#include "../../pt.h"
 #include "dlg_hash.h"
 #include "dlg_cb.h"
 
@@ -38,7 +39,7 @@ static struct dlg_head_cbl* create_cbs = 0;
 
 static struct dlg_head_cbl* load_cbs = 0;
 
-static struct dlg_cb_params params = {NULL, DLG_DIR_NONE, NULL, NULL};
+static struct dlg_cb_params params = {NULL, DLG_DIR_NONE, 1, NULL, NULL};
 
 
 #define POINTER_CLOSED_MARKER  ((void *)(-1))
@@ -198,19 +199,6 @@ static void run_load_callback(struct dlg_callback *cb)
 	return;
 }
 
-
-void run_load_callbacks( void )
-{
-	struct dlg_callback *cb;
-
-	if (load_cbs && load_cbs!=POINTER_CLOSED_MARKER) {
-		for ( cb=load_cbs->first; cb; cb=cb->next )
-			run_load_callback( cb );
-	}
-
-	return;
-}
-
 void run_load_callback_per_dlg(struct dlg_cell *dlg)
 {
 	struct dlg_callback *cb;
@@ -252,12 +240,14 @@ void run_create_callbacks(struct dlg_cell *dlg, struct sip_msg *msg)
 
 
 void run_dlg_callbacks(int type , struct dlg_cell *dlg, struct sip_msg *msg,
-								unsigned int dir, void *dlg_data, int locked)
+								unsigned int dir, void *dlg_data, int locked,
+								unsigned int is_active)
 {
 	struct dlg_callback *cb;
 
 	params.msg = msg;
 	params.direction = dir;
+	params.is_active = is_active;
 	params.dlg_data = dlg_data;
 
 	if (dlg->cbs.first==0 || ((dlg->cbs.types)&type)==0 )
@@ -274,6 +264,7 @@ void run_dlg_callbacks(int type , struct dlg_cell *dlg, struct sip_msg *msg,
 		}
 	}
 
-	dlg->locked_by = 0;
+	if (locked)
+		dlg->locked_by = 0;
 	return;
 }

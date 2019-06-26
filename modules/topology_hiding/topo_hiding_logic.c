@@ -230,9 +230,22 @@ static int topo_delete_record_routes(struct sip_msg *req)
 				if (!(foo->flags&LUMPFLAG_SHMEM))
 					pkg_free(foo);
 			}
-			if(lump == req->add_rm)
-				req->add_rm = lump->next;
-			else
+			if (lump == req->add_rm) {
+				if (lump->flags&LUMPFLAG_SHMEM) {
+					/*
+					 * if the chunk is in shm, we cannot remove it, because
+					 * it be in the middle of the big shm chunk
+					 * therefore we simply mark it as false and move on
+					 */
+					if (lump->after)
+						insert_cond_lump_after(lump, COND_FALSE, 0);
+					if (lump->before)
+						insert_cond_lump_before(lump, COND_FALSE, 0);
+				} else {
+					req->add_rm = lump->next;
+				}
+				prev_crt = lump;
+			} else
 				prev_crt->next = lump->next;
 			if (!(lump->flags&LUMPFLAG_SHMEM))
 				free_lump(lump);
@@ -835,8 +848,7 @@ static void _th_no_dlg_onreply(struct cell* t, int type, struct tmcb_params *par
 
 	/* pass record route headers */
 	if(req->record_route){
-		if(print_rr_body(req->record_route, &rr_set, 0,
-							0) != 0 ){
+		if(print_rr_body(req->record_route, &rr_set, 0, 1, NULL) != 0 ){
 			LM_ERR("failed to print route records \n");
 			return;
 		}
@@ -1183,27 +1195,20 @@ static int dlg_th_decode_callid(struct sip_msg *msg)
 	struct lump *del;
 	str new_callid;
 	int i,max_size;
-	char *p;
 
 	if (msg->callid == NULL) {
 		LM_ERR("Message with no callid\n");
 		return -1;
 	}
 
-	max_size = calc_max_base64_decode_len(msg->callid->body.len - topo_hiding_prefix.len);
+	max_size = calc_max_word64_decode_len(msg->callid->body.len - topo_hiding_prefix.len);
 	new_callid.s = pkg_malloc(max_size);
 	if (new_callid.s==NULL) {
 		LM_ERR("No more pkg\n");
 		return -1;
 	}
 
-	p = msg->callid->body.s + msg->callid->body.len - 1;
-	while (*p == '-') {
-		*p = '=';
-		p--;
-	}
-
-	new_callid.len = base64decode((unsigned char *)(new_callid.s),
+	new_callid.len = word64decode((unsigned char *)(new_callid.s),
 			(unsigned char *)(msg->callid->body.s + topo_hiding_prefix.len),
 			msg->callid->body.len - topo_hiding_prefix.len);
 	
@@ -1230,16 +1235,15 @@ static int dlg_th_encode_callid(struct sip_msg *msg)
 {
 	struct lump *del;
 	str new_callid;
-	int i,base64_enc_len;
-	char *p;
+	int i,word64_enc_len;
 
 	if (msg->callid == NULL) {
 		LM_ERR("Message with no callid\n");
 		return -1;
 	}
 
-	base64_enc_len = calc_base64_encode_len(msg->callid->body.len);
-	new_callid.len = base64_enc_len + topo_hiding_prefix.len;
+	word64_enc_len = calc_word64_encode_len(msg->callid->body.len);
+	new_callid.len = word64_enc_len + topo_hiding_prefix.len;
 	new_callid.s = pkg_malloc(new_callid.len);
 	if (new_callid.s==NULL) {
 		LM_ERR("Failed to allocate callid len\n");
@@ -1255,13 +1259,8 @@ static int dlg_th_encode_callid(struct sip_msg *msg)
 	for (i=0;i<msg->callid->body.len;i++)
 		msg->callid->body.s[i] ^= topo_hiding_seed.s[i%topo_hiding_seed.len];
 
-	base64encode((unsigned char *)(new_callid.s+topo_hiding_prefix.len),
+	word64encode((unsigned char *)(new_callid.s+topo_hiding_prefix.len),
 		     (unsigned char *)(msg->callid->body.s),msg->callid->body.len);
-	p = new_callid.s+topo_hiding_prefix.len+base64_enc_len - 1;
-	while (*p == '=') {
-		*p = '-';
-		p--;
-	}
 
 	/* reset the callid back to original value - some might still need it ( eg. post script )
 	FIXME : use bigger buffer here ? mem vs cpu */
@@ -1302,7 +1301,7 @@ static int dlg_th_needs_decoding(struct sip_msg *msg)
 static inline char *dlg_th_rebuild_req(struct sip_msg *msg,int *len)
 {
 	return build_req_buf_from_sip_req(msg,(unsigned int*)len,
-			NULL,PROTO_NONE,MSG_TRANS_NOVIA_FLAG);
+			NULL,PROTO_NONE,NULL,MSG_TRANS_NOVIA_FLAG);
 }
 
 static inline char *dlg_th_rebuild_rpl(struct sip_msg *msg,int *len)
@@ -1343,7 +1342,7 @@ static int dlg_th_callid_pre_parse(struct sip_msg *msg,int want_from)
 	}
 
 	if (parse_from_header(msg)<0 || msg->from==NULL || get_from(msg)==NULL) {
-		LM_ERR("cannot parse TO header\n");
+		LM_ERR("cannot parse FROM header\n");
 		goto error;
 	}
 
@@ -1428,8 +1427,10 @@ int topo_callid_post_raw(str *data, struct sip_msg* foo)
 	memset(&msg,0,sizeof(struct sip_msg));
 	msg.buf=data->s;
 	msg.len=data->len;
-	if (dlg_th_callid_pre_parse(&msg,1) < 0)
+	if (dlg_th_callid_pre_parse(&msg,1) < 0) {
+		LM_ERR("could not parse resulted sip message!\n");
 		goto done;
+	}
 
 	if (msg.first_line.type==SIP_REQUEST) {
 		if (get_to(&msg)->tag_value.len>0) {
@@ -1523,8 +1524,7 @@ static char* build_encoded_contact_suffix(struct sip_msg* msg,int *suffix_len)
 	}
 
 	if(msg->record_route){
-		if(print_rr_body(msg->record_route, &rr_set, !is_req,
-							0) != 0 ){
+		if(print_rr_body(msg->record_route, &rr_set, !is_req, 0, NULL) != 0){
 			LM_ERR("failed to print route records \n");
 			return NULL;
 		}
@@ -1545,13 +1545,11 @@ static char* build_encoded_contact_suffix(struct sip_msg* msg,int *suffix_len)
 
 	addr_len = (short)msg->rcv.bind_address->sock_str.len;
 	local_len += rr_len + ct_len + addr_len; 
-	enc_len = calc_base64_encode_len(local_len);
+	enc_len = calc_word64_encode_len(local_len);
 	total_len = enc_len +  
 		1 /* ; */ + 
 		th_contact_encode_param.len + 
 		1 /* = */  + 
-		1 /* " */ +
-		1 /* " */ +
 		1 /* > */;	 
 
 	if (th_param_list) {
@@ -1640,10 +1638,8 @@ static char* build_encoded_contact_suffix(struct sip_msg* msg,int *suffix_len)
 	memcpy(s,th_contact_encode_param.s,th_contact_encode_param.len);
 	s+= th_contact_encode_param.len;
 	*s++ = '=';
-	*s++ = '"';	
-	base64encode((unsigned char*)s,(unsigned char *)suffix_plain,p-suffix_plain);
+	word64encode((unsigned char*)s,(unsigned char *)suffix_plain,p-suffix_plain);
 	s = s+enc_len;
-	*s++ = '"';
 	
 	if (th_param_list) {
 		for (el=th_param_list;el;el=el->next) {
@@ -1827,14 +1823,14 @@ static int topo_no_dlg_seq_handling(struct sip_msg *msg,str *info)
 		}
 	}
 
-	max_size = calc_max_base64_decode_len(info->len);
+	max_size = calc_max_word64_decode_len(info->len);
 	dec_buf = pkg_malloc(max_size);
 	if (dec_buf==NULL) {
 		LM_ERR("No more pkg\n");
 		return -1;
 	}
 
-	dec_len = base64decode((unsigned char *)dec_buf,(unsigned char *)info->s,info->len);
+	dec_len = word64decode((unsigned char *)dec_buf,(unsigned char *)info->s,info->len);
 	for (i=0;i<dec_len;i++)
 		dec_buf[i] ^= topo_hiding_ct_encode_pw.s[i%topo_hiding_ct_encode_pw.len]; 
 

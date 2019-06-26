@@ -1,18 +1,4 @@
 topology_hiding Module
-
-Vlad Paiu
-
-   <vladpaiu@opensips.org>
-
-Edited by
-
-Vlad Paiu
-
-   <vladpaiu@opensips.org>
-
-   Copyright © 2015 OpenSIPs Foundation
-   Revision History
-   Revision $Revision: 1 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -38,11 +24,27 @@ Vlad Paiu
         1.4. Exported Functions
 
               1.4.1. topology_hiding()
-              1.4.2. topology_hiding_match()
+              1.4.2. topology_hiding_match([dlg_match_mode])
 
-        1.5. Exported pseudo-variables
+        1.5. Exported Pseudo-Variables
 
               1.5.1. $TH_callee_callid
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -261,10 +263,15 @@ ogy hiding dialog\n");
 }
 ...
 
-1.4.2.  topology_hiding_match()
+1.4.2.  topology_hiding_match([dlg_match_mode])
 
    This function is to be used to match and fix a sequential
    request belong to an existing topology hiding dialog.
+
+   With regards to dialog matching (including the optional
+   parameter), this function behaves identically to
+   match_dialog(). Please see the dialog module documentation for
+   further details regarding dialog matching options.
 
    The function returns true if a topology hiding dialog exists
    for the request and the request has been successfully fixed.
@@ -276,13 +283,13 @@ ogy hiding dialog\n");
     if (has_totag()) {
         if (!topology_hiding_match() ) {
             xlog(" cannot match request to a dialog \n");
-            send_reply("404","Not found");
+            send_reply(404,"Not found");
         } else
                 route(RELAY);
     }
 ...
 
-1.5. Exported pseudo-variables
+1.5. Exported Pseudo-Variables
 
 1.5.1. $TH_callee_callid
 
@@ -293,3 +300,60 @@ ogy hiding dialog\n");
    NULL will be returned if there is no topology hiding dialog for
    the request or if topology_hiding with callid encoding was not
    used for the current dialog.
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Vlad Paiu (@vladpaiu) 31 8 2700 25
+   2. Razvan Crainea (@razvancrainea) 16 14 119 54
+   3. Bogdan-Andrei Iancu (@bogdan-iancu) 16 13 113 67
+   4. Liviu Chircu (@liviuchircu) 13 11 77 48
+   5. Vlad Patrascu (@rvlad-patrascu) 7 4 22 66
+   6. Peter Lemenkov (@lemenkov) 3 1 1 1
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                     Name                   Commit Activity
+   1. Razvan Crainea (@razvancrainea)     Aug 2015 - May 2019
+   2. Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   3. Bogdan-Andrei Iancu (@bogdan-iancu) Mar 2015 - Apr 2019
+   4. Liviu Chircu (@liviuchircu)         Mar 2015 - Sep 2018
+   5. Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   6. Vlad Paiu (@vladpaiu)               Feb 2015 - Mar 2016
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Peter Lemenkov
+   (@lemenkov), Liviu Chircu (@liviuchircu), Razvan Crainea
+   (@razvancrainea), Bogdan-Andrei Iancu (@bogdan-iancu), Vlad
+   Paiu (@vladpaiu).
+
+   Documentation Copyrights:
+
+   Copyright © 2015 OpenSIPS Foundation

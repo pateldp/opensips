@@ -212,10 +212,6 @@ static inline sdp_payload_attr_t** init_p_payload_attr(sdp_stream_cell_t* _strea
 
 void set_sdp_payload_attr(sdp_payload_attr_t *payload_attr, str *rtp_enc, str *rtp_clock, str *rtp_params)
 {
-	if (payload_attr == NULL) {
-		LM_ERR("Invalid payload location\n");
-		return;
-	}
 	payload_attr->rtp_enc.s = rtp_enc->s;
 	payload_attr->rtp_enc.len = rtp_enc->len;
 	payload_attr->rtp_clock.s = rtp_clock->s;
@@ -569,7 +565,8 @@ int parse_sdp_session(str *sdp_body, int session_num, str *cnt_disp, sdp_info_t*
 					a1p = rtp_clock.s + rtp_clock.len;
 				}
 				payload_attr = (sdp_payload_attr_t*)get_sdp_payload4payload(stream, &rtp_payload);
-				set_sdp_payload_attr(payload_attr, &rtp_enc, &rtp_clock, &rtp_params);
+				if (payload_attr)
+					set_sdp_payload_attr(payload_attr, &rtp_enc, &rtp_clock, &rtp_params);
 			} else if (extract_rtcp(&tmpstr1, &stream->rtcp_port) == 0) {
 				a1p = stream->rtcp_port.s + stream->rtcp_port.len;
 			} else if (parse_payload_attr && extract_fmtp(&tmpstr1,&rtp_payload,&fmtp_string) == 0){
@@ -601,11 +598,11 @@ int parse_sdp_session(str *sdp_body, int session_num, str *cnt_disp, sdp_info_t*
 			if (stream->ip_addr.s && stream->ip_addr.len) {
 				if (stream->ip_addr.len == HOLD_IP_LEN &&
 					strncmp(stream->ip_addr.s, HOLD_IP_STR, HOLD_IP_LEN)==0)
-					stream->is_on_hold = 1;
+					stream->is_on_hold = RFC2543_HOLD;
 			} else if (session->ip_addr.s && session->ip_addr.len) {
 				if (session->ip_addr.len == HOLD_IP_LEN &&
 					strncmp(session->ip_addr.s, HOLD_IP_STR, HOLD_IP_LEN)==0)
-					stream->is_on_hold = 1;
+					stream->is_on_hold = RFC2543_HOLD;
 			}
 		}
 		++stream_num;
@@ -666,11 +663,7 @@ sdp_info_t* parse_sdp(struct sip_msg* _m)
 	return ret;
 }
 
-
-/**
- * Free all memory.
- */
-void free_sdp(sdp_info_t* sdp)
+void free_sdp_content(sdp_info_t* sdp)
 {
 	sdp_session_cell_t *session, *l_session;
 	sdp_stream_cell_t *stream, *l_stream;
@@ -714,7 +707,6 @@ void free_sdp(sdp_info_t* sdp)
 		}
 		pkg_free(l_session);
 	}
-	pkg_free(sdp);
 }
 
 void print_sdp_stream(sdp_stream_cell_t *stream, int level)

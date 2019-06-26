@@ -47,6 +47,8 @@ extern char *ssl_capath;
 extern int ssl_verifypeer;
 extern int ssl_verifyhost;
 
+extern int curl_http_version;
+
 /* Currently supported HTTP verbs */
 enum rest_client_method {
 	REST_CLIENT_GET,
@@ -54,6 +56,12 @@ enum rest_client_method {
 	REST_CLIENT_POST
 };
 
+/* return codes for rest_client script functions */
+#define RCL_OK                1
+#define RCL_CONNECT_REFUSED  -1
+#define RCL_CONNECT_TIMEOUT  -2
+#define RCL_TRANSFER_TIMEOUT -3
+#define RCL_INTERNAL_ERR     -10
 
 typedef struct _rest_trace_param {
 	str callid;
@@ -71,10 +79,10 @@ typedef struct _rest_trace_param {
 	int  rpl_len;
 
 	long local_port;
-	char local_ip[INET6_ADDRSTRLEN];
+	char local_ip[INET6_ADDRSTRLEN + 1];
 
 	long remote_port;
-	char remote_ip[INET6_ADDRSTRLEN];
+	char remote_ip[INET6_ADDRSTRLEN + 1];
 
 	str correlation;
 } rest_trace_param_t;
@@ -107,19 +115,19 @@ typedef struct rest_async_param_ {
 	pv_spec_p code_pv;
 } rest_async_param;
 
-int rest_get_method(struct sip_msg *msg, char *url,
-                    pv_spec_p body_pv, pv_spec_p ctype_pv, pv_spec_p code_pv);
-int rest_post_method(struct sip_msg *msg, char *url, char *body, char *ctype,
-                     pv_spec_p body_pv, pv_spec_p ctype_pv, pv_spec_p code_pv);
-int rest_put_method(struct sip_msg *msg, char *url, char *body, char *ctype,
-                     pv_spec_p body_pv, pv_spec_p ctype_pv, pv_spec_p code_pv);
+int init_sync_handle(void);
+int rest_sync_transfer(enum rest_client_method method, struct sip_msg *msg,
+                       char *url, str *body, str *ctype, pv_spec_p body_pv,
+                       pv_spec_p ctype_pv, pv_spec_p code_pv);
 
 int start_async_http_req(struct sip_msg *msg, enum rest_client_method method,
-					     char *url, char *req_body, char *req_ctype,
-					     rest_async_param *async_parm, str *body, str *ctype);
+                         char *url, str *req_body, str *req_ctype,
+                         rest_async_param *async_parm, str *body, str *ctype,
+						 enum async_ret_code *out_fd);
 enum async_ret_code resume_async_http_req(int fd, struct sip_msg *msg, void *param);
 
 int rest_append_hf_method(struct sip_msg *msg, str *hfv);
+int rest_init_client_tls(struct sip_msg *msg, str *tls_client_dom);
 
 #endif /* _REST_METHODS_ */
 

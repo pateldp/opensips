@@ -36,8 +36,8 @@ static int sctp_port = SIP_PORT;
 static int proto_sctp_init(struct proto_info *pi);
 
 static cmd_export_t cmds[] = {
-	{"proto_init", (cmd_function)proto_sctp_init, 0, 0, 0, 0},
-	{0,0,0,0,0,0}
+	{"proto_init", (cmd_function)proto_sctp_init, {{0, 0, 0}}, 0},
+	{0,0,{{0,0,0}},0}
 };
 
 
@@ -52,6 +52,7 @@ struct module_exports exports = {
 	MOD_TYPE_DEFAULT,    /* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	cmds,       /* exported functions */
 	0,          /* exported async functions */
@@ -65,6 +66,7 @@ struct module_exports exports = {
 	0,          /* response function */
 	0,          /* destroy function */
 	0,          /* per-child init function */
+	0           /* reload confirm function */
 };
 
 

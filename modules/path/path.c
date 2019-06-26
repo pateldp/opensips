@@ -27,31 +27,25 @@
 
 #include "../../mem/mem.h"
 #include "../../lib/path.h"
+#include "../../strcommon.h"
+#include "../../ut.h"
 
 #include "path_mod.h"
 
-/*
- * Prepend own uri to Path header
- */
-int add_path(struct sip_msg* _msg, char* _a, char* _b)
-{
-	str user = {0,0};
-	int rc;
-
-	rc = prepend_path(_msg, &user, 0, enable_double_path);
-
-	return rc == 0 ? 1 : rc;
-}
 
 /*
  * Prepend own uri to Path header and take care of given
  * user.
  */
-int add_path_usr(struct sip_msg* _msg, char* _usr, char* _b)
+int add_path(struct sip_msg* _msg, str* _usr)
 {
+	str user = {0,0};
 	int rc;
 
-	rc = prepend_path(_msg, (str*)_usr, 0, enable_double_path);
+	if (_usr)
+		user = *_usr;
+
+	rc = prepend_path(_msg, &user, 0, enable_double_path);
 	return rc == 0 ? 1 : rc;
 }
 
@@ -59,38 +53,33 @@ int add_path_usr(struct sip_msg* _msg, char* _usr, char* _b)
  * Prepend own uri to Path header and append received address as
  * "received"-param to that uri.
  */
-int add_path_received(struct sip_msg* _msg, char* _a, char* _b)
+int add_path_received(struct sip_msg* _msg, str* _usr)
 {
 	str user = {0,0};
 	int rc;
+
+	if (_usr)
+		user = *_usr;
 
 	rc = prepend_path(_msg, &user, 1, enable_double_path);
 	return rc == 0 ? 1 : rc;
 }
 
-/*
- * Prepend own uri to Path header and append received address as
- * "received"-param to that uri and take care of given user.
- */
-int add_path_received_usr(struct sip_msg* _msg, char* _usr, char* _b)
-{
-	int rc;
-
-	rc = prepend_path(_msg, (str*)_usr, 1, enable_double_path);
-	return rc == 0 ? 1 : rc;
-}
 
 /*
  * rr callback
  */
 void path_rr_callback(struct sip_msg *_m, str *r_param, void *cb_param)
 {
+	static str unescape_buf;
+
 	param_hooks_t hooks;
 	param_t *params;
 	param_t *first_param;
 	str received = {0, 0};
 	str transport = {0, 0};
 	str dst_uri = {0, 0};
+	char *p;
 
 	if (parse_params(r_param, CLASS_ANY, &hooks, &params) != 0) {
 		LM_ERR("failed to parse route parameters\n");
@@ -101,14 +90,39 @@ void path_rr_callback(struct sip_msg *_m, str *r_param, void *cb_param)
 
 	while(params)
 	{
-		if ( params->name.len == 9 && !strncasecmp(params->name.s, "transport", params->name.len) )
-			transport = params->body;
+		if (params->name.len == 8 &&
+		    !strncasecmp(params->name.s, "received", params->name.len)) {
 
-		if ( params->name.len == 8 && !strncasecmp(params->name.s,"received", params->name.len) )
 			received = params->body;
+			if (pkg_str_extend(&unescape_buf, received.len + 1) != 0) {
+				LM_ERR("oom\n");
+				goto out1;
+			}
+
+			if (unescape_param(&received, &unescape_buf) != 0) {
+				LM_ERR("failed to unescape received=%.*s\n",
+				       received.len, received.s);
+				goto out1;
+			}
+
+			/* if there's a param here, it has to be ;transport= */
+			if ((p = q_memchr(unescape_buf.s, ';', unescape_buf.len))) {
+				received.len = p - unescape_buf.s;
+
+				if ((p = q_memchr(p, '=', unescape_buf.len))) {
+					transport.s = p + 1;
+					transport.len = unescape_buf.s + unescape_buf.len - transport.s;
+				}
+			}
+
+			break;
+		}
 
 		params = params->next;
 	}
+
+	LM_DBG("extracted received=%.*s, transport=%.*s\n",
+	       received.len, received.s, transport.len, transport.s);
 
 	if (received.len > 0) {
 		if (transport.len > 0) {

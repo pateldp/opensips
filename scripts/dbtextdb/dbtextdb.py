@@ -1,10 +1,10 @@
-#!/usr/bin/python
+#!/usr/bin/python2
 #
 # Copyright 2008 Google Inc. All Rights Reserved.
 
 """SQL-like access layer for dbtext.
 
-This module provides the glue for opensipsctl to interact with dbtext files
+This module provides the glue for opensips-cli to interact with dbtext files
 using basic SQL syntax thus avoiding special case handling of dbtext.
 
 """
@@ -340,7 +340,7 @@ class DBText(object):
     # test that the value is string, if not return it as is
     try:
       value.find('a')
-    except:
+    except Exception as e:
       return value
 
     escaped = value
@@ -361,7 +361,7 @@ class DBText(object):
     # test that the value is string, if not return it as is
     try:
       value.find('a')
-    except:
+    except Exception as e:
       return value
 
     escaped = value

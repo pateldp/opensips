@@ -40,9 +40,8 @@
 #define RCV_BYE_REPLY	1
 
 #define MI_DIALOG_NOT_FOUND 		"Requested Dialog not found"
-#define MI_DIALOG_NOT_FOUND_LEN 	(sizeof(MI_DIALOG_NOT_FOUND)-1)
+#define MI_DIALOG_BACKUP_ERR		"Node is backup for requested dialog"
 #define MI_DLG_OPERATION_ERR		"Operation failed"
-#define MI_DLG_OPERATION_ERR_LEN	(sizeof(MI_DLG_OPERATION_ERR)-1)
 
 #define DLG_PING_PENDING	(1<<0)
 #define DLG_PING_SUCCESS	(1<<1)
@@ -114,12 +113,86 @@ static inline int push_new_processing_context( struct dlg_cell *dlg,
 	return 0;
 }
 
+#define CONTACT_STR_START "Contact: <"
+#define CONTACT_STR_START_LEN (sizeof(CONTACT_STR_START)-1)
 
-int dlg_end_dlg(struct dlg_cell *dlg, str *extra_hdrs);
+#define CONTACT_STR_END ">\r\n"
+#define CONTACT_STR_END_LEN (sizeof(CONTACT_STR_END)-1)
 
-struct mi_root * mi_terminate_dlg(struct mi_root *cmd_tree, void *param );
+#define CONTENT_TYPE_STR_START "Content-Type: "
+#define CONTENT_TYPE_STR_START_LEN (sizeof(CONTENT_TYPE_STR_START)-1)
+
+#define CONTENT_TYPE_STR_END "\r\n"
+#define CONTENT_TYPE_STR_END_LEN (sizeof(CONTENT_TYPE_STR_END)-1)
+
+static inline int dlg_get_leg_hdrs(struct dlg_cell *dlg,
+		int sleg, int dleg, str *ct, str *out)
+{
+	char *p;
+	if (dlg->legs[dleg].adv_contact.len)
+		out->len =  dlg->legs[dleg].adv_contact.len;
+	else
+		out->len = CONTACT_STR_START_LEN +
+			dlg->legs[sleg].contact.len +
+			CONTACT_STR_END_LEN;
+	if (ct && ct->len)
+		out->len += CONTENT_TYPE_STR_START_LEN + ct->len + CONTENT_TYPE_STR_END_LEN;
+	out->s = pkg_malloc(out->len);
+	if (!out->s) {
+		LM_ERR("No more pkg for extra headers \n");
+		return 0;
+	}
+
+	p = out->s;
+	if (dlg->legs[dleg].adv_contact.len) {
+		memcpy(p,dlg->legs[dleg].adv_contact.s,
+				dlg->legs[dleg].adv_contact.len);
+
+		p+= dlg->legs[dleg].adv_contact.len;
+	} else {
+		memcpy(p,CONTACT_STR_START,CONTACT_STR_START_LEN);
+		p += CONTACT_STR_START_LEN;
+		memcpy(p,dlg->legs[sleg].contact.s,
+				dlg->legs[sleg].contact.len);
+
+		p += dlg->legs[sleg].contact.len;
+		memcpy(p,CONTACT_STR_END,CONTACT_STR_END_LEN);
+		p += CONTACT_STR_END_LEN;
+	}
+	if (ct && ct->len) {
+		memcpy(p,CONTENT_TYPE_STR_START, CONTENT_TYPE_STR_START_LEN);
+		p += CONTENT_TYPE_STR_START_LEN;
+		memcpy(p, ct->s, ct->len);
+		p += ct->len;
+		memcpy(p,CONTENT_TYPE_STR_END, CONTENT_TYPE_STR_END_LEN);
+		p += CONTENT_TYPE_STR_END_LEN;
+	}
+
+	return 1;
+}
+#undef CONTACT_STR_START
+#undef CONTACT_STR_START_LEN
+#undef CONTACT_STR_END
+#undef CONTACT_STR_END_LEN
+#undef CONTENT_TYPE_STR_START
+#undef CONTENT_TYPE_STR_START_LEN
+#undef CONTENT_TYPE_STR_END
+#undef CONTENT_TYPE_STR_END_LEN
+
+
+int dlg_end_dlg(struct dlg_cell *dlg, str *extra_hdrs, int send_byes);
+
+mi_response_t *mi_terminate_dlg_1(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *mi_terminate_dlg_2(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+
+mi_response_t *mi_send_sequential_dlg(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 
 int send_leg_msg(struct dlg_cell *dlg,str *method,int src_leg,int dst_leg,
 		str *hdrs,str *body,dlg_request_callback func,void *param,
 		dlg_release_func release,char *reply_marker);
+int dlg_handle_seq_reply(struct dlg_cell *dlg, struct sip_msg* rpl,
+		int statuscode, int leg);
 #endif

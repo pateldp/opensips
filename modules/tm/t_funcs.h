@@ -37,6 +37,7 @@
 #include <netdb.h>
 
 #include "../../mem/shm_mem.h"
+#include "../../lib/osips_malloc.h"
 #include "../../parser/msg_parser.h"
 #include "../../globals.h"
 #include "../../msg_translator.h"
@@ -65,12 +66,13 @@ struct retr_buf;
 extern int noisy_ctimer;
 
 
-/* t_reply_to flags */
-#define TM_T_REPLY_repl_FLAG     (1<<0)
-#define TM_T_REPLY_not_used      (1<<1)
-#define TM_T_REPLY_noerr_FLAG    (1<<2)
-#define TM_T_REPLY_nodnsfo_FLAG  (1<<3)
-#define TM_T_REPLY_reason_FLAG   (1<<4)
+/* t_relay_to flags */
+#define TM_T_RELAY_repl_FLAG          (1<<0) /* replicated */
+#define TM_T_RELAY_not_used           (1<<1)
+#define TM_T_RELAY_noerr_FLAG         (1<<2)
+#define TM_T_RELAY_nodnsfo_FLAG       (1<<3)
+#define TM_T_RELAY_reason_FLAG        (1<<4)
+#define TM_T_RELAY_do_cancel_dis_FLAG (1<<5)
 
 
 /* send a private buffer: utilize a retransmission structure
@@ -157,6 +159,39 @@ static inline void force_retr(struct retr_buf *rb)
 	_set_fr_retr(rb, 1);
 }
 
+#define _clean_branch(br, free_f, avp_destr_f) \
+	do { \
+		if ((br).path_vec.s) \
+			free_f((br).path_vec.s); \
+		if ((br).adv_address.s) \
+			free_f((br).adv_address.s); \
+		if ((br).adv_port.s) \
+			free_f((br).adv_port.s); \
+		if ((br).duri.s) \
+			free_f((br).duri.s); \
+		if ((br).user_avps) \
+			avp_destr_f(&(br).user_avps); \
+	} while (0)
+
+#define clean_branch(br) \
+	_clean_branch(br, shm_free, destroy_avp_list)
+
+static inline void init_branch(struct ua_client *uac, unsigned int branch_idx,
+								unsigned int timer_set, struct cell *t)
+{
+	uac->request.my_T = t;
+	uac->request.branch = branch_idx;
+#ifdef EXTRA_DEBUG
+	uac->request.fr_timer.tg = TG_FR;
+	uac->request.retr_timer.tg = TG_RT;
+#endif
+	uac->request.fr_timer.set = timer_set;
+	uac->request.retr_timer.set = timer_set;
+	uac->local_cancel.fr_timer.set = timer_set;
+	uac->local_cancel.retr_timer.set = timer_set;
+	uac->local_cancel=uac->request;
+}
+
 void tm_shutdown();
 
 /* function returns:
@@ -182,6 +217,8 @@ void cleanup_localcancel_timers( struct cell *t );
 
 int t_relay_to( struct sip_msg  *p_msg, struct proxy_l *proxy, int replicate);
 
+
+int tm_has_request_disponsition_no_cancel(struct sip_msg *msg);
 
 #endif
 

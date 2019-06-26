@@ -26,8 +26,12 @@
 #include "../../db/db_id.h"
 
 #include <time.h>
-#include <mysql/mysql.h>
+#include <mysql.h>
 
+#include "../tls_mgm/tls_helper.h"
+#if (defined LIBMYSQL_VERSION_ID) && (LIBMYSQL_VERSION_ID >= 80000)
+# define my_bool bool
+#endif
 
 #define PREP_STMT_VAL_LEN	1024
 
@@ -82,6 +86,8 @@ struct my_con {
 
 	struct prep_stmt *ps_list; /* list of prepared statements */
 	unsigned int disconnected; /* (CR_CONNECTION_ERROR) was detected */
+
+	struct tls_domain *tls_dom;;  /* TLS domain */
 };
 
 

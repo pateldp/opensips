@@ -1,26 +1,4 @@
 oracle Module
-
-Iouri Kharon
-
-   <yjh@styx.cabel.net>
-
-Yury Skandarov
-
-   <kandman@trunkmobile.com>
-
-Iakov Kharon
-
-   <jyh@trunkmobile.com>
-
-Edited by
-
-Iouri Kharon
-
-   <yjh@styx.cabel.net>
-
-   Copyright © 2007,2008 TRUNK MOBILE, INC.
-   Revision History
-   Revision $Revision: 5901 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -41,6 +19,22 @@ Iouri Kharon
         1.4. Exported Functions
         1.5. Installation
         1.6. Utility opensips_orasel
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -127,9 +121,9 @@ modparam("db_oracle", "reconnect", 0.5)
 
 1.6. Utility opensips_orasel
 
-   For working with opensipsctl script, should be able to print
-   the 'query' results to the terminal in a user-readable form.
-   The standard command-line Oracle client (sqlplus) is not quite
+   For working with opensips-cli tool, should be able to print the
+   'query' results to the terminal in a user-readable form. The
+   standard command-line Oracle client (sqlplus) is not quite
    suitable for this, as it cannot align row width to real
    (received) data's (it always prints a cell width as described
    in the db scheme). This problem has been solved by inclusion
@@ -138,3 +132,73 @@ modparam("db_oracle", "reconnect", 0.5)
    addition, this utility known about the "agreements and types"
    in DB that are used in OpenSIPS for the work with Oracle and
    formats printing taking these into account.
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Iouri Kharon 20 1 2363 0
+   2. Bogdan-Andrei Iancu (@bogdan-iancu) 14 11 64 68
+   3. Liviu Chircu (@liviuchircu) 11 8 23 81
+   4. dronord 8 6 29 18
+   5. Razvan Crainea (@razvancrainea) 7 5 101 31
+   6. Peter Lemenkov (@lemenkov) 7 5 41 5
+   7. Henning Westerholt (@henningw) 5 3 19 7
+   8. Vlad Patrascu (@rvlad-patrascu) 4 2 3 3
+   9. fabriziopicconi 3 1 18 2
+   10. Ovidiu Sas (@ovidiusas) 3 1 12 12
+
+   All remaining contributors: Sergio Gutierrez, Julián Moreno
+   Patiño, Razvan Pistolea.
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Razvan Crainea (@razvancrainea)     Oct 2011 - May 2019
+   2.  Liviu Chircu (@liviuchircu)         Mar 2014 - May 2019
+   3.  Bogdan-Andrei Iancu (@bogdan-iancu) Jul 2008 - Apr 2019
+   4.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   5.  Peter Lemenkov (@lemenkov)          Aug 2012 - Jun 2018
+   6.  dronord                             Nov 2017 - Dec 2017
+   7.  Julián Moreno Patiño                Feb 2016 - Feb 2016
+   8.  fabriziopicconi                     Jun 2013 - Jun 2013
+   9.  Ovidiu Sas (@ovidiusas)             Jun 2012 - Jun 2012
+   10. Razvan Pistolea                     Jul 2009 - Jul 2009
+
+   All remaining contributors: Sergio Gutierrez, Henning
+   Westerholt (@henningw), Iouri Kharon.
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Liviu Chircu (@liviuchircu), Peter Lemenkov
+   (@lemenkov), Bogdan-Andrei Iancu (@bogdan-iancu), Henning
+   Westerholt (@henningw), Iouri Kharon.
+
+   Documentation Copyrights:
+
+   Copyright © 2007-2008 TRUNK MOBILE, INC.

@@ -4,7 +4,7 @@
 
 	<title>&adminguide;</title>
 
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		The module provides a simple mechanism for DOS protection - DOS based
@@ -54,7 +54,7 @@
 		</para>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -84,9 +84,9 @@
 		</para>
 	</section>
 	</section>
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_sampling_time_unit" xreflabel="sampling_time_unit">
 		<title><varname>sampling_time_unit</varname> (integer)</title>
 		<para>
 		Time period used for sampling (or the sampling accuracy ;-) ). The
@@ -113,7 +113,7 @@ modparam("pike", "sampling_time_unit", 10)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_reqs_density_per_unit" xreflabel="reqs_density_per_unit">
 		<title><varname>reqs_density_per_unit</varname> (integer)</title>
 		<para>
 		How many requests should be allowed per sampling_time_unit before
@@ -135,11 +135,19 @@ modparam("pike", "reqs_density_per_unit", 30)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_remove_latency" xreflabel="remove_latency">
 		<title><varname>remove_latency</varname> (integer)</title>
 		<para>
 		For how long the IP address will be kept in memory after the last
 		request from that IP address. It's a sort of timeout value.
+		</para>
+		<para>
+		<emphasis>Note:</emphasis> If the <emphasis>remove_latency</emphasis>
+		value is lower than <emphasis>sampling_time_unit</emphasis> value,
+		nodes might expire before being unblocked, therefore losing some
+		UNBLOCK events. In order to prevent this, if the
+		<emphasis>remove_latency</emphasis> is lower, &osips; internally
+		forces its value to <emphasis>sampling_time_unit + 1</emphasis>.
 		</para>
 		<para>
 		<emphasis>
@@ -156,7 +164,7 @@ modparam("pike", "remove_latency", 130)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_check_route" xreflabel="check_route">
 		<title><varname>check_route</varname> (integer)</title>
 		<para>
 		The name of the script route to be triggers (in automatic way) when a
@@ -189,7 +197,7 @@ route[pike]{
 		</example>
 	</section>
 
-	<section>
+	<section id="param_pike_log_level" xreflabel="pike_log_level">
 		<title><varname>pike_log_level</varname> (integer)</title>
 		<para>
 		Log level to be used by module to auto report the blocking (only first
@@ -212,9 +220,9 @@ modparam("pike", "pike_log_level", -1)
 	</section>
 
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_pike_check_req" xreflabel="pike_check_req()">
 		<title>
 		<function moreinfo="none">pike_check_req()</function>
 		</title>
@@ -263,9 +271,9 @@ if (!pike_check_req()) { exit; };
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_mi_functions" xreflabel="Exported MI Functions">
 	<title>Exported MI Functions</title>
-	<section>
+	<section id="mi_pike_list" xreflabel="pike_list">
 		<title>
 		<function moreinfo="none">pike_list</function>
 		</title>
@@ -274,6 +282,24 @@ if (!pike_check_req()) { exit; };
 		</para>
 		<para>
 		Name: <emphasis>pike_list</emphasis>
+		</para>
+		<para>Parameters: <emphasis>none</emphasis></para>
+ 		<para>
+		MI FIFO Command Format:
+		</para>
+		<programlisting  format="linespecific">
+		opensips-cli -x mi pike_list
+		</programlisting>
+	</section>
+	<section id="mi_pike_rm" xreflabel="pike_rm">
+		<title>
+		<function moreinfo="none">pike_rm</function>
+		</title>
+		<para>
+                Remove a node from the pike tree by IP address.
+		</para>
+		<para>
+		Name: <emphasis>pike_rm</emphasis>
 		</para>
 		<para>Parameters: </para>
                 <itemizedlist>
@@ -285,34 +311,14 @@ if (!pike_check_req()) { exit; };
 		MI FIFO Command Format:
 		</para>
 		<programlisting  format="linespecific">
-		:pike_list:_reply_fifo_file_
-		_empty_line_
-		</programlisting>
-	</section>
-	<section>
-		<title>
-		<function moreinfo="none">pike_rm</function>
-		</title>
-		<para>
-                Remove a node from the pike tree by IP address.
-		</para>
-		<para>
-		Name: <emphasis>pike_rm</emphasis>
-		</para>
-		<para>Parameters: <emphasis>none</emphasis></para>
- 		<para>
-		MI FIFO Command Format:
-		</para>
-		<programlisting  format="linespecific">
-		:pike_list:_reply_fifo_file_
-		_empty_line_
+		opensips-cli -x mi pike_rm 10.0.0.106
 		</programlisting>
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_events" xreflabel="Exported Events">
 	<title>Exported Events</title>
-	<section>
+	<section id="event_E_PIKE_BLOCKED" xreflabel="E_PIKE_BLOCKED">
 		<title>
 		<function moreinfo="none">E_PIKE_BLOCKED</function>
 		</title>

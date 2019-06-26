@@ -1,31 +1,31 @@
 <!-- Auth_db Module User's Guide -->
 
 <chapter>
-	
+
 	<title>&adminguide;</title>
-	
-	<section>
+
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
-		This module contains all authentication related functions that need 
-		the access to the database. This module should be used together with 
-		auth module, it cannot be used independently because it depends on 
-		the module. Select this module if you want to use database to store 
+		This module contains all authentication related functions that need
+		the access to the database. This module should be used together with
+		auth module, it cannot be used independently because it depends on
+		the module. Select this module if you want to use database to store
 		authentication information like subscriber usernames and passwords. If
 		you want to use radius authentication, then use auth_radius instead.
 	</para>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 		<title>Dependencies</title>
 		<section>
 			<title>&osips; Modules</title>
 			<para>
-			The module depends on the following modules (in the other words 
+			The module depends on the following modules (in the other words
 			the listed modules must be loaded before this module):
 			<itemizedlist>
 			<listitem>
-				<para><emphasis>auth</emphasis> -- Generic authentication 
+				<para><emphasis>auth</emphasis> -- Generic authentication
 				functions
 				</para>
 			</listitem>
@@ -40,7 +40,7 @@
 		<section>
 			<title>External Libraries or Applications</title>
 			<para>
-			The following libraries or applications must be installed 
+			The following libraries or applications must be installed
 			before running &osips; with this module loaded:
 			</para>
 			<itemizedlist>
@@ -52,14 +52,14 @@
 	</section>
 
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_db_url" xreflabel="db_url">
 		<title><varname>db_url</varname> (string)</title>
 		<para>
-		This is URL of the database to be used. Value of the parameter depends 
-		on the database module used. For example for mysql and postgres modules 
-		this is something like mysql://username:password@host:port/database. 
+		This is URL of the database to be used. Value of the parameter depends
+		on the database module used. For example for mysql and postgres modules
+		this is something like mysql://username:password@host:port/database.
 		For dbtext module (which stores data in plaintext files) it is
 		directory in which the database resides.
 		</para>
@@ -76,86 +76,11 @@ modparam("auth_db", "db_url", "&exampledb;")
 		</example>
 	</section>
 
-	<section>
-		<title><varname>user_column</varname> (string)</title>
-		<para>
-		This is the name of the column holding usernames. Default value is 
-		fine for most people. Use the parameter if you really need to change it.
-		</para>
-		<para>
-		Default value is <quote>username</quote>.
-		</para>
-		<example>
-		<title><varname>user_column</varname> parameter usage</title>
-		<programlisting format="linespecific">
-modparam("auth_db", "user_column", "user")
-</programlisting>
-		</example>
-	</section>
-
-	<section>
-		<title><varname>domain_column</varname> (string)</title>
-		<para>
-		This is the name of the column holding domains of users. Default value 
-		is fine for most people. Use the parameter if you really need to 
-		change it.
-		</para>
-		<para>
-		Default value is <quote>domain</quote>.
-		</para>
-		<example>
-		<title><varname>domain_column</varname> parameter usage</title>
-		<programlisting format="linespecific">
-modparam("auth_db", "domain_column", "domain")
-</programlisting>
-		</example>
-	</section>
-
-	<section>
-		<title><varname>password_column</varname> (string)</title>
-		<para>
-		This is the name of the column holding passwords. Passwords can be 
-		either stored as plain text or pre-calculated HA1 strings. HA1 strings 
-		are MD5 hashes of username, password, and realm. HA1 strings are more 
-		safe because the server doesn't need to know plaintext passwords and 
-		they cannot be obtained from HA1 strings.
-		</para>
-		<para>
-		Default value is <quote>ha1</quote>.
-		</para>
-		<example>
-		<title><varname>password_column</varname> parameter usage</title>
-		<programlisting format="linespecific">
-modparam("auth_db", "password_column", "password")
-</programlisting>
-		</example>
-	</section>
-
-	<section>
-		<title><varname>password_column_2</varname> (string)</title>
-		<para>
-		As described in the previous section this parameter contains name of 
-		column holding pre-calculated HA1 string that were calculated including 
-		the domain in the username. This parameter is used only when 
-		<varname>calculate_ha1</varname> is set to 0 and user agent send a 
-		credentials containing the domain in the username.
-		</para>
-		<para>
-		Default value of the parameter is ha1b.
-		</para>
-		<example>
-		<title><varname>password_column_2</varname> parameter usage</title>
-		<programlisting format="linespecific">
-modparam("auth_db", "password_column_2", "ha1_2")
-</programlisting>
-		</example>
-	</section>
-
-	<section>
+	<section id="param_calculate_ha1" xreflabel="calculate_ha1">
 		<title><varname>calculate_ha1</varname> (integer)</title>
 		<para>
 		This parameter tells the server whether it should considered the
-		loaded password (for authentification) as plaintext passwords or 
+		loaded password (for authentification) as plaintext passwords or
 		a pre-calculated HA1 string.
 		</para>
 		<para>
@@ -164,20 +89,20 @@ modparam("auth_db", "password_column_2", "ha1_2")
 		<itemizedlist>
 			<listitem><para><emphasis>1 (calculate HA1)</emphasis> - the loaded
 			password is a plaintext password, so OpenSIPS will internally
-			calculate the HA1. As the passwors will be loaded from the column 
+			calculate the HA1. As the passwords will be loaded from the column
 			specified in the <quote>password_column</quote> parameter, be sure
 			this parameter points to a column holding a plaintext password
 			(by default, this parameter points to <quote>ha1</quote> column);
 			</para></listitem>
 			<listitem><para><emphasis>0 (do NOT calculate HA1)</emphasis> - the
-			loaded password is an already computed HA1 value, so OpenSIPS does 
-			not have do any further computing (for HA1 value). Depending on 
-			the presence of a <quote>@domain</quote> part (some user agents 
+			loaded password is an already computed HA1 value, so OpenSIPS does
+			not have do any further computing (for HA1 value). Depending on
+			the presence of a <quote>@domain</quote> part (some user agents
 			append the domain to the username credentials parameter too),
-			the modules will load the password (pre-computed HA1) from the 
+			the modules will load the password (pre-computed HA1) from the
 			<quote>password_column_2</quote> column (if domain present) or from
 			the <quote>password_column</quote> column (if domain not present).
-			Usually, most of the UAs do NOT include a domain part in the 
+			Usually, most of the UAs do NOT include a domain part in the
 			username credentials parameter.
 			</para></listitem>
 		</itemizedlist>
@@ -204,17 +129,17 @@ modparam("auth_db", "calculate_ha1", 1)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_use_domain" xreflabel="use_domain">
 		<title><varname>use_domain</varname> (integer)</title>
 		<para>
-		If true (not 0), domain will be also used when looking up in the 
+		If true (not 0), domain will be also used when looking up in the
 		subscriber table. If you have a multi-domain setup, it is strongly
 		recommended to turn on this parameter to avoid username overlapping
 		between domains.
 		</para>
 		<para>
-		IMPORTANT: before turning on this parameter, be sure that the 
-		<varname>domain</varname> column in <varname>subscriber</varname> 
+		IMPORTANT: before turning on this parameter, be sure that the
+		<varname>domain</varname> column in <varname>subscriber</varname>
 		table is properly populated.
 		</para>
 		<para>
@@ -228,7 +153,7 @@ modparam("auth_db", "use_domain", 1)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_load_credentials" xreflabel="load_credentials">
 		<title><varname>load_credentials</varname> (string)</title>
 		<para>
 		This parameter specifies credentials to be fetched from database when
@@ -263,7 +188,8 @@ modparam("auth_db", "load_credentials", "$avp(13)=rpid;email_address")
 </programlisting>
 		</example>
 	</section>
-	<section>
+
+	<section id="param_skip_version_check" xreflabel="skip_version_check">
 		<title><varname>skip_version_check</varname> (int)</title>
 		<para>
 		This parameter specifies not to check the auth table version. This
@@ -280,22 +206,164 @@ modparam("auth_db", "skip_version_check", 1)
 		</example>
 	</section>
 
+	<section id="param_user_column" xreflabel="user_column">
+		<title><varname>user_column</varname> (string)</title>
+		<para>
+		This is the name of the column in a 'SUBSCRIBER' like table holding
+		the usernames. Default value is fine for most people.
+		Use the parameter if you really need to change it.
+		</para>
+		<para>
+		Default value is <quote>username</quote>.
+		</para>
+		<example>
+		<title><varname>user_column</varname> parameter usage</title>
+		<programlisting format="linespecific">
+modparam("auth_db", "user_column", "user")
+</programlisting>
+		</example>
 	</section>
 
-	<section>
+	<section id="param_domain_column" xreflabel="domain_column">
+		<title><varname>domain_column</varname> (string)</title>
+		<para>
+		This is the name of the column in a 'SUBSCRIBER' like table holding
+		the domains of users. Default value is fine for most people.
+		Use the parameter if you really need to
+		change it.
+		</para>
+		<para>
+		Default value is <quote>domain</quote>.
+		</para>
+		<example>
+		<title><varname>domain_column</varname> parameter usage</title>
+		<programlisting format="linespecific">
+modparam("auth_db", "domain_column", "domain")
+</programlisting>
+		</example>
+	</section>
+
+	<section id="param_password_column" xreflabel="password_column">
+		<title><varname>password_column</varname> (string)</title>
+		<para>
+		This is the name of the column in a 'SUBSCRIBER' like table holding
+		the passwords. Passwords can be
+		either stored as plain text or pre-calculated HA1 strings. HA1 strings
+		are MD5 hashes of username, password, and realm. HA1 strings are more
+		safe because the server doesn't need to know plaintext passwords and
+		they cannot be obtained from HA1 strings.
+		</para>
+		<para>
+		Default value is <quote>ha1</quote>.
+		</para>
+		<example>
+		<title><varname>password_column</varname> parameter usage</title>
+		<programlisting format="linespecific">
+modparam("auth_db", "password_column", "password")
+</programlisting>
+		</example>
+	</section>
+
+	<section id="param_password_column_2" xreflabel="password_column_2">
+		<title><varname>password_column_2</varname> (string)</title>
+		<para>
+		As described in the previous section this parameter contains name of
+		column holding pre-calculated HA1 string that were calculated including
+		the domain in the username. This parameter is used only when
+		<varname>calculate_ha1</varname> is set to 0 and user agent send a
+		credentials containing the domain in the username.
+		</para>
+		<para>
+		Default value of the parameter is ha1b.
+		</para>
+		<example>
+		<title><varname>password_column_2</varname> parameter usage</title>
+		<programlisting format="linespecific">
+modparam("auth_db", "password_column_2", "ha1_2")
+</programlisting>
+		</example>
+	</section>
+
+	<section id="param_uri_user_column" xreflabel="uri_user_column">
+		<title><varname>uri_user_column</varname> (string)</title>
+		<para>
+		Column holding usernames in an 'URI' like table.
+		</para>
+		<para>
+		<emphasis>
+			Default value is <quote>username</quote>.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>uri_user_column</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("auth_db", "uri_user_column", "username")
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="param_uri_domain_column" xreflabel="uri_domain_column">
+		<title><varname>uri_domain_column</varname> (string)</title>
+		<para>
+		Column holding domain in an 'URI' like table.
+		</para>
+		<para>
+		<emphasis>
+			Default value is <quote>domain</quote>.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>uri_domain_column</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("auth_db", "uri_domain_column", "domain")
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="param_uri_uriuser_column" xreflabel="uri_uriuser_column">
+		<title><varname>uri_uriuser_column</varname> (string)</title>
+		<para>
+		Column holding &uri; username in an 'URI' like table.
+		</para>
+		<para>
+		<emphasis>
+			Default value is <quote>uri_user</quote>.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>uriuser_column</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("auth_db", "uri_uriuser_column", "uri_user")
+...
+</programlisting>
+		</example>
+	</section>
+
+
+
+	</section>
+
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_www_authorize" xreflabel="www_authorize()">
 		<title>
 			<function moreinfo="none">www_authorize(realm, table)</function>
 		</title>
 		<para>
-		The function verifies credentials according to 
-		<ulink url="http://www.ietf.org/rfc/rfc2617.txt">RFC2617</ulink>. If the 
-		credentials are verified successfully then the function will succeed 
-		and mark the credentials as authorized (marked credentials can be later 
-		used by some other functions). If the function was unable to verify the 
-		credentials for some reason then it will fail and the script should 
-		call <function moreinfo="none">www_challenge</function> which will 
+		The function verifies the received credentials against a
+		"SUBSCRIBER"-like table according to digest authentication as per
+		<ulink url="http://www.ietf.org/rfc/rfc2617.txt">RFC2617</ulink>.
+		If the credentials are verified successfully then the function will
+		succeed and mark the credentials as authorized (marked credentials
+		can be later used by some other functions). If the function was
+		unable to verify the
+		credentials for some reason then it will fail and the script should
+		call <function moreinfo="none">www_challenge</function> which will
 		challenge the user again.
 		</para>
 		<para>Negative codes may be interpreted as follows:</para>
@@ -312,7 +380,7 @@ modparam("auth_db", "skip_version_check", 1)
 			<emphasis>-3 (stale nonce)</emphasis> - stale nonce;
 			</para></listitem>
 			<listitem><para>
-			<emphasis>-2 (invalid password)</emphasis> - valid user, but 
+			<emphasis>-2 (invalid password)</emphasis> - valid user, but
 			wrong password;
 			</para></listitem>
 			<listitem><para>
@@ -323,16 +391,16 @@ modparam("auth_db", "skip_version_check", 1)
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>realm</emphasis> - Realm is an opaque string that 
-			the user agent should present to the user so it can decide what 
-			username and password to use. Usually this is domain of the host 
+			<para><emphasis>realm (string)</emphasis> - Realm is an opaque string that
+			the user agent should present to the user so it can decide what
+			username and password to use. Usually this is domain of the host
 			the server is running on.
 			</para>
 			<para>
-			If an empty string <quote></quote> is used then the server will 
-			generate it from the request. In case of REGISTER requests To 
-			header field domain will be used (because this header field 
-			represents a user being registered), for all other messages From 
+			If an empty string <quote></quote> is used then the server will
+			generate it from the request. In case of REGISTER requests To
+			header field domain will be used (because this header field
+			represents a user being registered), for all other messages From
 			header field domain will be used.
 			</para>
 			<para>
@@ -340,7 +408,7 @@ modparam("auth_db", "skip_version_check", 1)
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>table</emphasis> - Table to be used to lookup 
+			<para><emphasis>table (string)</emphasis> - Table to be used to lookup
 			usernames and passwords (usually subscribers table).
 			</para>
 		</listitem>
@@ -360,54 +428,55 @@ if (!www_authorize("siphub.net", "subscriber")) {
 		</example>
 	</section>
 
-	<section>
+	<section id="func_proxy_authorize" xreflabel="proxy_authorize()">
 		<title>
 			<function moreinfo="none">proxy_authorize(realm, table)</function>
 		</title>
 		<para>
-		The function verifies credentials according to 
-		<ulink url="http://www.ietf.org/rfc/rfc2617.txt">RFC2617</ulink>. If 
-		the credentials are verified successfully then the function will 
-		succeed and mark the credentials as authorized (marked credentials can 
-		be later used by some other functions). If the function was unable to 
+		The function verifies the received credentials against a
+		"SUBSCRIBER"-like table according to digest authentication as per
+		<ulink url="http://www.ietf.org/rfc/rfc2617.txt">RFC2617</ulink>. If
+		the credentials are verified successfully then the function will
+		succeed and mark the credentials as authorized (marked credentials can
+		be later used by some other functions). If the function was unable to
 		verify the credentials for some reason then it will fail and
-		the script should call 
+		the script should call
 		<function moreinfo="none">proxy_challenge</function> which will
-		challenge the user again. 
+		challenge the user again.
 		</para>
 		<para>Negative codes may be interpreted as follows:</para>
 		<itemizedlist>
 			<listitem><para>
-					<emphasis>-5 (generic error)</emphasis> - some generic error
-					occurred and no reply was sent out;
+					<emphasis>-5 (generic error)</emphasis> - some generic
+					error occurred and no reply was sent out;
 				</para></listitem>
 			<listitem><para>
-					<emphasis>-4 (no credentials)</emphasis> - credentials were not
-					found in request;
+					<emphasis>-4 (no credentials)</emphasis> - credentials
+					were not found in request;
 				</para></listitem>
 			<listitem><para>
 					<emphasis>-3 (stale nonce)</emphasis> - stale nonce;
 				</para></listitem>
 			<listitem><para>
-					<emphasis>-2 (invalid password)</emphasis> - valid user, but 
-					wrong password;
+					<emphasis>-2 (invalid password)</emphasis> - valid user,
+					but wrong password;
 				</para></listitem>
 			<listitem><para>
-					<emphasis>-1 (invalid user)</emphasis> - authentication user does
-					not exist.
+					<emphasis>-1 (invalid user)</emphasis> - authentication
+					user does not exist.
 				</para></listitem>
 		</itemizedlist>
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>realm</emphasis> - Realm is an opaque string that 
-			the user agent should present to the user so it can decide what 
-			username and password to use. Usually this is domain of the host 
+			<para><emphasis>realm (string)</emphasis> - Realm is an opaque string that
+			the user agent should present to the user so it can decide what
+			username and password to use. Usually this is domain of the host
 			the server is running on.
 			</para>
 			<para>
-			If an empty string <quote></quote> is used then the server will 
-			generate it from the request. From header field domain will be 
+			If an empty string <quote></quote> is used then the server will
+			generate it from the request. From header field domain will be
 			used as realm.
 			</para>
 			<para>
@@ -415,7 +484,7 @@ if (!www_authorize("siphub.net", "subscriber")) {
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>table</emphasis> - Table to be used to lookup 
+			<para><emphasis>table (string)</emphasis> - Table to be used to lookup
 			usernames and passwords (usually subscribers table).
 			</para>
 		</listitem>
@@ -434,6 +503,142 @@ if (!proxy_authorize("", "subscriber)) {
 </programlisting>
 		</example>
 	</section>
+
+	<section id="func_db_is_to_authorized" xreflabel="db_is_to_authorized()">
+		<title>
+		<function moreinfo="none">db_is_to_authorized(table)</function>
+		</title>
+		<para>
+		The function checks against a  'URI' like table to see if the
+		username extracted from the To header URI is allowed/authorized to
+		use the credentials (authentication username) validated by
+		<xref linkend="func_www_authorize"/>.
+		</para>
+		<para>
+		The function is part of the mechanism that allows to create
+		mapping between the SIP users (from the FROM/TO headers) and the
+		authentication users (from a SUBSCRIBER-like table) that they use. The
+		mapping is stored into an URI-like table.
+		</para>
+		<para>Meaning of the parameters is as follows:</para>
+		<itemizedlist>
+		<listitem>
+			<para><emphasis>table (string)</emphasis> - Table to be used to lookup
+			for the URI/AUTH mappings (usually the URI table).
+			</para>
+		</listitem>
+		</itemizedlist>
+		<para>
+		This function can be used from REQUEST_ROUTE.
+		</para>
+		<example>
+		<title><function>db_is_to_authorized</function> usage</title>
+		<programlisting format="linespecific">
+...
+if (!db_is_to_authorized("uri")) {
+	xlog("User $tu is not authorized to authenticate with $au credential\n");
+};
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="func_db_is_from_authorized" xreflabel="db_is_from_authorized()">
+		<title>
+		<function moreinfo="none">db_is_from_authorized(table)</function>
+		</title>
+		<para>
+		Similar to <xref linkend="func_db_is_to_authorized"/> but instead of
+		checking the TO header URI, the FROM header URI is checked.
+		</para>
+	</section>
+
+	<section id="func_db_does_uri_exist" xreflabel="db_does_uri_exist()">
+		<title>
+		<function moreinfo="none">db_does_uri_exist(uri, table)</function>
+		</title>
+		<para>
+		Checks if the username@domain from the given &uri; is an existing
+		user in a 'SUBSCRIBER' like table.
+		</para>
+		<para>Meaning of the parameters is as follows:</para>
+		<itemizedlist>
+		<listitem>
+			<para><emphasis>uri (string)</emphasis> - The SIP URI to be tested. It must
+			hold a username part for a valid check. Variables are allowed.
+			</para>
+		</listitem>
+		<listitem>
+			<para><emphasis>table (string)</emphasis> - Table to be used to search
+			for the URI (usually the SUBSCRIBER table).
+			</para>
+		</listitem>
+		</itemizedlist>
+		<para>
+		This function can be used from REQUEST_ROUTE.
+		</para>
+		<example>
+		<title><function>db_does_uri_exist</function> usage</title>
+		<programlisting format="linespecific">
+...
+if (db_does_uri_exist($ru, "subscriber")) {
+	...
+};
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="func_db_get_auth_id" xreflabel="db_get_auth_id()">
+		<title>
+		<function moreinfo="none">db_get_auth_id(table, uri, auth, realm)</function>
+		</title>
+		<para>
+		Checks given uri-string username against an 'URI' like table.
+		Returns true if the user exists in the database, and sets the given
+		variables to the authentication id and realm corresponding to
+		the given uri.
+		</para>
+		<para>Meaning of the parameters is as follows:</para>
+		<itemizedlist>
+		<listitem>
+			<para><emphasis>table (string)</emphasis> - Table to be used to search
+			for the URI (usually the URI table).
+			</para>
+		</listitem>
+		<listitem>
+			<para><emphasis>uri (string)</emphasis> - The input SIP URI to be tested.
+			It must hold a username part for a valid check.
+			Variables are allowed.
+			</para>
+		</listitem>
+		<listitem>
+			<para><emphasis>auth (var)</emphasis> - an output variable to store the
+			found authentication id matching the given SIP URI.
+			</para>
+		</listitem>
+		<listitem>
+			<para><emphasis>realm (var)</emphasis> - an output variable to store the
+			found authentication realm matching the given SIP URI.
+			</para>
+		</listitem>
+		</itemizedlist>
+		<para>
+		This function can be used from REQUEST_ROUTE ,FAILURE_ROUTE and
+		LOCAL_ROUTE.
+		</para>
+		<example>
+		<title><function>db_get_auth_id</function> usage</title>
+		<programlisting format="linespecific">
+...
+if (db_get_auth_id("uri", $ru, $avp(auth_id), $avp(auth_realm))) {
+	...
+}
+...
+</programlisting>
+		</example>
+	</section>
+
 	</section>
 </chapter>
 

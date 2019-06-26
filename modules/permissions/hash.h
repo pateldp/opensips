@@ -80,14 +80,14 @@ int hash_insert(struct address_list** table, struct ip_addr *ip,
  */
 int hash_match(struct sip_msg *msg, struct address_list** table,
 		unsigned int grp, struct ip_addr *ip, unsigned int port, int proto,
-		char *pattern, char* info);
+		char *pattern, pv_spec_t* info);
 
 
 /*
  * Print entries stored in hash table
  */
 //void hash_print(struct address_list** hash_table, FILE* reply_file);
-int hash_mi_print(struct address_list **table, struct mi_node* rpl,
+int hash_mi_print(struct address_list **table, mi_item_t *part_item,
 		struct pm_part_struct *pm);
 
 /*
@@ -129,7 +129,7 @@ struct subnet* new_subnet_table(void);
  */
 int match_subnet_table(struct sip_msg *msg, struct subnet* table,
 		unsigned int group, struct ip_addr *ip, unsigned int port, int proto,
-		char *pattern, char* info);
+		char *pattern, pv_spec_t* info);
 
 
 /*
@@ -166,7 +166,7 @@ int subnet_table_insert(struct subnet* table, unsigned int grp,
  * Print subnets stored in subnet table
  */
 /*void subnet_table_print(struct subnet* table, FILE* reply_file);*/
-int subnet_table_mi_print(struct subnet* table, struct mi_node* rpl,
+int subnet_table_mi_print(struct subnet* table, mi_item_t *part_item,
 		struct pm_part_struct *pm);
 
 

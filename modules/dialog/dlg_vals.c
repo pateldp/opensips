@@ -25,12 +25,13 @@
  */
 
 #include "../../mem/shm_mem.h"
+#include "../../pt.h"
 #include "dlg_vals.h"
 #include "dlg_hash.h"
 
 
 
-static inline unsigned int _get_name_id(str *name)
+static inline unsigned int _get_name_id(const str *name)
 {
 	char *p;
 	unsigned short id;
@@ -78,7 +79,7 @@ int store_dlg_value_unsafe(struct dlg_cell *dlg, str *name, str *val)
 		return -1;
 	}
 
-	id = _get_name_id(name);
+	id = val ? dv->id : _get_name_id(name);
 
 	/* iterate the list */
 	for( it_prev=NULL, it=dlg->vals ; it ; it_prev=it,it=it->next) {
@@ -136,8 +137,21 @@ int store_dlg_value(struct dlg_cell *dlg, str *name, str *val)
 static str val_buf = { NULL, 0};
 static int val_buf_size;
 
-
-int fetch_dlg_value(struct dlg_cell *dlg, str *name,str *ival, int val_has_buf)
+/**
+ * fetch_dlg_value - search for @name in @dlg, write results to @out_val
+ *
+ * If @val_has_buf is true, @out_val may contain a user-supplied pkg buffer
+ * which will be realloc'ed as necessary in order to hold the value.
+ *
+ * If @val_has_buf is false, the returned @out_val string must not be freed!
+ *
+ * @return:
+ *  0 - success
+ * -1 - error
+ * -2 - not found
+ */
+int fetch_dlg_value(struct dlg_cell *dlg, const str *name,
+                    str *out_val, int val_has_buf)
 {
 	struct dlg_val *dv;
 	unsigned int id;
@@ -151,7 +165,7 @@ int fetch_dlg_value(struct dlg_cell *dlg, str *name,str *ival, int val_has_buf)
 		val = &val_buf;
 		val->len = val_buf_size;
 	} else
-		val = ival;
+		val = out_val;
 
 	/* lock dialog (if not already locked via a callback triggering)*/
 	if (dlg->locked_by!=process_no)
@@ -180,7 +194,7 @@ int fetch_dlg_value(struct dlg_cell *dlg, str *name,str *ival, int val_has_buf)
 			}
 			memcpy( val->s, dv->val.s, dv->val.len );
 			val->len = dv->val.len;
-			*ival = *val;
+			*out_val = *val;
 
 			/* unlock dialog */
 			if (dlg->locked_by!=process_no)
@@ -194,7 +208,7 @@ int fetch_dlg_value(struct dlg_cell *dlg, str *name,str *ival, int val_has_buf)
 		dlg_unlock_dlg( dlg );
 	LM_DBG("var NOT found!\n");
 
-	return -1;
+	return -2;
 }
 
 
@@ -302,5 +316,4 @@ int pv_set_dlg_val(struct sip_msg* msg, pv_param_t *param, int op,
 
 	return 0;
 }
-
 

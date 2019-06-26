@@ -49,8 +49,8 @@ struct db_sqlite_extension_list *extension_list=0;
  * MySQL database module interface
  */
 static cmd_export_t cmds[] = {
-	{"db_bind_api", (cmd_function)db_sqlite_bind_api,	0, 0, 0, 0},
-	{0, 0, 0, 0, 0, 0}
+	{"db_bind_api", (cmd_function)db_sqlite_bind_api, {{0,0,0}},0},
+	{0,0,{{0,0,0}},0}
 };
 
 /*
@@ -69,6 +69,7 @@ struct module_exports exports = {
 	MOD_TYPE_SQLDB,  /* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	cmds,
 	0,               /* exported async functions */
@@ -81,7 +82,8 @@ struct module_exports exports = {
 	sqlite_mod_init,  /* module initialization function */
 	0,               /* response function*/
 	sqlite_mod_destroy,               /* destroy function */
-	0                /* per-child init function */
+	0,               /* per-child init function */
+	0                /* reload confirm function */
 };
 
 static int sqlite_mod_init(void)

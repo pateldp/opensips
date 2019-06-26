@@ -52,6 +52,7 @@
 
 #include "parser/msg_parser.h"
 #include "ip_addr.h"
+#include "socket_info.h"
 #include "context.h"
 #include "globals.h"
 
@@ -107,9 +108,35 @@ static inline str *get_adv_port(struct socket_info *send_sock)
 		return &(send_sock->port_no_str);
 }
 
+static inline str *_get_adv_host(struct socket_info *send_sock,
+                                 struct sip_msg *msg)
+{
+	if (send_sock->adv_name_str.len)
+		return &send_sock->adv_name_str;
+	else if (msg->set_global_address.s)
+		return &msg->set_global_address;
+	else if (default_global_address.s)
+		return &default_global_address;
+	else
+		return &send_sock->address_str;
+}
+
+static inline str *_get_adv_port(struct socket_info *send_sock,
+                                 struct sip_msg *msg)
+{
+	if (send_sock->adv_port_str.len)
+		return &send_sock->adv_port_str;
+	else if (msg->set_global_port.s)
+		return &msg->set_global_port;
+	else if (default_global_port.s)
+		return &default_global_port;
+	else
+		return &send_sock->port_no_str;
+}
+
 char * build_req_buf_from_sip_req (	struct sip_msg* msg,
 				unsigned int *returned_len, struct socket_info* send_sock,
-				int proto, unsigned int flags);
+				int proto, str *via_params, unsigned int flags);
 
 char * build_res_buf_from_sip_res(	struct sip_msg* msg,
 				unsigned int *returned_len, struct socket_info *sock,int flags);

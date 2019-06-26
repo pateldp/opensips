@@ -102,12 +102,12 @@ static int db_restore(void);
 static void db_update(unsigned int ticks,void *param);
 static void hashT_clean(unsigned int ticks,void *param);
 
-static cmd_export_t cmds[]=
-{
-	{"bind_libxml_api",         (cmd_function)bind_libxml_api,  1, 0, 0, 0},
-	{"bind_pua",                (cmd_function)bind_pua,         1, 0, 0, 0},
-	{"pua_update_contact",      (cmd_function)update_contact,   0, 0, 0, REQUEST_ROUTE},
-	{0,                         0,                              0, 0, 0, 0}
+static cmd_export_t cmds[]={
+	{"pua_update_contact",(cmd_function)update_contact, {{0,0,0}},
+		REQUEST_ROUTE},
+	{"bind_libxml_api", (cmd_function)bind_libxml_api, {{0,0,0}}, 0},
+	{"bind_pua", (cmd_function)bind_pua, {{0,0,0}}, 0},
+	{0,0,{{0,0,0}},0}
 };
 
 static param_export_t params[]={
@@ -136,6 +136,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,           /* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,            /* dlopen flags */
+	0,				            /* load function */
 	&deps,                      /* OpenSIPS module dependencies */
 	cmds,                       /* exported functions */
 	0,                          /* exported async functions */
@@ -148,7 +149,8 @@ struct module_exports exports= {
 	mod_init,                   /* module initialization function */
 	(response_function) 0,      /* response handling function */
 	destroy,                    /* destroy function */
-	child_init                  /* per-child init function */
+	child_init,                 /* per-child init function */
+	0                           /* reload confirm function */
 };
 
 /**
@@ -167,7 +169,7 @@ static int mod_init(void)
 		default_expires= 3600;
 
 	/* import the TM auto-loading function */
-	if((load_tm=(load_tm_f)find_export("load_tm", 0, 0))==NULL)
+	if((load_tm=(load_tm_f)find_export("load_tm", 0))==NULL)
 	{
 		LM_ERR("can't import load_tm\n");
 		return -1;
@@ -487,7 +489,7 @@ static int db_restore(void)
 			p= (ua_pres_t*)shm_malloc(size);
 			if(p== NULL)
 			{
-				LM_ERR("no more shared memmory");
+				LM_ERR("no more shared memmory\n");
 				goto error;
 			}
 			memset(p, 0, size);
@@ -731,7 +733,7 @@ int update_pua(ua_pres_t* p, unsigned int hash_code, unsigned int final)
 		td= pua_build_dlg_t(p);
 		if(td== NULL)
 		{
-			LM_ERR("while building tm dlg_t structure");
+			LM_ERR("while building tm dlg_t structure\n");
 			goto error;
 		}
 		LM_DBG("td->rem_uri= %.*s\n", td->rem_uri.len, td->rem_uri.s);

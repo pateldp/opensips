@@ -37,7 +37,8 @@
  * Fills the common part (for all contacts) of the info structure
  */
 ucontact_info_t *pack_ci(struct sip_msg* _m, contact_t* _c, unsigned int _e,
-             unsigned int _f, unsigned int _nat_flag, unsigned int _reg_flags)
+             unsigned int _f, unsigned int _nat_flag, unsigned int _reg_flags,
+			 str *ownership_tag)
 {
 	static ucontact_info_t ci;
 	static str no_ua = str_init("n/a");
@@ -45,12 +46,14 @@ ucontact_info_t *pack_ci(struct sip_msg* _m, contact_t* _c, unsigned int _e,
 	static str path_received = {0,0};
 	static str path;
 	static str received = {0,0};
-	static int received_found;
+	static int received_searched;
 	static unsigned int allowed, allow_parsed;
 	static struct sip_msg *m = 0;
 	static int_str attr_avp_value;
 	static struct usr_avp *avp_attr;
 	int_str val;
+
+	ci.contact_id = 0;
 
 	if (_m!=0) {
 		memset( &ci, 0, sizeof(ucontact_info_t));
@@ -110,8 +113,11 @@ ucontact_info_t *pack_ci(struct sip_msg* _m, contact_t* _c, unsigned int _e,
 			ci.received = path_received;
 		}
 
+		if (ownership_tag)
+			ci.shtag = *ownership_tag;
+
 		allow_parsed = 0; /* not parsed yet */
-		received_found = 0; /* not found yet */
+		received_searched = 0; /* not searched yet */
 		m = _m; /* remember the message */
 	}
 
@@ -155,7 +161,7 @@ ucontact_info_t *pack_ci(struct sip_msg* _m, contact_t* _c, unsigned int _e,
 			if (_c->received) {
 				ci.received = _c->received->body;
 			} else {
-				if (received_found==0) {
+				if (!received_searched) {
 					memset(&val, 0, sizeof(int_str));
 					if (rcv_avp_name>=0
 								&& search_first_avp(rcv_avp_type, rcv_avp_name, &val, 0)
@@ -170,7 +176,7 @@ ucontact_info_t *pack_ci(struct sip_msg* _m, contact_t* _c, unsigned int _e,
 						received.s = 0;
 						received.len = 0;
 					}
-					received_found = 1;
+					received_searched = 1;
 				}
 				ci.received = received;
 			}
@@ -191,4 +197,23 @@ ucontact_info_t *pack_ci(struct sip_msg* _m, contact_t* _c, unsigned int _e,
 	return &ci;
 error:
 	return 0;
+}
+
+void print_ci(ucontact_info_t *ci)
+{
+	LM_DBG(" ----- UCI DUMP (%p) ------\n", ci);
+	LM_DBG("received: %.*s, path: %.*s\n", ci->received.len, ci->received.s,
+	       ci->path ? ci->path->len : 0, ci->path ? ci->path->s : NULL);
+	LM_DBG("expires: %ld, expires_in: %ld, expires_out: %ld\n", ci->expires,
+	       ci->expires_in, ci->expires_out);
+	LM_DBG("q: %d, instance: %.*s, callid: %.*s\n", ci->q, ci->instance.len,
+	       ci->instance.s, ci->callid ? ci->callid->len : 0,
+	       ci->callid ? ci->callid->s : NULL);
+	LM_DBG("cseq: %d, flags: %d, cflags: %d\n", ci->cseq, ci->flags,
+	       ci->cflags);
+	LM_DBG("user_agent: %.*s, sock: %p, methods: %d\n",
+	       ci->user_agent ? ci->user_agent->len : 0,
+	       ci->user_agent ? ci->user_agent->s : NULL, ci->sock, ci->methods);
+	LM_DBG("last_modified: %ld, attr: %.*s\n", ci->last_modified,
+	       ci->attr ? ci->attr->len : 0, ci->attr ? ci->attr->s : NULL);
 }

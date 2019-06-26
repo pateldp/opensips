@@ -110,15 +110,19 @@ struct hep_data {
 	int oldest_chunk;
 };
 
-
 static cmd_export_t cmds[] = {
-	{"proto_init",            (cmd_function)proto_hep_init_udp,        0, 0, 0, 0},
-	{"proto_init",            (cmd_function)proto_hep_init_tcp,        0, 0, 0, 0},
-	{"load_hep",			  (cmd_function)bind_proto_hep,        1, 0, 0, 0},
-	{"trace_bind_api",        (cmd_function)hep_bind_trace_api,    1, 0, 0, 0},
-	{"correlate", (cmd_function)correlate_w, 5, correlate_fixup, 0,
+	{"proto_init", (cmd_function)proto_hep_init_udp, {{0,0,0}}, 0},
+	{"proto_init", (cmd_function)proto_hep_init_tcp, {{0,0,0}}, 0},
+	{"load_hep", (cmd_function)bind_proto_hep, {{0,0,0}}, 0},
+	{"trace_bind_api", (cmd_function)hep_bind_trace_api, {{0,0,0}}, 0},
+	{"correlate", (cmd_function)correlate_w, {
+		{CMD_PARAM_STR,0,0},
+		{CMD_PARAM_STR,0,0},
+		{CMD_PARAM_STR,0,0},
+		{CMD_PARAM_STR,0,0},
+		{CMD_PARAM_STR,0,0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{0,0,0,0,0,0}
+	{0,0,{{0,0,0}},0}
 };
 
 static param_export_t params[] = {
@@ -170,6 +174,7 @@ struct module_exports exports = {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	&deps,            /* OpenSIPS module dependencies */
 	cmds,       /* exported functions */
 	0,          /* exported async functions */
@@ -183,6 +188,7 @@ struct module_exports exports = {
 	0,          /* response function */
 	destroy,	/* destroy function */
 	0,          /* per-child init function */
+	0           /* reload confirm function */
 };
 
 static int mod_init(void)
@@ -193,9 +199,14 @@ static int mod_init(void)
 		return -1;
 	}
 
+	if (init_hep_id() < 0) {
+		LM_ERR("could not initialize HEP id list!\n");
+		return -1;
+	}
+
 	if (payload_compression) {
 		load_compression =
-			(load_compression_f)find_export("load_compression", 1, 0);
+			(load_compression_f)find_export("load_compression", 0);
 		if (!load_compression) {
 			LM_ERR("can't bind compression module!\n");
 			return -1;
@@ -220,6 +231,7 @@ static int mod_init(void)
 static void destroy(void)
 {
 	free_hep_cbs();
+	destroy_hep_id();
 }
 
 void free_hep_context(void *ptr)
@@ -435,7 +447,7 @@ poll_loop:
 		}
 	}
 
-	if (pf.events&POLLOUT)
+	if (pf.revents&POLLOUT)
 		goto again;
 
 	/* some other events triggered by poll - treat as errors */
@@ -641,7 +653,14 @@ inline static int _hep_write_on_socket(struct tcp_connection *c, int fd,
 
 	lock_get(&c->write_lock);
 	if (hep_async) {
-		n=async_tsend_stream(c,fd,buf,len, hep_async_local_write_timeout);
+		/*
+		 * if there is any data pending to write, we have to wait for those chunks
+		 * to be sent, otherwise we will completely break the messages' order
+		 */
+		if (((struct hep_data*)c->proto_data)->async_chunks_no)
+			n = add_write_chunk(c, buf, len, 0);
+		else
+			n = async_tsend_stream(c,fd,buf,len, hep_async_local_write_timeout);
 	} else {
 		n = tsend_stream(fd, buf, len, hep_send_timeout);
 	}
@@ -684,9 +703,9 @@ static int hep_tcp_send (struct socket_info* send_sock,
 	if (to) {
 		su2ip_addr(&ip, to);
 		port=su_getport(to);
-		n = tcp_conn_get(id,&ip, port, PROTO_HEP_TCP, &c, &fd);
+		n = tcp_conn_get(id,&ip, port, PROTO_HEP_TCP, NULL, &c, &fd);
 	} else if (id) {
-		n = tcp_conn_get(id, 0, 0, PROTO_NONE, &c, &fd);
+		n = tcp_conn_get(id, 0, 0, PROTO_NONE, NULL, &c, &fd);
 	} else {
 		LM_CRIT("tcp_send called with null id & to\n");
 		return -1;
@@ -719,6 +738,8 @@ static int hep_tcp_send (struct socket_info* send_sock,
 			if (n==0) {
 				/* mark the ID of the used connection (tracing purposes) */
 				last_outgoing_tcp_id = c->id;
+				send_sock->last_local_real_port = c->rcv.dst_port;
+				send_sock->last_remote_real_port = c->rcv.src_port;
 				/* connect is still in progress, break the sending
 				 * flow now (the actual write will be done when
 				 * connect will be completed */
@@ -758,6 +779,8 @@ static int hep_tcp_send (struct socket_info* send_sock,
 
 			/* mark the ID of the used connection (tracing purposes) */
 			last_outgoing_tcp_id = c->id;
+			send_sock->last_local_real_port = c->rcv.dst_port;
+			send_sock->last_remote_real_port = c->rcv.src_port;
 
 			/* we successfully added our write chunk - success */
 			tcp_conn_release(c, 0);
@@ -795,6 +818,8 @@ send_it:
 
 	/* mark the ID of the used connection (tracing purposes) */
 	last_outgoing_tcp_id = c->id;
+	send_sock->last_local_real_port = c->rcv.dst_port;
+	send_sock->last_remote_real_port = c->rcv.src_port;
 
 	tcp_conn_release(c, (n<len)?1:0/*pending data in async mode?*/ );
 
@@ -841,7 +866,7 @@ static void hep_parse_headers(struct tcp_req *req){
 	}
 }
 
-int tcp_read(struct tcp_connection *c,struct tcp_req *r) {
+static int _tcp_read(struct tcp_connection *c,struct tcp_req *r) {
 	int bytes_free, bytes_read;
 	int fd;
 
@@ -864,6 +889,7 @@ again:
 		} else if (errno == ECONNRESET) {
 			c->state=S_CONN_EOF;
 			LM_DBG("EOF on %p, FD %d\n", c, fd);
+			bytes_read = 0;
 		} else {
 			LM_ERR("error reading: %s\n",strerror(errno));
 			r->error=TCP_READ_ERROR;
@@ -970,7 +996,7 @@ static inline int hep_handle_req(struct tcp_req *req,
 
 		/* skip receive msg if we were told so from at least one callback */
 		if ( ret != HEP_SCRIPT_SKIP ) {
-			if ( receive_msg(msg_buf, msg_len, &local_rcv, ctx) <0 ) {
+			if ( receive_msg(msg_buf, msg_len, &local_rcv, ctx, 0) <0 ) {
 				LM_ERR("receive_msg failed \n");
 			}
 		} else {
@@ -987,6 +1013,8 @@ static inline int hep_handle_req(struct tcp_req *req,
 			 * we can free it now */
 			pkg_free(req);
 		}
+
+		con->msg_attempts = 0;
 
 		if (size) {
 			memmove(req->buf, req->parsed, size);
@@ -1079,7 +1107,7 @@ static int hep_tcp_read_req(struct tcp_connection* con, int* bytes_read)
 		if (req->parsed < req->pos){
 			bytes=0;
 		} else {
-			bytes=tcp_read(con,req);
+			bytes=_tcp_read(con,req);
 			if (bytes < 0) {
 				LM_ERR("failed to read \n");
 				goto error;
@@ -1193,11 +1221,7 @@ static int hep_udp_read_req(struct socket_info *si, int* bytes_read)
 {
 	struct receive_info ri;
 	int len;
-#ifdef DYN_BUF
-	char* buf;
-#else
 	static char buf [BUF_SIZE+1];
-#endif
 	unsigned int fromlen;
 	str msg;
 
@@ -1206,14 +1230,6 @@ static int hep_udp_read_req(struct socket_info *si, int* bytes_read)
 	int ret = 0;
 
 	context_p ctx=NULL;
-
-#ifdef DYN_BUF
-	buf=pkg_malloc(BUF_SIZE+1);
-	if (buf==0){
-		LM_ERR("could not allocate receive buffer\n");
-		goto error;
-	}
-#endif
 
 	fromlen=sockaddru_len(si->su);
 	len=recvfrom(bind_address->socket, buf, BUF_SIZE,0,&ri.src_su.s,&fromlen);
@@ -1317,7 +1333,7 @@ static int hep_udp_read_req(struct socket_info *si, int* bytes_read)
 
 	if (ret != HEP_SCRIPT_SKIP) {
 		/* receive_msg must free buf too!*/
-		receive_msg( msg.s, msg.len, &ri, ctx);
+		receive_msg( msg.s, msg.len, &ri, ctx, 0);
 	} else {
 		if ( ctx ) {
 			context_free( ctx );

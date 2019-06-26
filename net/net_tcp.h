@@ -43,15 +43,20 @@ void tcp_destroy(void);
 /* checks if the TCP layer may provide async write support */
 int tcp_has_async_write(void);
 
-/* creates the communication channel between a generic OpenSIPS process
+
+/* creates the communication channel between the OpenSIPS processes
    and the TCP MAIN process - TO BE called before forking */
-int tcp_pre_connect_proc_to_tcp_main( int proc_no );
+int tcp_create_comm_proc_socks( int proc_no);
+
+/* activates the communication channel between the OpenSIPS process
+   and the TCP MAIN process - TO BE called before forking */
+int tcp_activate_comm_proc_socks( int proc_no );
 
 /* same as above, but to be called after forking, both in child and parent */
 void tcp_connect_proc_to_tcp_main( int proc_no, int chid );
 
 /* tells how many processes the TCP layer will create */
-int tcp_count_processes(void);
+int tcp_count_processes(unsigned int *extra);
 
 /* starts all TCP worker processes */
 int tcp_start_processes(int *chd_rank, int *startup_done);
@@ -59,8 +64,11 @@ int tcp_start_processes(int *chd_rank, int *startup_done);
 /* starts the TCP listening process */
 int tcp_start_listener(void);
 
+void tcp_reset_worker_slot(void);
+
 /* MI function to list all existing TCP connections */
-struct mi_root *mi_tcp_list_conns(struct mi_root *cmd, void *param);
+mi_response_t *mi_tcp_list_conns(const mi_params_t *params,
+							struct mi_handler *async_hdl);
 
 
 /************************* TCP net helper functions **************************/
@@ -75,11 +83,15 @@ int tcp_init_sock_opt(int s);
 int tcp_connect_blocking(int s, const struct sockaddr *servaddr,
 		socklen_t addrlen);
 
+/* blocking connect on a non-blocking socket with timeout */
+int tcp_connect_blocking_timeout(int s, const struct sockaddr *servaddr,
+		socklen_t addrlen, int timeout);
+
 /********************** TCP conn management functions ************************/
 
 /* returns the connection identified by either the id or the destination to */
 int tcp_conn_get(int id, struct ip_addr* ip, int port, enum sip_protos proto,
-		struct tcp_connection** conn, int* conn_fd);
+		void *proto_extra_id, struct tcp_connection** conn, int* conn_fd);
 
 /* creates a new tcp conn around a newly connected socket
  * and sends it to the master */
@@ -93,7 +105,7 @@ struct tcp_connection* tcp_conn_new(int sock, union sockaddr_union* su,
 /* sends a connected connection to the master */
 int tcp_conn_send(struct tcp_connection *con);
 
-/* release a connection aquired via tcp_conn_get() or tcp_conn_create() */
+/* release a connection acquired via tcp_conn_get() or tcp_conn_create() */
 void tcp_conn_release(struct tcp_connection* c, int pending_data);
 
 /* destroys a connection before sending it to main */

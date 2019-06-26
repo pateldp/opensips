@@ -97,7 +97,7 @@ int trans_load(void)
 			}
 			found_proto = 1;
 			/* check if there is any listener for this protocol */
-			if (!protos[pi.id].listeners) {
+			if (!proto_has_listeners(pi.id)) {
 				LM_DBG("No listener defined for proto %s\n", pi.name);
 				continue;
 			}
@@ -127,7 +127,7 @@ int trans_load(void)
 #undef PROTO_PREFIX_LEN
 
 
-int add_listener(struct socket_id *sock, enum si_flags flags)
+int add_listener(struct socket_id *sock)
 {
 	/*
 	 * XXX: using the new version, the protocol _MUST_ be specified
@@ -142,8 +142,7 @@ int add_listener(struct socket_id *sock, enum si_flags flags)
 	}
 
 	/* convert to socket_info */
-	if (new_sock2list(sock->name, sock->port, sock->proto, sock->adv_name, sock->adv_port,
-			sock->children, flags, &protos[proto].listeners) < 0) {
+	if (new_sock2list(sock, &protos[proto].listeners) < 0) {
 		LM_ERR("cannot add socket to the list\n");
 		return -1;
 	}
@@ -175,7 +174,7 @@ int fix_cmd_listeners(void)
 	for (si = cmd_listeners; si;) {
 		if (si->proto == PROTO_NONE)
 			si->proto = PROTO_UDP;
-		if (add_listener(si, 0) < 0)
+		if (add_listener(si) < 0)
 			LM_ERR("Cannot add socket <%s>, skipping...\n", si->name);
 		prev = si;
 		si = si->next;
@@ -193,45 +192,6 @@ int fix_all_socket_lists(void)
 	int found = 0;
 	static char buf[PROTO_NAME_MAX_SIZE /* currently we shouldn't hardcode that much */];
 	char *p;
-#if 0
-	/* TODO: decide what to do with this */
-	struct utsname myname;
-
-	if ((udp_listen==0)
-			&& (tcp_listen==0)
-			&& (tls_listen==0)
-			&& (sctp_listen==0)
-		){
-		/* get all listening ipv4 interfaces */
-		if (add_interfaces(0, AF_INET, 0,  PROTO_UDP, &udp_listen)==0){
-			/* if ok, try to add the others too */
-			if (!tcp_disable){
-				if (add_interfaces(0, AF_INET, 0,  PROTO_TCP, &tcp_listen)!=0)
-					goto error;
-				if (!tls_disable){
-					if (add_interfaces(0, AF_INET, 0, PROTO_TLS,
-								&tls_listen)!=0)
-					goto error;
-				}
-			}
-			if (!sctp_disable){
-				if (add_interfaces(0, AF_INET, 0, PROTO_SCTP, &sctp_listen)!=0)
-					goto error;
-			}
-		}else{
-			/* if error fall back to get hostname */
-			/* get our address, only the first one */
-			if (uname (&myname) <0){
-				LM_ERR("cannot determine hostname, try -l address\n");
-				goto error;
-			}
-			if (add_listen_iface(myname.nodename, 0, 0, 0, 0, 0, 0)!=0){
-				LM_ERR("add_listen_iface failed \n");
-				goto error;
-			}
-		}
-	}
-#endif
 
 	for (i = PROTO_FIRST; i < PROTO_LAST; i++) {
 		if (protos[i].id != PROTO_NONE) {
@@ -241,7 +201,7 @@ int fix_all_socket_lists(void)
 			}
 
 			found++;
-		} else if (protos[i].listeners) {
+		} else if (proto_has_listeners(i)) {
 			p = proto2str(i, buf);
 			if (p == NULL)
 				goto error;
@@ -253,10 +213,11 @@ int fix_all_socket_lists(void)
 		}
 	}
 
-	if (!found){
+	if (!found && !testing_framework) {
 		LM_ERR("no listening sockets\n");
 		goto error;
 	}
+
 	return 0;
 error:
 	return -1;
@@ -281,7 +242,8 @@ int trans_init_all_listeners(void)
 				if ((si->address.af==AF_INET) &&
 				(!protos[i].sendipv4 || (protos[i].sendipv4->flags&SI_IS_LO)))
 					protos[i].sendipv4=si;
-				if (!protos[i].sendipv6 && (si->address.af==AF_INET6))
+				if ((si->address.af==AF_INET6) &&
+				(!protos[i].sendipv6 || (protos[i].sendipv6->flags&SI_IS_LO)))
 					protos[i].sendipv6=si;
 			}
 
@@ -299,8 +261,9 @@ void print_all_socket_lists(void)
 			continue;
 
 		for (si = protos[i].listeners; si; si = si->next)
-			printf("             %s: %s [%s]:%s%s\n", protos[i].name,
+			printf("             %s: %s [%s]:%s%s%s\n", protos[i].name,
 					si->name.s, si->address_str.s, si->port_no_str.s,
-					si->flags & SI_IS_MCAST ? " mcast" : "");
+					si->flags & SI_IS_MCAST ? " mcast" : "",
+					is_anycast(si)? " anycast" : "");
 	}
 }

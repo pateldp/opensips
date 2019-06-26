@@ -5,7 +5,7 @@
 
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	  <title>Overview</title>
 	    <para> 
 		The module enable &osips; to register itself on a remote SIP registrar.
@@ -30,7 +30,7 @@
 	    </para>
 	    <para>
 	    Each registrant has it's own state.
-	    Registranr's status can be inspected via "reg_list" MI comand.
+	    Registrant's status can be inspected via "reg_list" MI comand.
 	    </para>
 	    <para>
 		UAC registrant states:
@@ -75,11 +75,21 @@
 				- REGISTRAR_ERROR_STATE -
 				error reply received from the registrar;</para>
 			</listitem>
+			<listitem>
+			<para><emphasis>8</emphasis>
+				- UNREGISTERING_STATE - waiting for a reply from the registrar
+				after an unREGISTER without authentication header was sent;</para>
+			</listitem>
+			<listitem>
+			<para><emphasis>9</emphasis>
+				- AUTHENTICATING_UNREGISTER_STATE - waiting for a reply from the registrar
+				after an unREGISTER with authentication header was sent;</para>
+			</listitem>
 		</itemizedlist>
 	    </para>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	  <title>Dependencies</title>
 	  <section>
 	  <title>&osips; Modules</title>
@@ -101,9 +111,9 @@
 	  </section>
 	</section>
 	
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-        <section>
+        <section id="param_hash_size" xreflabel="hash_size">
 		<title><varname>hash_size</varname> (integer)</title>
 		<para>
 		The size of the hash table internally used to keep the registrants.
@@ -124,7 +134,8 @@ modparam("uac_registrant", "hash_size", 2)
 </programlisting>
 		</example>
 	</section>
-        <section>
+
+	<section id="param_timer_interval" xreflabel="timer_interval">
 		<title><varname>timer_interval</varname> (integer)</title>
 		<para>
 		Defines the periodic timer for checking the registrations status.
@@ -144,7 +155,33 @@ modparam("uac_registrant", "timer_interval", 120)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_enable_clustering" xreflabel="enable_clustering">
+		<title><varname>enable_clustering</varname> (integer)</title>
+		<para>
+		This parameter enables the clustering support in the module. This is
+		used to share this registration between all the nodes in the cluster.
+		When using this option, you should define (for each registrant record)
+		a sharing tag - this sharing tag will control at the cluster level
+		which node is entitled to perform the registation (only the node having
+		that tag as active will do the registation, the onther nodes being
+		idle).
+		</para>
+		<para>
+		<emphasis>
+			Default value is 0 / off.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>enable_clustering</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("uac_registrant", "enable_clustering", 1)
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="param_db_url" xreflabel="db_url">
 		<title><varname>db_url</varname> (string)</title>
 		<para>
 		Database where to load the registrants from.
@@ -164,7 +201,7 @@ modparam("uac_registrant", "db_url", "mysql://user:passw@localhost/database")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_table_name" xreflabel="table_name">
 		<title><varname>table_name</varname> (string)</title>
 		<para>
 		The database table that holds the registrant records.
@@ -183,7 +220,7 @@ modparam("uac_registrant", "table_name", "my_registrant")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_registrar_column" xreflabel="registrar_column">
 		<title><varname>registrar_column</varname> (string)</title>
 		<para>
 		The column's name in the database storing the
@@ -204,7 +241,7 @@ modparam("uac_registrant", "registrar_column", "registrant_uri")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_proxy_column" xreflabel="proxy_column">
 		<title><varname>proxy_column</varname> (string)</title>
 		<para>
 		The column's name in the database storing the
@@ -226,7 +263,7 @@ modparam("uac_registrant", "proxy_column", "proxy_uri")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_aor_column" xreflabel="aor_column">
 		<title><varname>aor_column</varname> (string)</title>
 		<para>
 		The column's name in the database storing the
@@ -248,7 +285,7 @@ modparam("uac_registrant", "aor_column", "to_uri")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_third_party_registrant_column" xreflabel="third_party_registrant_column">
 		<title><varname>third_party_registrant_column</varname> (string)</title>
 		<para>
 		The column's name in the database storing the
@@ -272,7 +309,7 @@ modparam("uac_registrant", "third_party_registrant_column", "from_uri")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_username_column" xreflabel="username_column">
 		<title><varname>username_column</varname> (string)</title>
 		<para>
 		The column's name in the database storing the
@@ -292,7 +329,7 @@ modparam("uac_registrant", "username_column", "auth_username")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_password_column" xreflabel="password_column">
 		<title><varname>password_column</varname> (string)</title>
 		<para>
 		The column's name in the database storing the
@@ -312,7 +349,7 @@ modparam("uac_registrant", "password_column", "auth_passowrd")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_binding_URI_column" xreflabel="binding_URI_column">
 		<title><varname>binding_URI_column</varname> (string)</title>
 		<para>
 		The column's name in the database storing the
@@ -334,14 +371,26 @@ modparam("uac_registrant", "binding_URI_column", "contact_uri")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_binding_params_column" xreflabel="binding_params_column">
 		<title><varname>binding_params_column</varname> (string)</title>
 		<para>
 		The column's name in the database storing the
 		binding params in REGISTER (not mandatory field).
 		If not NULL or not empty, the string stored here will be added
 		as params to the Contact URI in REGISTER (it MUST start with <quote>;</quote>.
-		There is no validation on the string stored here.
+		</para>
+		<para>
+		If the following two params are present, then the binding will be enforced
+		to be unique (if two bindings are received in a 200ok, a complete binding
+		removal will be performed before re-registering):
+		<itemizedlist>
+		<listitem><para><emphasis>reg-id</emphasis></para></listitem>
+		<listitem><para><emphasis>+sip.instance</emphasis></para></listitem>
+		</itemizedlist>
+		Example of params that will force unique binding:
+		<programlisting format="linespecific">
+;reg-id=1;+sip.instance=&quot;&lt;urn:uuid:11111111-AABBCCDDEEFF&gt;&quot;
+		</programlisting>
 		</para>
 		<para>
 		<emphasis>
@@ -358,7 +407,7 @@ modparam("uac_registrant", "binding_params_column", "contact_params")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_expiry_column" xreflabel="expiry_column">
 		<title><varname>expiry_column</varname> (string)</title>
 		<para>
 		The column's name in the database storing the
@@ -379,7 +428,7 @@ modparam("uac_registrant", "expiry_column", "registration_timeout")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_forced_socket_column" xreflabel="forced_socket_column">
 		<title><varname>forced_socket_column</varname> (string)</title>
 		<para>
 		The column's name in the database storing the
@@ -402,35 +451,57 @@ modparam("uac_registrant", "forced_socket_column", "fs")
 </programlisting>
 		</example>
 	</section>
+
+	<section id="param_cluster_shtag_column" xreflabel="cluster_shtag_column">
+		<title><varname>cluster_shtag_column</varname> (string)</title>
+		<para>
+		The column's name in the database storing the
+		cluster sharing tag in [tag_name/cluster_id] format (not mandatory).
+		If a cluster sharing tag is provided, the REGISTER requests will
+		be fired out only when the tag is active.
+		</para>
+		<para>
+		<emphasis>
+			Default value is <quote>cluster_shtag</quote>.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <quote>cluster_shtag_column</quote> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("uac_registrant", "cluster_shtag_column", "sh")
+...
+</programlisting>
+		</example>
 	</section>
 
-	<section>
+	</section>
+
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
 	      <para>None to be used in configuration file.</para>
 	</section>
 
-	<section>
+	<section id="exported_mi_functions" xreflabel="Exported MI Functions">
 	<title>Exported MI Functions</title>
-	<section>
+	<section id="mi_reg_list" xreflabel="reg_list">
 	<title><function moreinfo="none">reg_list</function></title>
 		<para>Lists the registrant records and their status.</para>
 		<para>Name: <emphasis>reg_list</emphasis></para>
 		<para>Parameters: <emphasis>none</emphasis></para>
 		<para>MI FIFO Command Format:</para>
 		<programlisting  format="linespecific">
-:reg_list:_reply_fifo_file_
-_empty_line_
+opensips-cli -x mi reg_list
 		</programlisting>
 	</section>
-	<section>
+	<section id="mi_reg_reload" xreflabel="reg_reload">
 	<title><function moreinfo="none">reg_reload</function></title>
 		<para>Reloads the registrant records from the database.</para>
 		<para>Name: <emphasis>reg_reload</emphasis></para>
 		<para>Parameters: <emphasis>none</emphasis></para>
 		<para>MI FIFO Command Format:</para>
 		<programlisting  format="linespecific">
-:reg_reload:_reply_fifo_file_
-_empty_line_
+opensips-cli -x mi reg_reload
 		</programlisting>
 	</section>
 	</section>

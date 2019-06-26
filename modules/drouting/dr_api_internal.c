@@ -92,7 +92,7 @@ static dr_head_p create_dr_head(void)
 	/* data pointer in shm */
 	new->pt = shm_malloc(sizeof (ptree_t));
 	if (new->pt == NULL) {
-		LM_ERR ("no more shm memory");
+		LM_ERR("no more shm memory\n");
 		shm_free(new);
 		return NULL;
 	}
@@ -170,12 +170,14 @@ static int add_rule_api(dr_head_p partition,unsigned int rid,
 	rule->attrs.s = (char*) attr;
 
 	if (prefix->len) {
-		if ( add_prefix(partition->pt, prefix, rule, gr_id)!=0 ) {
+		if ( add_prefix(partition->pt, prefix, rule, gr_id,
+				shm_malloc_func, shm_free_func)!=0 ) {
 			LM_ERR("failed to add prefix route\n");
 			return -1;
 		}
 	} else {
-		if ( add_rt_info( &partition->noprefix, rule, gr_id)!=0 ) {
+		if ( add_rt_info( &partition->noprefix, rule, gr_id,
+				shm_malloc_func, shm_free_func)!=0 ) {
 			LM_ERR("failed to add prefixless route\n");
 			return -1;
 		}

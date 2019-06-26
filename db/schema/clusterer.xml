@@ -9,7 +9,7 @@
 
 <table id="clusterer" xmlns:db="http://docbook.org/ns/docbook">
     <name>clusterer</name>
-    <version>3</version>
+    <version>4</version>
     <type db="mysql">&MYSQL_TABLE_TYPE;</type>
     <description>
         <db:para>This table is used for defining clusters of OpenSIPS instances.
@@ -52,7 +52,7 @@
         <type>int</type>
         <size>1</size>
         <default>1</default>
-        <description>state of the  machine 0 - Enabled, 1 - Disabled</description>
+        <description>state of the  machine 1 - Enabled, 0 - Disabled</description>
     </column>
 
     <column id="no_ping_retries">
@@ -77,6 +77,14 @@
         <size>64</size>
         <null/>
         <description>SIP address, currently not used by the module</description>
+    </column>
+
+    <column id="flags">
+        <name>flags</name>
+        <type>string</type>
+        <size>64</size>
+        <null/>
+        <description>Node flags: "seed" - node automatically considered to be synchronized</description>
     </column>
 
     <column id="description">

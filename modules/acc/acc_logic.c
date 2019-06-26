@@ -45,12 +45,12 @@
 #include "acc_mod.h"
 #include "acc_logic.h"
 #include "acc_extra.h"
+#include "acc_vars.h"
 
 extern struct tm_binds tmb;
 extern struct rr_binds rrb;
 extern str flags_str;
 extern str table_str;
-extern str acc_ctx_str;
 extern str extra_str;
 extern str leg_str;
 extern str created_str;
@@ -60,6 +60,7 @@ extern int acc_created_avp_id;
 
 extern int acc_flags_ctx_idx;
 extern int acc_tm_flags_ctx_idx;
+extern int acc_dlg_ctx_idx;
 
 extern tag_t* extra_tags;
 extern int extra_tgs_len;
@@ -117,9 +118,6 @@ static int is_cdr_enabled=0;
 		is_aaa_failed_on(_mask) || is_db_failed_on(_mask) ||        \
 		is_evi_failed_on(_mask))
 
-#define set_dialog_context(_mask) \
-	(_mask) |= ACC_DIALOG_CONTEXT;
-
 #define is_dialog_context(_mask) ((_mask)&ACC_DIALOG_CONTEXT)
 
 #define set_cdr_values_registered(_mask) \
@@ -128,17 +126,36 @@ static int is_cdr_enabled=0;
 #define set_dlg_cb_used(_mask) \
 	(_mask) |= ACC_DLG_CB_USED;
 
-#define set_failure_cb_registered(_mask) \
-	(_mask) |= ACC_TMCB_MISSED_REGISTERED;
-
 #define was_dlg_cb_used(_mask) (_mask&ACC_DLG_CB_USED)
 
 #define cdr_values_registered(_mask) ((_mask)&ACC_CDR_REGISTERED)
 
-#define failure_cb_registered(_mask) ((_mask)&ACC_TMCB_MISSED_REGISTERED)
+#define acc_ref_unsafe(_ctx, _val) (_ctx)->ref_no += (_val)
 
+#define acc_ref_ex(_ctx, _val) \
+	do { \
+		accX_lock(&(_ctx)->lock); \
+		acc_ref_unsafe(_ctx, _val); \
+		accX_unlock(&(_ctx)->lock); \
+	} while(0)
 
+#define acc_unref_ex(_ctx, _val) \
+	do { \
+		accX_lock(&(_ctx)->lock); \
+		acc_ref_unsafe(_ctx, -(_val)); \
+		if ((_ctx)->ref_no == 0) {\
+			accX_unlock(&(_ctx)->lock); \
+			free_acc_ctx(_ctx); \
+		} else { \
+			if ((_ctx)->ref_no < 0) \
+				LM_BUG("ref=%d ctx=%p gone negative! (%s:%d)\n", \
+						(_ctx)->ref_no, (_ctx), __FILE__, __LINE__); \
+			accX_unlock(&(_ctx)->lock); \
+		} \
+	} while(0)
 
+#define acc_ref(_ctx) acc_ref_ex(_ctx, 1)
+#define acc_unref(_ctx) acc_unref_ex(_ctx, 1)
 
 #define reset_flags(_flags, _flags_to_reset) \
 	_flags &= ~_flags_to_reset;
@@ -148,53 +165,19 @@ static int is_cdr_enabled=0;
 	(((_rq)->REQ_METHOD==METHOD_CANCEL) && report_cancels==0)
 
 
-/*
- * the 8th byte of the mask will be a reference counter for dialog callbacks
- * each time we enter a diallog callback(acc_dlg_callback) the reference counter shall
- * be increased
- * each time we enter a dialog callback free function(dlg_free_acc_mask) the refernce
- * counter shall be decreased
- * when the counter reaches 0 the mask shall be freed */
-#define ACC_MASK_INC_REF(mask) \
-	do { \
-		mask = mask + (0x100000000000000); \
-	} while (0);
-
-#define ACC_MASK_DEC_REF(mask) \
-	do { \
-		if (was_dlg_cb_used(mask)) { \
-			if (!(mask&0xFF00000000000000)) { \
-				LM_BUG("More subtractions than additions in acc mask!\n"); \
-				return; \
-			} \
-			mask = mask - (0x100000000000000); \
-		} \
-	} while (0);
-
-/* read the value of the 8th byte as a char type value */
-#define ACC_MASK_GET_REF(mask) (mask >> (8*7))
-
-/* just for debugging purposes
- * read the value of the flags without the ref counter to know
- * that the actual flags value is not altered */
-#define ACC_MASK_GET_VALUE(mask) (mask & 0x00FFFFFFFFFFFFFF)
-
-
-
 static void tmcb_func( struct cell* t, int type, struct tmcb_params *ps );
-static void acc_dlg_callback(struct dlg_cell *dlg, int type,
+static void acc_dlg_ended(struct dlg_cell *dlg, int type,
 		struct dlg_cb_params *_params);
-static void acc_dlg_onshutdown(struct dlg_cell *dlg, int type,
+static void acc_dlg_onwrite(struct dlg_cell *dlg, int type,
 		struct dlg_cb_params *_params);
 static void acc_cdr_cb( struct cell* t, int type, struct tmcb_params *ps );
 
-static inline void free_extra_array(tag_t* tags, int tags_len,
-											extra_value_t* array)
+static inline void free_extra_array(extra_value_t* array, int array_len)
 {
 	int i;
 
-	for (i=0; i < tags_len; i++) {
-		if (array[i].shm_buf_len)
+	for (i=0; i < array_len; i++) {
+		if (array[i].value.s)
 			shm_free(array[i].value.s);
 	}
 	shm_free(array);
@@ -203,71 +186,26 @@ static inline void free_extra_array(tag_t* tags, int tags_len,
 static inline void free_acc_ctx(acc_ctx_t* ctx)
 {
 	int i;
+	struct dlg_cell *dlg;
 
 	if (ctx->extra_values)
-		free_extra_array(extra_tags, extra_tgs_len, ctx->extra_values);
+		free_extra_array(ctx->extra_values, extra_tgs_len);
+
 	if (ctx->leg_values) {
 		for (i=0; i<ctx->legs_no; i++) {
-			free_extra_array(leg_tags, leg_tgs_len, ctx->leg_values[i]);
+			free_extra_array(ctx->leg_values[i], leg_tgs_len);
 		}
 		shm_free(ctx->leg_values);
 	}
 	if (ctx->acc_table.s)
 		shm_free(ctx->acc_table.s);
-
-
 	shm_free(ctx);
+
+	/* also cleanup dialog */
+	dlg = dlg_api.get_dlg ? dlg_api.get_dlg() : NULL;
+	if (dlg)
+		dlg_api.dlg_ctx_put_ptr(dlg, acc_dlg_ctx_idx, NULL);
 }
-
-void dlg_free_acc_ctx(void* param) {
-	acc_ctx_t* ctx=param;
-	/*
-	 * decrease the number of references to the shm memory pointer
-	 * the free functions are executed sequentially so we know that this operation
-	 * is atomic
-	 **/
-	ACC_MASK_DEC_REF(ctx->flags);
-	LM_DBG("flags[%p] ref counter value after dereferencing[%llu]\n",
-				param,
-				ACC_MASK_GET_REF(ctx->flags));
-
-	/*
-	 * if the reference counter gets to 0 we can free
-	 * the shm pointer
-	 * */
-	if (ACC_MASK_GET_REF(ctx->flags) == 0) {
-		free_acc_ctx(ctx);
-	}
-}
-
-void tm_free_acc_ctx(void* param) {
-	acc_ctx_t* ctx = param;
-
-
-	if (!is_dialog_context(ctx->flags)) {
-		free_acc_ctx(ctx);
-
-		/* there are some cases when this function is called on the initial
-		 * INVITE, so we won't be able free this context from dialog; also
-		 * this callback will be called before processing context destroy
-		 * function, causing a double free so we need to stop the processing
-		 * context from freeing this pointer */
-		if (current_processing_ctx)
-			ACC_PUT_CTX(NULL);
-	}
-}
-
-/* free function for processing context
- * will free only if ACC_PROCESSING_CTX_NO_FREE flag not set */
-void free_processing_acc_ctx(void* param)
-{
-	acc_ctx_t* ctx = param;
-
-	if (ctx && !(ctx->flags&ACC_PROCESSING_CTX_NO_FREE)) {
-		free_acc_ctx(ctx);
-	}
-}
-
 
 static inline struct hdr_field* get_rpl_to( struct cell *t,
 														struct sip_msg *reply)
@@ -281,7 +219,6 @@ static inline struct hdr_field* get_rpl_to( struct cell *t,
 acc_ctx_t* try_fetch_ctx(void)
 {
 	acc_ctx_t* ret=NULL;
-	str ctx_s;
 
 	struct cell* t;
 	struct dlg_cell* dlg;
@@ -290,47 +227,39 @@ acc_ctx_t* try_fetch_ctx(void)
 	t = t==T_UNDEFINED ? NULL : t;
 
 
-	if ((ret=ACC_GET_CTX) == NULL) {
+	if ((ret = ACC_GET_CTX()) == NULL) {
 		t = tmb.t_gett ? tmb.t_gett() : NULL;
 		t = (t==T_UNDEFINED) ? NULL : t;
 		dlg = dlg_api.get_dlg ? dlg_api.get_dlg() : NULL;
 
-		/* search the flags in transaction context */
+		/* search for the context in transaction context */
 		if (t && (ret=ACC_GET_TM_CTX(t))==NULL) {
-			/* try fetching the context from dialog  only if dialog exists */
-			if ( !dlg ||
-				 (dlg &&
-					dlg_api.fetch_dlg_value(dlg, &acc_ctx_str, &ctx_s, 0) < 0)) {
-				/* can't find the flags anywhere */
+			/* try fetching the context from dialog only if dialog exists */
+			if (!dlg)
 				return NULL;
-			} else { /* found them in dialog; set in the processing context
-					  * and in the transaction */
-				/* set the flags in transaction and processing context */
-				memcpy(&ret, ctx_s.s, sizeof(acc_ctx_t *));
+			ret = dlg_api.dlg_ctx_get_ptr(dlg, acc_dlg_ctx_idx);
+			if (!ret)
+				/* can't find the context anywhere */
+				return NULL;
 
-				ACC_PUT_TM_CTX(t, ret);
-				ACC_PUT_CTX(ret);
-			}
-		} else if (ret) { /* we have the flags in transaction */
-			/* in transaction; put them in dialog(if possible) and in processing context */
+			acc_ref_ex(ret, 2);
+			ACC_PUT_TM_CTX(t, ret);
 			ACC_PUT_CTX(ret);
-			if (dlg) {
-				ctx_s.s = (char *)&ret;
-				ctx_s.len = sizeof(acc_ctx_t *);
-			}
-		} else if (dlg) { /* no (flags in) transaction; search only in dialog*/
-			if (dlg_api.fetch_dlg_value(dlg, &acc_ctx_str, &ctx_s, 0) < 0) {
-				/* can't find the flags anywhere */
+		} else if (ret) { /* we have the context in transaction */
+			/* in transaction; put them in dialog(if possible) and in processing context */
+			acc_ref(ret);
+			ACC_PUT_CTX(ret);
+		} else if (dlg) { /* no (context in) transaction; search only in dialog*/
+			ret = dlg_api.dlg_ctx_get_ptr(dlg, acc_dlg_ctx_idx);
+			if (!ret)
+				/* can't find the context anywhere */
 				return NULL;
-			} else {
-				/* found them in dialog; set in processing context */
-				memcpy(&ret, ctx_s.s, sizeof(acc_ctx_t *));
-
-				ACC_PUT_CTX(ret);
-				if (t) {
-					ACC_PUT_TM_CTX(t, ret);
-				}
-			}
+			if (t) {
+				acc_ref_ex(ret, 2); /* ref twice - for local and tm ctx */
+				ACC_PUT_TM_CTX(t, ret);
+			} else
+				acc_ref(ret); /* ref only once, for local ctx */
+			ACC_PUT_CTX(ret);
 		}
 	}
 
@@ -395,14 +324,14 @@ static inline int acc_preparse_req(struct sip_msg *req)
 
 
 
-int w_acc_log_request(struct sip_msg *rq, pv_elem_t* comment, char *foo)
+int w_acc_log_request(struct sip_msg *rq, str* comment)
 {
 	struct acc_param accp;
 
 	if (acc_preparse_req(rq)<0)
 		return -1;
 
-	acc_pvel_to_acc_param(rq, comment, &accp);
+	acc_comm_to_acc_param(rq, comment, &accp);
 
 	env_set_to( rq->to );
 	env_set_comment( &accp );
@@ -412,7 +341,7 @@ int w_acc_log_request(struct sip_msg *rq, pv_elem_t* comment, char *foo)
 }
 
 
-int w_acc_aaa_request(struct sip_msg *rq, pv_elem_t* comment, char* foo)
+int w_acc_aaa_request(struct sip_msg *rq, str* comment)
 {
 	struct acc_param accp;
 
@@ -424,7 +353,7 @@ int w_acc_aaa_request(struct sip_msg *rq, pv_elem_t* comment, char* foo)
 	if (acc_preparse_req(rq)<0)
 		return -1;
 
-	acc_pvel_to_acc_param(rq, comment, &accp);
+	acc_comm_to_acc_param(rq, comment, &accp);
 
 	env_set_to( rq->to );
 	env_set_comment( &accp );
@@ -433,10 +362,9 @@ int w_acc_aaa_request(struct sip_msg *rq, pv_elem_t* comment, char* foo)
 }
 
 
-int w_acc_db_request(struct sip_msg *rq, pv_elem_t* comment, char *table)
+int w_acc_db_request(struct sip_msg *rq, str* comment, str *table)
 {
 	struct acc_param accp;
-	int table_len;
 
 	if (!table) {
 		LM_ERR("db support not configured\n");
@@ -446,33 +374,31 @@ int w_acc_db_request(struct sip_msg *rq, pv_elem_t* comment, char *table)
 	if (acc_preparse_req(rq)<0)
 		return -1;
 
-	table_len = strlen(table);
-
-	acc_pvel_to_acc_param(rq, comment, &accp);
+	acc_comm_to_acc_param(rq, comment, &accp);
 
 	env_set_to( rq->to );
 	env_set_comment( &accp );
-	env_set_text(table, table_len);
+	env_set_text(table->s, table->len);
 
-	if (table_len == db_table_mc.len && (strncmp(table, db_table_mc.s, table_len) == 0)) {
+	if (str_strcmp(table, &db_table_mc) == 0) {
 		return acc_db_request(rq, NULL, &mc_ins_list, 0);
 	}
 
-	if (table_len == db_table_acc.len && (strncmp(table, db_table_acc.s, table_len) == 0)) {
+	if (str_strcmp(table, &db_table_acc) == 0) {
 		return acc_db_request(rq, NULL, &acc_ins_list, 0);
 	}
 
 	return acc_db_request( rq, NULL,NULL, 0);
 }
 
-int w_acc_evi_request(struct sip_msg *rq, pv_elem_t* comment, char *foo)
+int w_acc_evi_request(struct sip_msg *rq, str* comment)
 {
 	struct acc_param accp;
 
 	if (acc_preparse_req(rq)<0)
 		return -1;
 
-	acc_pvel_to_acc_param(rq, comment, &accp);
+	acc_comm_to_acc_param(rq, comment, &accp);
 
 	env_set_to( rq->to );
 	env_set_comment( &accp );
@@ -498,21 +424,15 @@ int w_acc_evi_request(struct sip_msg *rq, pv_elem_t* comment, char *foo)
 	return acc_evi_request( rq, NULL, 0);
 }
 
-int acc_pvel_to_acc_param(struct sip_msg* rq, pv_elem_t* pv_el, struct acc_param* accp)
+int acc_comm_to_acc_param(struct sip_msg* rq, str* comm, struct acc_param* accp)
 {
-	str buf;
-	if(pv_printf_s(rq, pv_el, &buf) < 0) {
-		LM_ERR("Cannot parse comment\n");
-		return 1;
-	}
+	accp->reason = *comm;
 
-	accp->reason = buf;
-
-	if (accp->reason.len>=3 && isdigit((int)buf.s[0])
-	&& isdigit((int)buf.s[1]) && isdigit((int)buf.s[2]) ) {
+	if (accp->reason.len>=3 && isdigit((int)comm->s[0])
+	&& isdigit((int)comm->s[1]) && isdigit((int)comm->s[2]) ) {
 		/* reply code is in the comment string */
-		accp->code = (buf.s[0]-'0')*100 + (buf.s[1]-'0')*10 + (buf.s[2]-'0');
-		accp->code_s.s = buf.s;
+		accp->code = (comm->s[0]-'0')*100 + (comm->s[1]-'0')*10 + (comm->s[2]-'0');
+		accp->code_s.s = comm->s;
 		accp->code_s.len = 3;
 		accp->reason.s += 3;
 		accp->reason.len -= 3;
@@ -575,9 +495,12 @@ static inline void acc_onreply_in(struct cell *t, struct sip_msg *req,
 {
 	/* don't parse replies in which we are not interested */
 	/* missed calls enabled ? */
-	if ( (reply && reply!=FAKED_REPLY)
+	if (reply
+			&& reply != FAKED_REPLY
 			&& (should_acc_reply(req,reply,code, &ctx->flags)
-	|| (is_invite(t) && code>=300 && is_mc_acc_on(ctx->flags))) ) {
+				|| (is_invite(t)
+					&& code >= 300
+					&& is_mc_acc_on(ctx->flags)))) {
 		parse_headers(reply, HDR_TO_F, 0 );
 	}
 }
@@ -649,20 +572,85 @@ static inline void on_missed(struct cell *t, struct sip_msg *req,
 
 }
 
+/*
+ * This mid-dialog request callback ensures that any extra/leg settings done
+ * at script level before dialog matching is performed will get properly
+ * transferred into the dialog context, once the dialog is matched
+ */
+static void acc_merge_contexts(struct dlg_cell *dlg, int type,
+		struct dlg_cb_params *_params)
+{
+	acc_ctx_t *ctx;
+
+	/* if there is already a acc context in the processing
+	 * context, be sure to destroy it for now */
+	if ((ctx = ACC_GET_CTX())) {
+		push_ctx_to_ctx( ctx, (acc_ctx_t *)(*_params->param));
+		acc_unref(ctx); /* unref it now beause it will disapear from local ctx */
+	}
+
+	ctx = (acc_ctx_t *)(*_params->param);
+	acc_ref(ctx);
+	ACC_PUT_CTX(ctx);
+}
+
 
 /* restore callbacks */
+void acc_update_ctx_callback(struct dlg_cell *dlg, int type,
+			struct dlg_cb_params *_params)
+{
+	str flags_s;
+	acc_ctx_t* ctx = (acc_ctx_t *)(*_params->param);
+	unsigned long long flags;
+
+	if (!dlg) {
+		LM_ERR("null dialog - cannot fetch message flags\n");
+		return;
+	}
+
+	/* check if the ctx exists in the dialog */
+	if (!ctx) {
+		LM_DBG("there's no dialog ctx created before - can't do anything\n");
+		return;
+	}
+
+	flags_s.s = (char *)&flags;
+	flags_s.len = sizeof(flags);
+	if (dlg_api.fetch_dlg_value(dlg, &flags_str, &flags_s, 1) < 0) {
+		LM_DBG("flags were not saved in dialog\n");
+		return;
+	}
+	ctx->flags = flags;
+
+	if (restore_dlg_extra_ctx(dlg, ctx)) {
+		LM_ERR("failed to rebuild acc context!\n");
+		return;
+	}
+}
+
 void acc_loaded_callback(struct dlg_cell *dlg, int type,
 			struct dlg_cb_params *_params) {
-		str flags_s, ctx_s, table_s;
+		str flags_s, table_s, created_s;
 		acc_ctx_t* ctx;
+		time_t created;
+		unsigned long long flags;
 
 		if (!dlg) {
 			LM_ERR("null dialog - cannot fetch message flags\n");
 			return;
 		}
 
-		if (dlg_api.fetch_dlg_value(dlg, &flags_str, &flags_s, 0) < 0) {
+		flags_s.s = (char *)&flags;
+		flags_s.len = sizeof(flags);
+		if (dlg_api.fetch_dlg_value(dlg, &flags_str, &flags_s, 1) < 0) {
 			LM_DBG("flags were not saved in dialog\n");
+			return;
+		}
+
+		created_s.s = (char *)&created;
+		created_s.len = sizeof(created);
+		if (dlg_api.fetch_dlg_value(dlg, &created_str, &created_s, 1) < 0) {
+			LM_DBG("created time was not saved in dialog\n");
 			return;
 		}
 
@@ -675,7 +663,10 @@ void acc_loaded_callback(struct dlg_cell *dlg, int type,
 		}
 
 		/* copy flags value into the context */
-		memcpy(&ctx->flags, flags_s.s, flags_s.len);
+		ctx->flags = flags;
+
+		/* copy created value into the context */
+		ctx->created = created;
 
 		/* restore accounting table if db accounting is used */
 		if (is_db_acc_on(ctx->flags)) {
@@ -696,19 +687,33 @@ void acc_loaded_callback(struct dlg_cell *dlg, int type,
 
 
 		/* replace the context value with a good pointer */
-		ctx_s.s = (char *)&ctx;
-		ctx_s.len = sizeof(acc_ctx_t *);
-		if (dlg_api.store_dlg_value(dlg, &acc_ctx_str, &ctx_s) < 0) {
-			LM_ERR("failed to set new context value!\n");
+		dlg_api.dlg_ctx_put_ptr(dlg, acc_dlg_ctx_idx, ctx);
+
+		/* register database callbacks */
+		acc_ref_ex(ctx, 2);
+		if (dlg_api.register_dlgcb(dlg, DLGCB_TERMINATED |
+				DLGCB_EXPIRED, acc_dlg_ended, ctx, unref_acc_ctx)){
+			LM_ERR("cannot register callback for database accounting\n");
+			acc_unref_ex(ctx, 2);
 			return;
 		}
 
-		/* register database callbacks */
-		if (dlg_api.register_dlgcb(dlg, DLGCB_TERMINATED |
-				DLGCB_EXPIRED, acc_dlg_callback, ctx, dlg_free_acc_ctx)){
-			LM_ERR("cannot register callback for database accounting\n");
+		/* register dlg callbacks for ctx management */
+		if (dlg_api.register_dlgcb(dlg, DLGCB_REQ_WITHIN,
+				acc_merge_contexts, ctx, unref_acc_ctx) != 0) {
+			acc_unref(ctx); /* only one, the other one was successful */
+			LM_ERR("cannot register callback ctx management\n");
 			return;
 		}
+
+		/* register dlg callbacks for updating extra vars */
+		if (dlg_api.register_dlgcb(dlg, DLGCB_PROCESS_VARS,
+				acc_update_ctx_callback, ctx, NULL) != 0) {
+			acc_unref(ctx); /* only one, the other one was successful */
+			LM_ERR("cannot register callback ctx management\n");
+			return;
+		}
+
 }
 
 /* initiate a report if we previously enabled accounting for this t */
@@ -718,7 +723,6 @@ static inline void acc_onreply( struct cell* t, struct sip_msg *req,
 	str new_uri_bk;
 	str dst_uri_bk;
 	struct dlg_cell *dlg = NULL;
-	str ctx_s;
 	str table;
 
 	unsigned long long* flags = &ctx->flags;
@@ -764,34 +768,35 @@ static inline void acc_onreply( struct cell* t, struct sip_msg *req,
 			goto restore;
 		}
 
-		ctx_s.s = (char*)&ctx;
-		ctx_s.len = sizeof(acc_ctx_t *);
-
 		/* store context pointer into dialog */
-		if (dlg_api.store_dlg_value(dlg, &acc_ctx_str, &ctx_s) < 0) {
-			LM_ERR("cannot store context pointer into dlg val!\n");
-			goto restore;
-		}
+		dlg_api.dlg_ctx_put_ptr(dlg, acc_dlg_ctx_idx, ctx);
 
-		/* report that flags shall be freed only by dialog module
-		 * tm must never free it */
-		set_dialog_context(*flags);
-
-		/* register program shutdown callback
+		/* register callback for program shutdown or dialog replication
 		 * won't register free function since TERMINATED|EXPIRED callback
 		 * free function will be called to free */
-		if (dlg_api.register_dlgcb(dlg, DLGCB_DB_WRITE_VP,
-					acc_dlg_onshutdown, ctx, NULL) != 0) {
-			LM_ERR("cannot register callback for program shutdown!\n");
+		if (dlg_api.register_dlgcb(dlg, DLGCB_WRITE_VP,
+					acc_dlg_onwrite, ctx, NULL) != 0) {
+			LM_ERR("cannot register callback for context serialization\n");
 			goto restore;
 		}
 
 		/* register database callbacks */
+		acc_ref_ex(ctx, 2);
 		if (dlg_api.register_dlgcb(dlg, DLGCB_TERMINATED|DLGCB_EXPIRED,
-								acc_dlg_callback, ctx, dlg_free_acc_ctx) != 0) {
+								acc_dlg_ended, ctx, unref_acc_ctx) != 0) {
+			acc_unref_ex(ctx, 2);
 			LM_ERR("cannot register callback for database accounting\n");
 			goto restore;
 		}
+
+		/* register dlg callbacks for ctx management */
+		if (dlg_api.register_dlgcb(dlg, DLGCB_REQ_WITHIN,
+								acc_merge_contexts, ctx, unref_acc_ctx) != 0) {
+			acc_unref(ctx); /* only one, the other one was successful */
+			LM_ERR("cannot register callback ctx management\n");
+			goto restore;
+		}
+
 	} else {
 		/* do old accounting */
 		if ( is_evi_acc_on(*flags) ) {
@@ -821,7 +826,7 @@ restore:
 	}
 }
 
-static void acc_dlg_callback(struct dlg_cell *dlg, int type,
+static void acc_dlg_ended(struct dlg_cell *dlg, int type,
 		struct dlg_cb_params *_params)
 {
 	struct cell* t;
@@ -832,27 +837,18 @@ static void acc_dlg_callback(struct dlg_cell *dlg, int type,
 		return;
 	}
 
-	ctx = *_params->param;
-	ACC_PUT_CTX(ctx);
+	/* resolve local/dlg ctx conflict by merging them together */
+	acc_merge_contexts(dlg, type, _params);
+	ctx = (acc_ctx_t *)(*_params->param);
 
-	/**
-	 * we've read the value of the flags
-	 * increase the number of references to the shm memory pointer
-	 * we know that this operation is atomic since the dialog callbacks
-	 * are executed sequentially
-	 */
-	ACC_MASK_INC_REF(ctx->flags);
-	LM_DBG("flags[%p] ref counter value after referencing [%llu]\n",
-				*_params->param,
-				ACC_MASK_GET_REF(ctx->flags));
 	/*
 	 * this way we "enable" the refcount
 	 * if opensips shuts down before dialog terminated then the refcount
 	 * won't be enabled
 	 */
 	if (was_dlg_cb_used(ctx->flags)) {
-		LM_INFO("CDR callback already registered [%p|%llu] - do not run it again!\n",
-				*_params->param, ACC_MASK_GET_REF(ctx->flags));
+		LM_INFO("CDR callback already registered [%p|%u] - do not run it again!\n",
+				*_params->param, ctx->ref_no);
 		return;
 	}
 	set_dlg_cb_used(ctx->flags);
@@ -862,18 +858,20 @@ static void acc_dlg_callback(struct dlg_cell *dlg, int type,
 
 	/* if it's not a local transaction we do the accounting on the tm callbacks */
 	if (((t=tmb.t_gett()) == T_UNDEFINED) || !t ||
-			(t != NULL && !tmb.t_is_local(_params->msg))) {
+			!tmb.t_is_local(_params->msg)) {
 		/* normal dialogs will have to do accounting when the response for
 		 * the bye will come since users should be able to populate extra
 		 * vars and leg vars */
+		acc_ref(ctx);
 		if (tmb.register_tmcb( _params->msg, NULL,
-						TMCB_RESPONSE_OUT, acc_cdr_cb, ctx, 0) < 0) {
+						TMCB_RESPONSE_OUT, acc_cdr_cb, ctx, unref_acc_ctx) < 0) {
+			acc_unref(ctx);
 			LM_ERR("failed to register cdr callback!\n");
 			return;
 		}
 	/* for local transactions we do the accounting here since all the messages
 	 * have been processed */
-	} else if (t != NULL && tmb.t_is_local(_params->msg)) {
+	} else {
 		/* expired dialogs will be handled here */
 		if (is_log_acc_on(ctx->flags)) {
 			env_set_text( ACC_ENDED, ACC_ENDED_LEN);
@@ -908,7 +906,7 @@ static void acc_dlg_callback(struct dlg_cell *dlg, int type,
 }
 
 
-static void acc_dlg_onshutdown(struct dlg_cell *dlg, int type,
+static void acc_dlg_onwrite(struct dlg_cell *dlg, int type,
 		struct dlg_cb_params *_params)
 {
 	str flags_s;
@@ -1007,8 +1005,10 @@ static void tmcb_func( struct cell* t, int type, struct tmcb_params *ps )
 {
 	acc_ctx_t* ctx = *ps->param;
 
-	if (ACC_GET_TM_CTX(t) == NULL)
+	if (ACC_GET_TM_CTX(t) == NULL) {
+		acc_ref(ctx);
 		ACC_PUT_TM_CTX(t, ctx);
+	}
 
 	if (type&TMCB_RESPONSE_OUT) {
 		acc_onreply( t, ps->req, ps->rpl, ps->code, ctx);
@@ -1051,7 +1051,7 @@ static str do_acc_failed_s=str_init(DO_ACC_FAILED_STR);
 static inline
 unsigned long long do_acc_type_parser(str* token)
 {
-	str_trim_spaces_lr(*token);
+	trim(token);
 
 	if (token->len == do_acc_log_s.len &&
 			!strncasecmp(token->s, do_acc_log_s.s, token->len)) {
@@ -1066,7 +1066,7 @@ unsigned long long do_acc_type_parser(str* token)
 			!strncasecmp(token->s, do_acc_evi_s.s, token->len)) {
 		return DO_ACC_EVI;
 	} else {
-		LM_ERR("Invalid token <%.*s>!\n", token->len, token->s);
+		LM_ERR("invalid accounting backend: <%.*s>!\n", token->len, token->s);
 		return DO_ACC_ERR;
 	}
 }
@@ -1079,7 +1079,7 @@ unsigned long long do_acc_type_parser(str* token)
 static inline
 unsigned long long do_acc_flags_parser(str* token)
 {
-	str_trim_spaces_lr(*token);
+	trim(token);
 
 	if (token->len == do_acc_cdr_s.len &&
 			!strncasecmp(token->s, do_acc_cdr_s.s, token->len)) {
@@ -1098,6 +1098,8 @@ unsigned long long do_acc_flags_parser(str* token)
 					LM_ERR("cannot register callback for dialog loaded - accounting "
 							"for ongoing calls will be lost after restart\n");
 
+			acc_dlg_ctx_idx = dlg_api.dlg_ctx_register_ptr(NULL);
+
 			is_cdr_enabled=1;
 		}
 
@@ -1110,6 +1112,7 @@ unsigned long long do_acc_flags_parser(str* token)
 			!strncasecmp(token->s, do_acc_failed_s.s, token->len)) {
 		return DO_ACC_FAILED;
 	} else {
+		LM_ERR("invalid flag: <%.*s>!\n", token->len, token->s);
 		return DO_ACC_ERR;
 	}
 }
@@ -1118,8 +1121,7 @@ unsigned long long do_acc_flags_parser(str* token)
 static unsigned long long
 do_acc_parse(str* in, do_acc_parser parser)
 {
-
-	char* found=NULL;
+	char *found;
 	str token;
 
 	unsigned long long fret=0, ret;
@@ -1133,7 +1135,7 @@ do_acc_parse(str* in, do_acc_parser parser)
 			token.s = in->s;
 			token.len = found - in->s;
 
-			in->len -= (found - in->s) + 1;
+			in->len -= token.len + 1;
 			in->s = found + 1;
 		} else {
 			token = *in;
@@ -1150,113 +1152,54 @@ do_acc_parse(str* in, do_acc_parser parser)
 	return fret;
 }
 
-
-int do_acc_fixup(void** param, int param_no)
+int _do_acc_fixup(void **param, do_acc_parser parser)
 {
-	str s;
-	pv_elem_p el;
+	unsigned long long *ival;
 
-	unsigned long long ival;
-	unsigned long long* ival_p;
+	ival = pkg_malloc(sizeof *ival);
+	if (!ival) {
+		LM_ERR("No more pkg mem!\n");
+		return E_OUT_OF_MEM;
+	}
 
-	acc_type_param_t* acc_param;
-
-	do_acc_parser parser;
-
-	if (param_no < 1 || param_no > 3) {
-		LM_ERR("invalid param_no <%d>!\n", param_no);
+	if ((*ival = do_acc_parse((str*)*param, parser)) == DO_ACC_ERR) {
+		LM_ERR("Invalid value <%.*s>!\n", ((str*)*param)->len, ((str*)*param)->s);
 		return -1;
 	}
 
-	switch (param_no) {
-	case 1:
-		parser=do_acc_type_parser;
-		s.s = *param;
-		s.len = strlen(s.s);
-
-		if (pv_parse_format(&s, &el) < 0) {
-			LM_ERR("invalid format <%.*s>!\n", s.len, s.s);
-			return -1;
-		}
-
-		acc_param=pkg_malloc(sizeof(acc_type_param_t));
-		if (acc_param == NULL) {
-			LM_ERR("no more pkg mem!\n");
-			return -1;
-		}
-
-		memset(acc_param, 0, sizeof(acc_type_param_t));
-
-		if (el->next == 0 && el->spec.getf == 0) {
-			pv_elem_free_all(el);
-			if ( (ival=do_acc_parse(&el->text, parser)) == DO_ACC_ERR) {
-				LM_ERR("Invalid value <%.*s>!\n", el->text.len, el->text.s);
-				return -1;
-			}
-
-			acc_param->t = DO_ACC_PARAM_TYPE_VALUE;
-			acc_param->u.ival = ival;
-		} else {
-			acc_param->t = DO_ACC_PARAM_TYPE_PV;
-			acc_param->u.pval = el;
-		}
-
-		*param = acc_param;
-
-		break;
-
-	case 2:
-		parser=do_acc_flags_parser;
-		s.s = *param;
-		s.len = strlen(s.s);
-
-		if ( (ival=do_acc_parse(&s, parser)) == DO_ACC_ERR) {
-			LM_ERR("Invalid value <%.*s>!\n", s.len, s.s);
-			return -1;
-		}
-
-		if ((ival_p=pkg_malloc(sizeof(unsigned long long))) == NULL) {
-			LM_ERR("no more pkg mem!\n");
-			return -1;
-		}
-
-		*ival_p = ival;
-
-		*param = ival_p;
-		break;
-	case 3:
-		return fixup_sgp(param);
-	}
-
+	*param = ival;
 	return 0;
 }
 
-static inline int store_acc_table(acc_ctx_t* ctx, str* table) {
+int do_acc_fixup_type(void **param)
+{
+	return _do_acc_fixup(param, do_acc_type_parser);
+}
+
+int do_acc_fixup_flags(void **param)
+{
+	return _do_acc_fixup(param, do_acc_flags_parser);
+}
+
+int do_acc_fixup_free_ival(void **param)
+{
+	pkg_free(*param);
+	return 0;
+}
+
+static inline int store_acc_table(acc_ctx_t* ctx, str* table)
+{
 	if (ctx == NULL || table == NULL || table->s == NULL || table->len == 0) {
 		LM_ERR("bad usage!\n");
 		return -1;
 	}
 
-	if (ctx->acc_table.s && ctx->acc_table.len) {
-		if (table->len > ctx->acc_table.len) {
-			ctx->acc_table.s = shm_realloc(ctx->acc_table.s, table->len * sizeof(char));
-			if (ctx->acc_table.s == NULL)
-				goto memerr;
-		}
-	} else {
-		ctx->acc_table.s = shm_malloc(table->len * sizeof(char));
-		if (ctx->acc_table.s == NULL)
-			goto memerr;
+	if (shm_str_sync(&ctx->acc_table, table) != 0) {
+		LM_ERR("oom\n");
+		return -1;
 	}
 
-	memcpy(ctx->acc_table.s, table->s, table->len);
-	ctx->acc_table.len = table->len;
-
 	return 0;
-
-memerr:
-	LM_ERR("no more shm!\n");
-	return -1;
 }
 
 int init_acc_ctx(acc_ctx_t** ctx_p)
@@ -1279,53 +1222,38 @@ int init_acc_ctx(acc_ctx_t** ctx_p)
 
 	/* init extra s array */
 	if (extra_tags != NULL &&
-			build_acc_extra_array(extra_tags, extra_tgs_len,
-									&ctx->extra_values) < 0) {
+			build_acc_extra_array(extra_tgs_len, &ctx->extra_values) < 0) {
 		LM_ERR("failed to build extra values array!\n");
 		return -1;
 	}
 
 
-	if (leg_tags != NULL && expand_legs(ctx) < 0) {
+	if (leg_tags != NULL && push_leg(ctx) < 0) {
 		LM_ERR("failed to build extra values array!\n");
 		return -1;
 	}
+	acc_ref_unsafe(ctx, 1);
+	ACC_PUT_CTX(ctx);
 
 	*ctx_p = ctx;
 	return 0;
 
 }
 
-
-int w_do_acc_1(struct sip_msg* msg, char* type)
+void unref_acc_ctx(void *ctx)
 {
-	return w_do_acc_3(msg, type, NULL, NULL);
+	acc_unref((acc_ctx_t *)ctx);
 }
 
-int w_do_acc_2(struct sip_msg* msg, char* type, char* flags)
+int w_do_acc(struct sip_msg* msg, unsigned long long *type,
+			unsigned long long *flags, str *table_name)
 {
-	return w_do_acc_3(msg, type, flags, NULL);
-}
-
-int w_do_acc_3(struct sip_msg* msg, char* type_p, char* flags_p, char* table_p)
-{
-	unsigned long long type=0, flags=0;
 	unsigned long long flag_mask;
 
 	acc_ctx_t* acc_ctx;
 
-	acc_type_param_t* acc_param;
-
-	str in;
-	str table_name;
-
 	int tmcb_types;
 	int is_invite;
-
-	if (type_p == NULL) {
-		LM_ERR("accounting type is mandatory!\n");
-		return -1;
-	}
 
 	if (!msg) {
 		LM_ERR("no SIP message\n");
@@ -1338,33 +1266,7 @@ int w_do_acc_3(struct sip_msg* msg, char* type_p, char* flags_p, char* table_p)
 		return 1;
 	}
 
-	acc_param = (acc_type_param_t *)type_p;
-	if (acc_param->t == DO_ACC_PARAM_TYPE_VALUE) {
-		type = acc_param->u.ival;
-	} else {
-		if (pv_printf_s(msg, acc_param->u.pval, &in) < 0) {
-			LM_ERR("failed to fetch type value!\n");
-			return -1;
-		}
-
-		if ((type=do_acc_parse(&in, do_acc_type_parser)) == DO_ACC_ERR) {
-			LM_ERR("Invalid expression <%.*s> for acc type!\n", in.len, in.s);
-			return -1;
-		}
-	}
-
-	if (table_p != NULL) {
-		if (fixup_get_svalue(msg, (gparam_p)table_p, &table_name) < 0) {
-			LM_ERR("failed to fetch table name!\n");
-			return -1;
-		}
-	}
-
-	if (flags_p != NULL) {
-		flags= *(unsigned long long*)flags_p;
-	}
-
-	flag_mask = type + type * flags;
+	flag_mask = *type + *type * (flags ? *flags : 0);
 	if (is_cdr_acc_on(flag_mask)) {
 		/* setting this flag will allow us to register everything
 		 * that is needed for CDR accounting only once */
@@ -1383,13 +1285,12 @@ int w_do_acc_3(struct sip_msg* msg, char* type_p, char* flags_p, char* table_p)
 		/* do_accounting already called once */
 		/* first check if the accounting table changed  */
 		if (is_db_acc_on(flag_mask) &&
-				(table_p != NULL ||
-				(acc_ctx->acc_table.s==NULL && acc_ctx->acc_table.len == 0))) {
-			if (table_p == NULL) {
-				table_name = db_table_acc;
+				(table_name != NULL || ZSTR(acc_ctx->acc_table))) {
+			if (table_name == NULL) {
+				table_name = &db_table_acc;
 			}
 
-			if (store_acc_table( acc_ctx, &table_name) < 0) {
+			if (store_acc_table( acc_ctx, table_name) < 0) {
 				LM_ERR("failed to store acc table!\n");
 				return -1;
 			}
@@ -1409,17 +1310,6 @@ int w_do_acc_3(struct sip_msg* msg, char* type_p, char* flags_p, char* table_p)
 			}
 		}
 
-		/* if it's the first time the missed calls flag was used register the callback */
-		if (is_mc_acc_on(flag_mask) && !failure_cb_registered(acc_ctx->flags)) {
-			if (tmb.register_tmcb( msg, 0, TMCB_ON_FAILURE, tmcb_func, acc_ctx, 0)<=0) {
-				LM_ERR("cannot register missed calls callback\n");
-				return -1;
-			}
-
-			/* don't allow the callback to be registered agian in the future */
-			set_failure_cb_registered(acc_ctx->flags);
-		}
-
 		acc_ctx->flags |= flag_mask;
 		return 1;
 	}
@@ -1432,11 +1322,11 @@ int w_do_acc_3(struct sip_msg* msg, char* type_p, char* flags_p, char* table_p)
 
 	/* move acc table in context if we have database accounting */
 	if (is_db_acc_on(flag_mask)) {
-		if (table_p == NULL) {
-			table_name = db_table_acc;
+		if (table_name == NULL) {
+			table_name = &db_table_acc;
 		}
 
-		if (store_acc_table( acc_ctx, &table_name) < 0) {
+		if (store_acc_table( acc_ctx, table_name) < 0) {
 			LM_ERR("failed to store acc table!\n");
 			return -1;
 		}
@@ -1452,10 +1342,6 @@ int w_do_acc_3(struct sip_msg* msg, char* type_p, char* flags_p, char* table_p)
 	 */
 	acc_ctx->flags = flag_mask;
 
-	/* make sure that context won't be freed by GLOBAL_CONTEXT free function */
-	acc_ctx->flags |= ACC_PROCESSING_CTX_NO_FREE;
-	ACC_PUT_CTX(acc_ctx);
-
 	if (is_acc_on(acc_ctx->flags) || is_mc_acc_on(acc_ctx->flags)) {
 		/* do some parsing in advance */
 		if (acc_preparse_req(msg)<0)
@@ -1464,18 +1350,9 @@ int w_do_acc_3(struct sip_msg* msg, char* type_p, char* flags_p, char* table_p)
 		/* install additional handlers */
 		tmcb_types =
 			/* report on completed transactions */
-			TMCB_RESPONSE_IN;
-
-		if (is_invite && is_mc_acc_on(acc_ctx->flags)) {
-			/* register it manually; see explanation below
-			 * get incoming replies ready for processing */
-			/* TMCB_RESPONSE_OUT | */
+			TMCB_RESPONSE_IN|TMCB_RESPONSE_OUT
 			/* report on missed calls */
-			tmcb_types |= TMCB_ON_FAILURE;
-			/* the flag will help on further do_accounting calls to know
-			 * not to register the callback twice */
-			set_failure_cb_registered(acc_ctx->flags);
-		}
+			|TMCB_ON_FAILURE;
 
 		/* if cdr accounting is enabled */
 		if (is_cdr_acc_on(acc_ctx->flags) && !has_totag(msg)) {
@@ -1487,17 +1364,11 @@ int w_do_acc_3(struct sip_msg* msg, char* type_p, char* flags_p, char* table_p)
 			}
 		}
 
-		/* we do register_tmcb twice because we want to register the free
-		 * function only once */
-		if (tmb.register_tmcb( msg, 0, TMCB_RESPONSE_OUT, tmcb_func,
-				acc_ctx, tm_free_acc_ctx)<=0) {
-			LM_ERR("cannot register additional callbacks\n");
-			return -1;
-		}
-
+		acc_ref(acc_ctx);
 		if (tmb.register_tmcb( msg, 0, tmcb_types, tmcb_func,
-				acc_ctx, 0)<=0) {
+				acc_ctx, unref_acc_ctx)<=0) {
 			LM_ERR("cannot register additional callbacks\n");
+			acc_unref(acc_ctx);
 			return -1;
 		}
 
@@ -1511,28 +1382,12 @@ int w_do_acc_3(struct sip_msg* msg, char* type_p, char* flags_p, char* table_p)
 	return 1;
 }
 
-/* reset all flags */
-int w_drop_acc_0(struct sip_msg* msg) {
-	return w_drop_acc_2(msg, NULL, NULL);
-}
-
-int w_drop_acc_1(struct sip_msg* msg, char* type)
+int w_drop_acc(struct sip_msg* msg, unsigned long long *type,
+			unsigned long long *flags)
 {
-	return w_drop_acc_2(msg, type, NULL);
-}
-
-int w_drop_acc_2(struct sip_msg* msg, char* type_p, char* flags_p)
-{
-	unsigned long long type=0;
-	/* if not set, we reset all flags for the type of accounting requested */
-	unsigned long long flags=ALL_ACC_FLAGS;
 	unsigned long long flag_mask;
 
-	acc_type_param_t* acc_param;
-
 	acc_ctx_t* acc_ctx=try_fetch_ctx();
-
-	str in;
 
 	if (acc_ctx == NULL) {
 		LM_ERR("do_accounting() not used! This function resets flags in "
@@ -1540,41 +1395,10 @@ int w_drop_acc_2(struct sip_msg* msg, char* type_p, char* flags_p)
 		return -1;
 	}
 
-	if (type_p != NULL) {
-		acc_param = (acc_type_param_t *)type_p;
-		if (acc_param->t == DO_ACC_PARAM_TYPE_VALUE) {
-			type = acc_param->u.ival;
-		} else {
-			if (pv_printf_s(msg, acc_param->u.pval, &in) < 0) {
-				LM_ERR("failed to fetch type value!\n");
-				return -1;
-			}
+	flag_mask = (type ? *type : DO_ACC_LOG | DO_ACC_AAA | DO_ACC_DB | DO_ACC_EVI) *
+		(flags ? *flags : ALL_ACC_FLAGS);
 
-			if ((type=do_acc_parse(&in, do_acc_type_parser)) == DO_ACC_ERR) {
-				LM_ERR("Invalid expression <%.*s> for acc type!\n", in.len, in.s);
-				return -1;
-			}
-		}
-	}
-
-	if (flags_p != NULL) {
-		flags= *(unsigned long long*)flags_p;
-	}
-
-	flag_mask = type * flags;
-
-	/* reset all flags */
-	if (flag_mask == 0) {
-		/*
-		 * we use this flag in order make the difference between
-		 * 0 value (do_accounting never called, callbacks never registered) and
-		 * ACC_FLAGS_RESET (do_accounting called, callbacks registered, flag value
-		 * changing during script execution)
-		 */
-		acc_ctx->flags = ACC_FLAGS_RESET;
-	} else {
-		reset_flags(acc_ctx->flags, flag_mask);
-	}
+	reset_flags(acc_ctx->flags, flag_mask);
 
 	return 1;
 }
@@ -1589,12 +1413,10 @@ int w_new_leg(struct sip_msg* msg)
 			LM_ERR("failed to create accounting context!\n");
 			return -1;
 		}
-
-		ACC_PUT_CTX(ctx);
 	}
 
 	accX_lock(&ctx->lock);
-	if (expand_legs(ctx) < 0) {
+	if (push_leg(ctx) < 0) {
 		LM_ERR("failed to create new leg!\n");
 		accX_unlock(&ctx->lock);
 		return -1;

@@ -19,11 +19,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  *
- * History
- * -------
- *  2014-07-08  initial version (Andrei Datcu)
 */
 
 
@@ -85,20 +82,10 @@ int_list_t *set_list_from_pvs(struct sip_msg *msg, pv_spec_t *pvs, int_list_t *e
 void free_int_list(int_list_t *start, int_list_t *end);
 int in_int_list(int_list_t *list, int val);
 
-int fixup_get_partition(struct sip_msg *msg, const gpartition_t *gpart,
-		ds_partition_t **partition);
-int fixup_get_partition_set(struct sip_msg *msg, const ds_param_t *param,
-		ds_partition_t **partition, unsigned int *uset);
-int fixup_partition_sets(void **param);
-int fixup_partition_one_set(void **param);
-int fixup_int_list(void **param);
-
-int ds_next_fixup(void **param, int param_no);
-int ds_mark_fixup(void **param, int param_no);
-int in_list_fixup(void** param, int param_no);
-int ds_select_fixup(void** param, int param_no);
-int ds_count_fixup(void** param, int param_no);
 int fixup_flags(str* param);
+int fixup_ds_flags(void** param);
 int set_list_from_string(str input, int_list_t **result);
+int fixup_ds_part(void **param);
+int fixup_ds_count_filter(void **param);
 
 #endif

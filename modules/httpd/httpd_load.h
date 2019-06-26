@@ -32,6 +32,7 @@
 enum HTTPD_CONTENT_TYPE {
 	HTTPD_UNKNOWN_CNT_TYPE = -1,
 	HTTPD_STD_CNT_TYPE = 0,
+	HTTPD_TEXT_HTML_TYPE,
 	HTTPD_TEXT_XML_CNT_TYPE,
 	HTTPD_APPLICATION_JSON_CNT_TYPE
 };
@@ -49,11 +50,9 @@ enum HTTPD_CONTENT_TYPE {
  * @param url the requested url after http_root was skipped
  * @param method the HTTP method used ("GET", "PUT", etc.)
  * @param version the HTTP version string (i.e. "HTTP/1.1")
- * @param upload_data the data being uploaded
- * @param upload_data_size set initially to the size of the
- *                         upload_data provided; the method
- *                         must update this value to the
- *                         number of bytes NOT processed;
+ * @param upload_data the data being uploaded (for POST data in
+ *                    key-value format, use lookup_arg() instead)
+ * @param upload_data_size size of the data being uploaded
  * @param con_cls pointer that the callback can set to some
  *                address and that will be preserved by
  *                httpd for future calls for this request
@@ -66,7 +65,7 @@ enum HTTPD_CONTENT_TYPE {
  */
 typedef int (httpd_acces_handler_cb) (void *cls, void *connection, const char *url,
 				const char *method, const char *version,
-				const char *upload_data, size_t *upload_data_size,
+				const char *upload_data, size_t upload_data_size,
 				void **con_cls,
 				str *buffer, str *page, union sockaddr_union* cl_socket);
 
@@ -114,6 +113,7 @@ struct httpd_cb {
 	httpd_acces_handler_cb *callback;
 	httpd_flush_data_cb *flush_data_callback;
 	httpd_init_proc_cb *init_proc_callback;
+	enum HTTPD_CONTENT_TYPE type;
 	struct httpd_cb *next;
 };
 
@@ -131,6 +131,7 @@ int register_httpdcb(const char *mod, str *root_path,
 typedef int (*register_httpdcb_f)(const char *mod, str *root_path,
 			httpd_acces_handler_cb f1,
 			httpd_flush_data_cb f2,
+			enum HTTPD_CONTENT_TYPE type,
 			httpd_init_proc_cb f3);
 
 union sockaddr_union* httpd_get_server_info(void);
@@ -154,7 +155,7 @@ static inline int load_httpd_api(httpd_api_t *api)
 	load_httpd_f load_httpd;
 
 	/* import the httpd auto-loading functions */
-	if ( !(load_httpd=(load_httpd_f)find_export("httpd_bind", 1, 0)))
+	if ( !(load_httpd=(load_httpd_f)find_export("httpd_bind", 0)))
 		return -1;
 
 	/* let the auto-loading function load all httpd suuff */

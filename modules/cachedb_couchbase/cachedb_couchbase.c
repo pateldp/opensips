@@ -71,6 +71,7 @@ struct module_exports exports= {
 	MOD_TYPE_CACHEDB,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,			/* dlopen flags */
+	0,							/* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	0,						/* exported functions */
 	0,						/* exported async functions */
@@ -83,7 +84,8 @@ struct module_exports exports= {
 	mod_init,					/* module initialization function */
 	(response_function) 0,      /* response handling function */
 	(destroy_function)destroy,	/* destroy function */
-	child_init			        /* per-child init function */
+	child_init,					/* per-child init function */
+	0							/* reload confirm function */
 };
 
 
@@ -95,6 +97,7 @@ static int mod_init(void)
 	cachedb_engine cde;
 
 	LM_NOTICE("initializing module cachedb_couchbase ...\n");
+	memset(&cde, 0, sizeof cde);
 
 	cde.name = cache_mod_name;
 

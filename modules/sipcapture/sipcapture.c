@@ -237,37 +237,27 @@ static int mod_init(void);
 static int child_init(int rank);
 static void raw_socket_process(int rank);
 static void destroy(void);
-static int sip_capture(struct sip_msg *msg, char *s1,
-                       char *s2, char *s3, char *s4);
-static int async_sip_capture(struct sip_msg* msg, async_ctx *actx, char *s1,
-                             char *s2, char *s3, char *s4);
-static int sip_capture_fixup(void** param, int param_no);
-static int sip_capture_async_fixup(void** param, int param_no);
+static int cfg_validate(void);
+
+static int sip_capture(struct sip_msg *msg, char *table,
+                       str *cf1, str *cf2, str *cf3);
+static int async_sip_capture(struct sip_msg *msg, async_ctx *actx, char *table,
+                             str *cf1, str *cf2, str *cf3);
+static int sip_capture_fix_table(void** param);
+static int sip_capture_async_fix_table(void** param);
+static int fix_hep_value_type(void **param);
+static int fix_hep_name(void **param);
+static int fix_vendor_id(void **param);
 static int w_sip_capture(struct sip_msg *msg, char *table_name,
 		async_ctx *actx, str *cf1, str *cf2, str *cf3);
 
 
 static void set_rtcp_keys(void);
 
-static int rc_fixup_1(void** param, int param_no);
-static int rc_async_fixup_1(void** param, int param_no);
-
-static int rc_fixup(void** param, int param_no);
-static int rc_async_fixup(void** param, int param_no);
-
-
-static int w_report_capture_1(struct sip_msg* msg, char* cor_id_p);
-static int w_report_capture_2(struct sip_msg* msg, char* table_p, char* cor_id_p);
-static int w_report_capture_3(struct sip_msg* msg, char* table_p,
-		char* cor_id_p, char* proto_t_p);
-static int w_report_capture_async_1(struct sip_msg* msg,
-		async_ctx *actx, char* cor_id_p);
-static int w_report_capture_async_2(struct sip_msg* msg,
-		async_ctx *actx, char* table_p, char* cor_id_p);
-static int w_report_capture_async_3(struct sip_msg* msg,
-		async_ctx *actx, char* table_p, char* cor_id_p, char* proto_t_p);
-static int w_report_capture(struct sip_msg* msg, char* table_p, char* cor_id_p,
-		char* proto_t_p, async_ctx *actx);
+static int w_report_capture_async(struct sip_msg* msg, async_ctx *actx,
+                                  str* cor_id, void* table, int* proto_t);
+static int w_report_capture(struct sip_msg* msg, str* cor_id, void* table,
+                            int* proto_t, async_ctx* actx);
 
 int hep_msg_received(void);
 int extract_host_port(void);
@@ -276,7 +266,10 @@ int raw_capture_rcv_loop(int rsock, int port1, int port2, int ipip);
 int sipcapture_db_init(const str* db_url);
 void sipcapture_db_close(void);
 
-static struct mi_root* sip_capture_mi(struct mi_root* cmd, void* param );
+static mi_response_t *sip_capture_mi(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *sip_capture_mi_1(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 static int db_sync_store(db_val_t* vals, db_key_t* keys, int num_keys);
 
 typedef int (*append_db_vals_f)(char *buf, int max_len, db_val_t* db_vals);
@@ -290,26 +283,18 @@ db_async_store(db_val_t* vals, db_key_t* keys, int num_keys,
 int resume_async_dbquery(int fd, struct sip_msg *msg, void *_param);
 
 /* setter functions */
-static int set_hep_generic_fixup(void** param, int param_no);
-static int set_hep_fixup(void** param, int param_no);
-static int w_set_hep_generic(struct sip_msg* msg, char* id, char* data);
-static int w_set_hep(struct sip_msg* msg,  char* id, char* vid, char* data, char* type);
+static int w_set_hep(struct sip_msg* msg, void *id, str *data_s,
+                     void *type, void *vid);
 
 /* getter functions */
-static int get_hep_fixup(void** param, int param_no);
-static int get_hep_generic_fixup(void** param, int param_no);
-static int
-w_get_hep(struct sip_msg* msg, char* type, char* id, char* vid, char* data);
-static int
-w_get_hep_generic(struct sip_msg* msg, char* id, char* vid, char* data);
-
+static int w_get_hep(struct sip_msg* msg, void *_id, void *_type,
+                     pv_spec_p data_pv, pv_spec_p vendor_pv);
 
 static int parse_hep_route(char *val);
 
 
 /* remove chunk functions */
-static int del_hep_fixup(void** param, int param_no);
-static int w_del_hep(struct sip_msg* msg, char *id);
+static int w_del_hep(struct sip_msg* msg, void *id);
 
 static int pv_get_hep_net(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
@@ -523,52 +508,50 @@ static str hep_str={hepbuf, 0};
  * Exported functions
  */
 static cmd_export_t cmds[] = {
-	{"sip_capture", (cmd_function)sip_capture, 0, 0, 0,
+	{"sip_capture", (cmd_function)sip_capture, {
+		{CMD_PARAM_STR | CMD_PARAM_OPT, sip_capture_fix_table, 0},
+		{CMD_PARAM_STR | CMD_PARAM_OPT, 0, 0},
+		{CMD_PARAM_STR | CMD_PARAM_OPT, 0, 0},
+		{CMD_PARAM_STR | CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
 	        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"sip_capture", (cmd_function)sip_capture, 1, sip_capture_fixup, 0,
+	{"hep_set", (cmd_function)w_set_hep, {
+		{CMD_PARAM_STR, fix_hep_name, 0},
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_STR | CMD_PARAM_OPT, fix_hep_value_type, 0},
+		{CMD_PARAM_STR | CMD_PARAM_OPT, fix_vendor_id, 0}, {0, 0, 0}},
 	        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"sip_capture", (cmd_function)sip_capture, 2, sip_capture_fixup, 0,
+	{"hep_get", (cmd_function)w_get_hep, {
+		{CMD_PARAM_STR, fix_hep_name, 0},
+		{CMD_PARAM_STR, fix_hep_value_type, 0},
+		{CMD_PARAM_VAR | CMD_PARAM_OPT, 0, 0},
+		{CMD_PARAM_VAR | CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
 	        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"sip_capture", (cmd_function)sip_capture, 3, sip_capture_fixup, 0,
+	{"hep_del", (cmd_function)w_del_hep, {
+		{CMD_PARAM_STR, fix_hep_name, 0}, {0, 0, 0}},
 	        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"sip_capture", (cmd_function)sip_capture, 4, sip_capture_fixup, 0,
+	{"hep_relay", (cmd_function)w_hep_relay, {{0, 0, 0}},
 	        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"hep_set", (cmd_function)w_set_hep_generic, 2, set_hep_generic_fixup, 0,
-	        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"hep_set", (cmd_function)w_set_hep, 4, set_hep_fixup, 0,
-	        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"hep_get", (cmd_function)w_get_hep_generic, 3, get_hep_generic_fixup, 0,
-	        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"hep_get", (cmd_function)w_get_hep, 4, get_hep_fixup, 0,
-	        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"hep_get", (cmd_function)w_get_hep, 4, get_hep_fixup, 0,
-	        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"hep_del", (cmd_function)w_del_hep, 1, del_hep_fixup, 0,
-	        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"hep_relay", (cmd_function)w_hep_relay, 0, 0, 0,
-	        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"hep_resume_sip", (cmd_function)w_hep_resume_sip, 0, 0, 0,
+	{"hep_resume_sip", (cmd_function)w_hep_resume_sip, {{0, 0, 0}},
 	        REQUEST_ROUTE},
-	{"report_capture", (cmd_function)w_report_capture_1, 1, rc_fixup_1, 0,
-			REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"report_capture", (cmd_function)w_report_capture_2, 2, rc_fixup, 0,
-			REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"report_capture", (cmd_function)w_report_capture_3, 3, rc_fixup, 0,
-			REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{0, 0, 0, 0, 0, 0}
+	{"report_capture", (cmd_function)w_report_capture, {
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_STR | CMD_PARAM_OPT, sip_capture_fix_table, 0},
+		{CMD_PARAM_INT | CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
+	        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
+	{0, 0, {{0, 0, 0}}, 0}
 };
 
 static acmd_export_t acmds[] = {
-
-	{"sip_capture",    (acmd_function)async_sip_capture, 0, 0},
-	{"sip_capture",    (acmd_function)async_sip_capture, 1, sip_capture_async_fixup},
-	{"sip_capture",    (acmd_function)async_sip_capture, 2, sip_capture_async_fixup},
-	{"sip_capture",    (acmd_function)async_sip_capture, 3, sip_capture_async_fixup},
-	{"sip_capture",    (acmd_function)async_sip_capture, 4, sip_capture_async_fixup},
-	{"report_capture", (acmd_function)w_report_capture_async_1, 1, rc_async_fixup_1},
-	{"report_capture", (acmd_function)w_report_capture_async_2, 2, rc_async_fixup},
-	{"report_capture", (acmd_function)w_report_capture_async_3, 3, rc_async_fixup},
-	{0, 0, 0, 0}
+	{"sip_capture",    (acmd_function)async_sip_capture, {
+		{CMD_PARAM_STR | CMD_PARAM_OPT, sip_capture_async_fix_table, 0},
+		{CMD_PARAM_STR | CMD_PARAM_OPT, 0, 0},
+		{CMD_PARAM_STR | CMD_PARAM_OPT, 0, 0},
+		{CMD_PARAM_STR | CMD_PARAM_OPT, 0, 0}, {0, 0, 0}}},
+	{"report_capture", (acmd_function)w_report_capture_async, {
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_STR | CMD_PARAM_OPT, sip_capture_fix_table, 0},
+		{CMD_PARAM_INT | CMD_PARAM_OPT, 0, 0}, {0, 0, 0}}},
+	{0, 0, {{0, 0, 0}}}
 };
 
 static proc_export_t procs[] = {
@@ -641,10 +624,14 @@ static param_export_t params[] = {
  * MI commands
  */
 static mi_export_t mi_cmds[] = {
-	{ "sip_capture", 0, sip_capture_mi,   0,  0,  0 },
-	{ 0, 0, 0, 0, 0, 0}
+	{ "sip_capture", 0, 0, 0, {
+		{sip_capture_mi, {0}},
+		{sip_capture_mi_1, {"capture_mode", 0}},
+		{EMPTY_MI_RECIPE}
+		}
+	},
+	{EMPTY_MI_EXPORT}
 };
-
 
 #ifdef STATISTICS
 stat_var* sipcapture_req;
@@ -697,6 +684,7 @@ struct module_exports exports = {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /*!< dlopen flags */
+	0,				 /*!< load function */
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,       /*!< Exported functions */
 	acmds,          /*!< Exported async functions */
@@ -713,7 +701,8 @@ struct module_exports exports = {
 	mod_init,   /*!< module initialization function */
 	0,          /*!< response function */
 	destroy,    /*!< destroy function */
-	child_init  /*!< child initialization function */
+	child_init,  /*!< child initialization function */
+	cfg_validate /*!< reload confirm function */
 };
 
 static int parse_hep_route(char *val)
@@ -729,7 +718,8 @@ static int parse_hep_route(char *val)
 			strncasecmp(route_name.s, hep_sip_route.s, hep_sip_route.len ) == 0) {
 		hep_route_id = HEP_SIP_ROUTE;
 	} else {
-		hep_route_id=get_script_route_ID_by_name( route_name.s, rlist, RT_NO);
+		hep_route_id=get_script_route_ID_by_name( route_name.s,
+			sroutes->request, RT_NO);
 		if ( hep_route_id == -1 ) {
 			LM_ERR("route <%s> not defined!\n", route_name.s);
 			return -1;
@@ -778,7 +768,7 @@ static int mod_init(void) {
 	struct ip_addr *ip = NULL;
 
 	if (hep_capture_on) {
-		load_hep = (load_hep_f)find_export("load_hep", 1, 0);
+		load_hep = (load_hep_f)find_export("load_hep", 0);
 		if (!load_hep) {
 			LM_ERR("Can't bind proto hep!\n");
 			return -1;
@@ -1079,6 +1069,38 @@ error:
 	if(raw_sock_desc) close(raw_sock_desc);
 	return -1;
 #endif
+}
+
+
+static int cfg_validate(void)
+{
+	if (hep_capture_on) {
+		/* db_url is mandatory if sip_capture is used */
+		if (((is_script_func_used("sip_capture", -1) ||
+				is_script_async_func_used("sip_capture", -1)) ||
+				hep_route_id == HEP_NO_ROUTE) ||
+			(is_script_func_used("report_capture", -1) ||
+				is_script_async_func_used("report_capture", -1)))
+		{
+			if (db_funcs.insert==NULL) {
+				LM_ERR("sip_capture() found in new script, but the module "
+					"did not initalized the DB conn, better restart\n");
+				return 0;
+			}
+		}
+	} else {
+		if ((is_script_func_used("sip_capture", -1) ||
+				is_script_async_func_used("sip_capture", -1)))
+		{
+			if (db_funcs.insert==NULL) {
+				LM_ERR("sip_capture() found in new script, but the module "
+					"did not initalized the DB conn, better restart\n");
+				return 0;
+			}
+		}
+	}
+
+	return 1;
 }
 
 
@@ -1736,7 +1758,7 @@ static int pv_get_hep_net(struct sip_msg *msg, pv_param_t *param,
 
 	ctx = HEP_GET_CONTEXT(hep_api);
 	if (ctx == NULL) {
-		LM_ERR("Hep context not there!");
+		LM_ERR("Hep context not there!\n");
 		return -1;
 	}
 
@@ -1853,7 +1875,7 @@ static int pv_get_hep_version(struct sip_msg *msg, pv_param_t *param,
 
 	ctx = HEP_GET_CONTEXT(hep_api);
 	if (ctx == NULL) {
-		LM_ERR("Hep context not there!");
+		LM_ERR("Hep context not there!\n");
 		return -1;
 	}
 
@@ -2430,7 +2452,7 @@ int hep_msg_received(void)
 		set_route_type( REQUEST_ROUTE );
 
 		/* run given hep route */
-		run_top_route(rlist[hep_route_id].a, &dummy_req);
+		run_top_route( sroutes->request[hep_route_id].a, &dummy_req);
 
 		/* free possible loaded avps */
 		reset_avps();
@@ -2476,8 +2498,11 @@ static int fixup_tz_table(void** param,  struct tz_table_list** list)
 					tz_fxup_param->prefix.len) &&
 				!memcmp(it->table->suffix.s, tz_fxup_param->suffix.s,
 					tz_fxup_param->suffix.len))
+
 			/* table already there */
-			return 0;
+			pkg_free(tz_fxup_param);
+			*param = it->table;
+			return 1;
 	}
 
 	list_el = pkg_malloc(sizeof(struct tz_table_list));
@@ -2503,9 +2528,13 @@ static int fixup_tz_table(void** param,  struct tz_table_list** list)
 static int fixup_async_tz_table(void** param,  struct tz_table_list** list)
 {
 	struct tz_table_list* list_el;
+	int rc;
 
-	if (fixup_tz_table(param, list) < 0)
+	rc = fixup_tz_table(param, list);
+	if (rc < 0)
 		return -1;
+	if (rc > 0) /* table name already processed */
+		return 0;
 
 	list_el = *list;
 
@@ -2534,37 +2563,15 @@ shm_err:
 
 }
 
-static int sip_capture_fixup(void** param, int param_no)
+static int sip_capture_fix_table(void** param)
 {
-	switch (param_no) {
-	case 1:
-		return fixup_tz_table(param, &tz_list);
-	case 2:
-	case 3:
-	case 4:
-		return fixup_sgp(param);
-	default:
-		LM_ERR("Invalid param number!\n");
-		return -1;
-	}
+	return fixup_tz_table(param, &tz_list);
 }
 
-static int sip_capture_async_fixup(void** param, int param_no)
+static int sip_capture_async_fix_table(void** param)
 {
-	switch (param_no) {
-	case 1:
-		return fixup_async_tz_table(param, &tz_list);
-	case 2:
-	case 3:
-	case 4:
-		return fixup_sgp(param);
-	default:
-		LM_ERR("Invalid param number!\n");
-		return -1;
-	}
+	return fixup_async_tz_table(param, &tz_list);
 }
-
-
 
 
 static int sip_capture_prepare(struct sip_msg* msg)
@@ -3043,86 +3050,16 @@ static inline struct tz_table_list* search_table(tz_table_t* el, struct tz_table
 
 
 
-static int sip_capture(struct sip_msg *msg, char* s1,
-                       char* s2, char* s3, char* s4)
+static int sip_capture(struct sip_msg *msg, char *table,
+                       str *cf1, str *cf2, str *cf3)
 {
-	str st1, st2, st3, *cf1, *cf2, *cf3;
-
-	if (!s2) {
-		cf1 = NULL;
-	} else {
-		if (fixup_get_svalue(msg, (gparam_p)s2, &st1) < 0) {
-			LM_ERR("bad value for 'custom_field1'\n");
-			return -1;
-		}
-
-		cf1 = &st1;
-	}
-
-	if (!s3) {
-		cf2 = NULL;
-	} else {
-		if (fixup_get_svalue(msg, (gparam_p)s3, &st2) < 0) {
-			LM_ERR("bad value for 'custom_field2'\n");
-			return -1;
-		}
-
-		cf2 = &st2;
-	}
-
-	if (!s4) {
-		cf3 = NULL;
-	} else {
-		if (fixup_get_svalue(msg, (gparam_p)s4, &st3) < 0) {
-			LM_ERR("bad value for 'custom_field3'\n");
-			return -1;
-		}
-
-		cf3 = &st3;
-	}
-
-	return w_sip_capture(msg, s1, NULL, cf1, cf2, cf3);
+	return w_sip_capture(msg, table, NULL, cf1, cf2, cf3);
 }
 
-static int async_sip_capture(struct sip_msg* msg, async_ctx *actx, char *s1,
-                             char* s2, char* s3, char* s4)
+static int async_sip_capture(struct sip_msg *msg, async_ctx *actx, char *table,
+                             str *cf1, str *cf2, str *cf3)
 {
-	str st1, st2, st3, *cf1, *cf2, *cf3;
-
-	if (!s2) {
-		cf1 = NULL;
-	} else {
-		if (fixup_get_svalue(msg, (gparam_p)s2, &st1) < 0) {
-			LM_ERR("bad value for 'custom_field1'\n");
-			return -1;
-		}
-
-		cf1 = &st1;
-	}
-
-	if (!s3) {
-		cf2 = NULL;
-	} else {
-		if (fixup_get_svalue(msg, (gparam_p)s3, &st2) < 0) {
-			LM_ERR("bad value for 'custom_field2'\n");
-			return -1;
-		}
-
-		cf2 = &st2;
-	}
-
-	if (!s4) {
-		cf3 = NULL;
-	} else {
-		if (fixup_get_svalue(msg, (gparam_p)s4, &st3) < 0) {
-			LM_ERR("bad value for 'custom_field3'\n");
-			return -1;
-		}
-
-		cf3 = &st3;
-	}
-
-	return w_sip_capture(msg, s1, actx, cf1, cf2, cf3);
+	return w_sip_capture(msg, table, actx, cf1, cf2, cf3);
 }
 
 
@@ -3613,12 +3550,15 @@ static int w_sip_capture(struct sip_msg *msg, char *table_name,
 enum hep_chunk_value_type {TYPE_ERROR=0,TYPE_UINT8=1,
 					TYPE_UINT16=2, TYPE_UINT32=4, TYPE_INET_ADDR,
 					TYPE_INET6_ADDR=16, TYPE_UTF8, TYPE_BLOB};
-static int fix_hep_value_type(str *s) {
+
+static int fix_hep_value_type(void **param)
+{
 	static const str type_uint_s={"uint", sizeof("uint")-1};
 	static const str type_utf_string_s=str_init("utf8-string");
 	static const str type_octet_string_s=str_init("octet-string");
 	static const str type_inet_addr_s=str_init("inet4-addr");
 	static const str type_inet6_addr_s=str_init("inet6-addr");
+	str *s = (str *)*param;
 
 	int diff;
 
@@ -3628,36 +3568,58 @@ static int fix_hep_value_type(str *s) {
 	if (diff > 0 && diff <=2 &&
 			!strncasecmp(s->s, type_uint_s.s, type_uint_s.len)) {
 		if (diff == 1) { /* should be int8 */
-			if (s->s[s->len-1] == '8')
-				return TYPE_UINT8;
-			else
+			if (s->s[s->len-1] == '8') {
+				*param = (void*)(long)TYPE_UINT8;
+				return 0;
+			} else {
 				goto error;
+			}
 		} else {
-			if (s->s[s->len-2] == '1' && s->s[s->len-1] =='6')
-				return TYPE_UINT16;
-			else if (s->s[s->len-2] == '3' && s->s[s->len-1] =='2')
-				return TYPE_UINT32;
-			else
+			if (s->s[s->len-2] == '1' && s->s[s->len-1] =='6') {
+				*param = (void*)(long)TYPE_UINT16;
+				return 0;
+			} else if (s->s[s->len-2] == '3' && s->s[s->len-1] =='2') {
+				*param = (void*)(long)TYPE_UINT32;
+				return 0;
+			} else {
 				goto error;
+			}
 		}
 	} else if (s->len==type_utf_string_s.len &&
 			!strncasecmp(s->s, type_utf_string_s.s, type_utf_string_s.len)) {
-		return TYPE_UTF8;
+		*param = (void*)(long)TYPE_UTF8;
+		return 0;
 	} else if (s->len == type_octet_string_s.len &&
 			!strncasecmp(s->s, type_octet_string_s.s, type_octet_string_s.len)) {
-		return TYPE_BLOB;
+		*param = (void*)(long)TYPE_BLOB;
+		return 0;
 	} else if (s->len == type_inet_addr_s.len &&
 			!strncasecmp(s->s, type_inet_addr_s.s, type_inet_addr_s.len)) {
-		return TYPE_INET_ADDR;
+		*param = (void*)(long)TYPE_INET_ADDR;
+		return 0;
 	} else if (s->len == type_inet6_addr_s.len &&
 			!strncasecmp(s->s, type_inet6_addr_s.s, type_inet6_addr_s.len)) {
-		return TYPE_INET6_ADDR;
-	} else {
-		goto error;
+		*param = (void*)(long)TYPE_INET6_ADDR;
+		return 0;
 	}
 
 error:
-	return TYPE_ERROR;
+	LM_ERR("unrecognized HEP data type: '%.*s'\n", s->len, s->s);
+	return -1;
+}
+
+static int fix_hep_name(void **param)
+{
+	unsigned int chunk_id;
+	str *in = (str *)*param;
+
+	if (parse_hep_name(in, &chunk_id) < 0) {
+		LM_ERR("invalid chunk id: '%.*s'\n", in->len, in->s);
+		return -1;
+	}
+
+	*param = (void*)(unsigned long)chunk_id;
+	return 0;
 }
 
 /*
@@ -3692,278 +3654,36 @@ error:
 
 }
 
-static int set_hep_generic_fixup(void** param, int param_no)
+static int fix_vendor_id(void **param)
 {
-	unsigned chunk_id;
-	gparam_p gp;
+	int vendor_id;
 
-	switch (param_no) {
-		case 1:
-		/* chunk id */
-			if (fixup_sgp(param) < 0) {
-				LM_ERR("fixup for chunk type failed!\n");
-				return -1;
-			}
+	vendor_id = fix_hex_int((str *)*param);
+	if (vendor_id < 0)
+		return -1;
 
-			gp = *param;
-			if (gp->type == GPARAM_TYPE_STR) {
-				if ( parse_hep_name( &gp->v.sval, &chunk_id ) < 0 ) {
-					LM_ERR("Invalid chunk value type <%.*s>!\n",
-							gp->v.sval.len, gp->v.sval.s);
-					return -1;
-				}
-				gp->v.ival = chunk_id;
-				gp->type   = GPARAM_TYPE_INT;
-			}
-
-			return 0;
-		/* data */
-		case 2:
-			return fixup_sgp(param);
-	}
-
+	*param = (void*)(long)vendor_id;
 	return 0;
 }
 
 
-
-static int set_hep_fixup(void** param, int param_no)
-{
-	int type;
-	unsigned chunk_id;
-	gparam_p gp;
-
-	switch (param_no) {
-		/* type */
-		case 1:
-			if (fixup_sgp(param) < 0) {
-				LM_ERR("fixup for chunk type failed!\n");
-				return -1;
-			}
-
-			gp = *param;
-			if (gp->type == GPARAM_TYPE_STR) {
-				if ((type=fix_hep_value_type(&gp->v.sval)) == TYPE_ERROR) {
-					LM_ERR("Invalid chunk value type <%.*s>!\n",
-							gp->v.sval.len, gp->v.sval.s);
-					return -1;
-				}
-				gp->v.ival = type;
-				gp->type   = GPARAM_TYPE_INT;
-			}
-
-			return 0;
-
-		/* chunk id */
-		case 2:
-			if (fixup_sgp(param) < 0) {
-				LM_ERR("fixup for chunk type failed!\n");
-				return -1;
-			}
-
-			gp = *param;
-			if (gp->type == GPARAM_TYPE_STR) {
-				if ( parse_hep_name( &gp->v.sval, &chunk_id ) < 0 ) {
-					LM_ERR("Invalid chunk value type <%.*s>!\n",
-							gp->v.sval.len, gp->v.sval.s);
-					return -1;
-				}
-				gp->v.ival = chunk_id;
-				gp->type   = GPARAM_TYPE_INT;
-			}
-
-			return 0;
-		/* vendor*/
-		case 3:
-			if (fixup_sgp(param) < 0) {
-				LM_ERR("fixup for chunk type failed!\n");
-				return -1;
-			}
-
-			gp = *param;
-			if (gp->type == GPARAM_TYPE_STR) {
-				if ((type=fix_hex_int(&gp->v.sval)) < 0) {
-					LM_ERR("Invalid chunk value type <%.*s>!\n",
-							gp->v.sval.len, gp->v.sval.s);
-					return -1;
-				}
-				gp->v.ival = type;
-				gp->type   = GPARAM_TYPE_INT;
-			}
-
-			return 0;
-		/* data */
-		case 4:
-			return fixup_sgp(param);
-		}
-
-	return 0;
-}
-
-static int get_hep_generic_fixup(void** param, int param_no)
-{
-	unsigned chunk_id;
-	gparam_p gp;
-
-	switch (param_no) {
-		case 1:
-			if (fixup_sgp(param) < 0) {
-				LM_ERR("fixup for chunk type failed!\n");
-				return -1;
-			}
-
-			gp = *param;
-			if (gp->type == GPARAM_TYPE_STR) {
-				if ( parse_hep_name( &gp->v.sval, &chunk_id ) < 0 ) {
-					LM_ERR("Invalid chunk value type <%.*s>!\n",
-							gp->v.sval.len, gp->v.sval.s);
-					return -1;
-				}
-				gp->v.ival = chunk_id;
-				gp->type   = GPARAM_TYPE_INT;
-			}
-
-			return 0;
-
-		/* vendor pvar */
-		case 2:
-		/* data pvar */
-		case 3:
-			return fixup_pvar(param);
-		default:
-			LM_ERR("Invalid param number <%d>\n", param_no);
-			return -1;
-	}
-
-	return 0;
-}
-
-
-
-static int get_hep_fixup(void** param, int param_no)
-{
-	int type;
-	unsigned chunk_id;
-	gparam_p gp;
-
-	switch (param_no) {
-		/* type */
-		case 1:
-			if (fixup_sgp(param) < 0) {
-				LM_ERR("fixup for chunk type failed!\n");
-				return -1;
-			}
-
-			gp = *param;
-			if (gp->type == GPARAM_TYPE_STR) {
-				if ((type=fix_hep_value_type(&gp->v.sval)) == TYPE_ERROR) {
-					LM_ERR("Invalid chunk value type <%.*s>!\n",
-							gp->v.sval.len, gp->v.sval.s);
-					return -1;
-				}
-				gp->v.ival = type;
-				gp->type   = GPARAM_TYPE_INT;
-			}
-
-			return 0;
-		/* chunk id */
-		case 2:
-			if (fixup_sgp(param) < 0) {
-				LM_ERR("fixup for chunk type failed!\n");
-				return -1;
-			}
-
-			gp = *param;
-			if (gp->type == GPARAM_TYPE_STR) {
-				if ( parse_hep_name( &gp->v.sval, &chunk_id ) < 0 ) {
-					LM_ERR("Invalid chunk value type <%.*s>!\n",
-							gp->v.sval.len, gp->v.sval.s);
-					return -1;
-				}
-				gp->v.ival = chunk_id;
-				gp->type   = GPARAM_TYPE_INT;
-			}
-
-			return 0;
-
-		/* vendor pvar */
-		case 3:
-		/* data pvar */
-		case 4:
-			return fixup_pvar(param);
-		default:
-			LM_ERR("Invalid param number <%d>\n", param_no);
-			return -1;
-	}
-
-	return 0;
-}
-
-static int del_hep_fixup(void** param, int param_no)
-{
-	unsigned chunk_id;
-	gparam_p gp;
-
-	if (param_no == 1) {
-		if (fixup_sgp(param) < 0) {
-			LM_ERR("fixup for chunk type failed!\n");
-			return -1;
-		}
-
-		gp = *param;
-		if (gp->type == GPARAM_TYPE_STR) {
-			if ( parse_hep_name( &gp->v.sval, &chunk_id ) < 0 ) {
-				LM_ERR("Invalid chunk value type <%.*s>!\n",
-						gp->v.sval.len, gp->v.sval.s);
-				return -1;
-			}
-			gp->v.ival = chunk_id;
-			gp->type   = GPARAM_TYPE_INT;
-		}
-
-		return 0;
-	}
-
-	LM_ERR("Invalid param number <%d>\n", param_no);
-	return -1;
-}
-
-
-
-
-static int w_set_hep_generic(struct sip_msg* msg, char* id, char* data)
-{
-	return w_set_hep(msg, NULL, id, NULL, data);
-}
-
-static int
-w_set_hep(struct sip_msg* msg, char* type, char* id, char* vid, char* data)
+static int w_set_hep(struct sip_msg* msg, void *id, str *data_s,
+                     void *type, void *vid)
 {
 	int data_len;
-	int data_type=TYPE_UTF8;
-	int vendor_id=HEP_OPENSIPS_VENDOR_ID;
-	unsigned int chunk_id;
+	int data_type = TYPE_UTF8;
+	int vendor_id = HEP_OPENSIPS_VENDOR_ID;
+	unsigned int chunk_id = (unsigned int)(unsigned long)id;
 
 	unsigned int idata;
 
 	struct in_addr addr4;
 	struct in6_addr addr6;
 
-	str s;
-	str data_s;
-
-	gparam_p gp;
-
 	struct hep_desc *h;
 	struct hep_context *ctx;
 
-	generic_chunk_t* ch;
-	generic_chunk_t* it;
-
-	if (id==NULL || data==NULL) {
-		LM_ERR("Chunk id and chunk data can't be NULL!\n");
-		return -1;
-	}
+	generic_chunk_t *ch, *it;
 
 	if ((ctx=HEP_GET_CONTEXT(hep_api)) ==  NULL) {
 		LM_WARN("not a hep message!\n");
@@ -3976,65 +3696,14 @@ w_set_hep(struct sip_msg* msg, char* type, char* id, char* vid, char* data)
 		return -1;
 	}
 
-	if (type != NULL) {
-		gp = (gparam_p)type;
-		if (gp->type == GPARAM_TYPE_INT) {
-			data_type = gp->v.ival;
-		} else {
-			if (fixup_get_svalue(msg, gp, &s) < 0) {
-				LM_ERR("Getting vendor id value from pvar failed!\n");
-				return -1;
-			}
+	if (type)
+		data_type = (int)(long)type;
 
-			if ((data_type=fix_hep_value_type(&s))==TYPE_ERROR) {
-				LM_ERR("Invalid data_type vlaue <%.*s>!\n", s.len, s.s);
-				return -1;
-			}
-		}
-	}
+	if (vid)
+		vendor_id = (int)(long)vid;
 
-
-	gp = (gparam_p)id;
-	if (gp->type == GPARAM_TYPE_INT) {
-		chunk_id = gp->v.ival;
-	} else {
-		if (fixup_get_svalue(msg, gp, &s) < 0) {
-			LM_ERR("Getting vendor id value from pvar failed!\n");
-			return -1;
-		}
-
-		if (parse_hep_name(&s, &chunk_id) < 0) {
-			LM_ERR("Invalid chunk id/name!\n");
-		}
-	}
-
-	if (vid) {
-		gp = (gparam_p)vid;
-		if (gp->type == GPARAM_TYPE_INT) {
-			vendor_id = gp->v.ival;
-		} else {
-			if (fixup_get_svalue(msg, gp, &s) < 0) {
-				LM_ERR("Getting vendor id value from pvar failed!\n");
-				return -1;
-			}
-
-			if ((vendor_id=fix_hex_int(&s)) < 0) {
-				LM_ERR("Invalid vendor id value <%.*s>!\n", s.len, s.s);
-				return -1;
-			}
-		}
-	}
-
-
-
-	if (fixup_get_svalue(msg, (gparam_p)data, &data_s) < 0) {
-		LM_ERR("failed to get chunk data value!\n");
-		return -1;
-	}
-
-	if (CHUNK_IS_IN_HEPSTRUCT(chunk_id)) {
-		return set_generic_hep_chunk(&h->u.hepv3, chunk_id, &data_s);
-	}
+	if (CHUNK_IS_IN_HEPSTRUCT(chunk_id))
+		return set_generic_hep_chunk(&h->u.hepv3, chunk_id, data_s);
 
 	it = NULL;
 	for (it=h->u.hepv3.chunk_list; it; it = it->next) {
@@ -4053,26 +3722,26 @@ w_set_hep(struct sip_msg* msg, char* type, char* id, char* vid, char* data)
 	}
 
 	if (data_type == TYPE_UTF8 || data_type == TYPE_BLOB) {
-		data_len = data_s.len;
+		data_len = data_s->len;
 	} else if (data_type == TYPE_INET_ADDR) {
 		data_len = sizeof(struct in_addr);
-		if (inet_pton(AF_INET, data_s.s, &addr4)==0) {
+		if (inet_pton(AF_INET, data_s->s, &addr4)==0) {
 			LM_ERR("not an IPv4 address <<%.*s>>!\n",
-					data_s.len, data_s.s);
+					data_s->len, data_s->s);
 			return -1;
 		}
 	} else if (data_type == TYPE_INET6_ADDR) {
 		data_len = sizeof(struct in6_addr);
-		if (inet_pton(AF_INET6, data_s.s, &addr6)==0) {
+		if (inet_pton(AF_INET6, data_s->s, &addr6)==0) {
 			LM_ERR("not an IPv6 address <<%.*s>>!\n",
-					data_s.len, data_s.s);
+					data_s->len, data_s->s);
 			return -1;
 		}
 	} else {
 		data_len = data_type;
-		if (str2int(&data_s, &idata) < 0) {
+		if (str2int(data_s, &idata) < 0) {
 			LM_ERR("Invalid int value for chunk <%*.s>!\n",
-										data_s.len, data_s.s);
+										data_s->len, data_s->s);
 		}
 
 		/* keep values in big endian */
@@ -4095,7 +3764,7 @@ w_set_hep(struct sip_msg* msg, char* type, char* id, char* vid, char* data)
 	}
 
 	if (data_type == TYPE_UTF8 || data_type == TYPE_BLOB) {
-		memcpy(ch->data, data_s.s, data_len);
+		memcpy(ch->data, data_s->s, data_len);
 	} else if (data_type == TYPE_INET_ADDR) {
 		memcpy(ch->data, &addr4, sizeof(struct in_addr));
 	} else if (data_type == TYPE_INET6_ADDR) {
@@ -4121,47 +3790,26 @@ w_set_hep(struct sip_msg* msg, char* type, char* id, char* vid, char* data)
 
 	return 1;
 
-	shm_err:
+shm_err:
 	LM_ERR("no more shm!\n");
 	return -1;
 }
 
-static int
-w_get_hep_generic(struct sip_msg* msg, char* id, char* vid, char* data)
+static int w_get_hep(struct sip_msg* msg, void *_id, void *_type,
+                     pv_spec_p data_pv, pv_spec_p vendor_pv)
 {
-	return w_get_hep(msg, NULL, id, vid, data);
-}
-
-static int
-w_get_hep(struct sip_msg* msg, char* type, char* id, char* vid, char* data)
-{
-
-	int data_type;
+	int data_type = (int)(long)_type;
 
 	unsigned int net_data;
-	unsigned int chunk_id;
+	unsigned int chunk_id = (unsigned int)(unsigned long)_id;
 
 	struct hep_desc *h;
 	struct hep_context *ctx;
 
-	str s;
-
-	pv_spec_p data_pv, vendor_pv;
 	pv_value_t data_val, vendor_val;
-
-	gparam_p gp;
-
 	generic_chunk_t* it;
 
-	data_pv = (pv_spec_p)data;
-	vendor_pv = (pv_spec_p)vid;
-
-	if (id == NULL) {
-		LM_ERR("No chunk id given!\n");
-		return -1;
-	}
-
-	if (vid == NULL && data == NULL) {
+	if (!data_pv && !vendor_pv) {
 		LM_ERR("No output vars provided!\n");
 		return -1;
 	}
@@ -4177,53 +3825,19 @@ w_get_hep(struct sip_msg* msg, char* type, char* id, char* vid, char* data)
 		return -1;
 	}
 
-	gp = (gparam_p)id;
-	if (gp->type == GPARAM_TYPE_INT) {
-		chunk_id = gp->v.ival;
-	} else {
-		if (fixup_get_svalue(msg, gp, &s) < 0) {
-			LM_ERR("Getting vendor id value from pvar failed!\n");
-			return -1;
-		}
-
-		if (parse_hep_name(&s, &chunk_id) < 0) {
-			LM_ERR("Invalid chunk id/name!\n");
-		}
-	}
-
 	if (CHUNK_IS_IN_HEPSTRUCT(chunk_id)) {
 		/* don't need type for these; we already know it */
-		if (data) {
+		if (data_pv) {
 			if (get_hep_chunk(&h->u.hepv3, chunk_id, &data_val) < 0)
 				goto set_pv_null;
 		}
 
-		if (vid) {
+		if (vendor_pv) {
 			vendor_val.ri = 0;
 			vendor_val.flags = PV_TYPE_INT;
 		}
 
 		goto set_pv_values;
-	}
-
-	if (type == NULL) {
-		LM_ERR("no type given! Don't know what to return!\n");
-		return -1;
-	}
-
-	gp = (gparam_p)type;
-	if (gp->type == GPARAM_TYPE_INT) {
-		data_type = gp->v.ival;
-	} else {
-		if (fixup_get_svalue(msg, gp, &s) < 0) {
-			LM_ERR("Getting vendor id value from pvar failed!\n");
-			return -1;
-		}
-
-		if ((data_type=fix_hep_value_type(&s))==TYPE_ERROR) {
-			LM_ERR("Invalid data_type vlaue <%.*s>!\n", s.len, s.s);
-			return -1;
-		}
 	}
 
 	for (it=h->u.hepv3.chunk_list; it; it=it->next) {
@@ -4298,59 +3912,41 @@ w_get_hep(struct sip_msg* msg, char* type, char* id, char* vid, char* data)
 		goto set_pv_null;
 
 set_pv_values:
-
-	if (data) {
-		if (pv_set_value(msg, data_pv, 0, &data_val) < 0) {
-			LM_ERR("Failed setting data pvar value!\n");
-			return -1;
-		}
+	if (data_pv && pv_set_value(msg, data_pv, 0, &data_val) < 0) {
+		LM_ERR("failed to set chunk_data_pv!\n");
+		return -1;
 	}
 
-	if (vid) {
-		if (pv_set_value(msg, vendor_pv, 0, &vendor_val) < 0) {
-			LM_ERR("Failed setting data pvar value!\n");
-			return -1;
-		}
+	if (vendor_pv && pv_set_value(msg, vendor_pv, 0, &vendor_val) < 0) {
+		LM_ERR("failed to set vendor_id_pv!\n");
+		return -1;
 	}
 
 	return 1;
 
 set_pv_null:
-	if (data) {
-		if (pv_set_value(msg, data_pv, 0, NULL) < 0) {
-			LM_ERR("Failed setting data pvar value!\n");
-			return -1;
-		}
+	if (data_pv && pv_set_value(msg, data_pv, 0, NULL) < 0) {
+		LM_ERR("failed to set chunk_data_pv!\n");
+		return -1;
 	}
 
-	if (vid) {
-		if (pv_set_value(msg, vendor_pv, 0, NULL) < 0) {
-			LM_ERR("Failed setting data pvar value!\n");
-			return -1;
-		}
+	if (vendor_pv && pv_set_value(msg, vendor_pv, 0, NULL) < 0) {
+		LM_ERR("failed to set vendor_id_pv!\n");
+		return -1;
 	}
 
 	return -1;
 }
 
-static int w_del_hep(struct sip_msg* msg, char *id)
+static int w_del_hep(struct sip_msg* msg, void *id)
 {
-	unsigned int chunk_id;
+	unsigned int chunk_id = (unsigned int)(unsigned long)id;
 
 	struct hep_desc *h;
 	struct hep_context *ctx;
 
-	str s;
-
-	gparam_p gp;
-
 	generic_chunk_t* it;
 	generic_chunk_t* foo;
-
-	if (id==NULL) {
-		LM_ERR("No chunk id provided!\n");
-		return -1;
-	}
 
 	if ((ctx=HEP_GET_CONTEXT(hep_api)) ==  NULL) {
 		LM_WARN("not a hep message!\n");
@@ -4362,21 +3958,6 @@ static int w_del_hep(struct sip_msg* msg, char *id)
 		LM_ERR("del chunk only available in HEPv3(EEP)!\n");
 		return -1;
 	}
-
-	gp = (gparam_p)id;
-	if (gp->type == GPARAM_TYPE_INT) {
-		chunk_id = gp->v.ival;
-	} else {
-		if (fixup_get_svalue(msg, gp, &s) < 0) {
-			LM_ERR("Getting vendor id value from pvar failed!\n");
-			return -1;
-		}
-
-		if (parse_hep_name(&s, &chunk_id) < 0) {
-			LM_ERR("Invalid chunk id/name!\n");
-		}
-	}
-
 
 	if (CHUNK_IS_IN_HEPSTRUCT(chunk_id))
 		return del_hep_chunk(&h->u.hepv3, chunk_id);
@@ -4648,7 +4229,7 @@ static int build_hep_buf(str* hep_buf, int* proto)
 
 	ctx = HEP_GET_CONTEXT(hep_api);
 	if (ctx == NULL) {
-		LM_ERR("Hep context not there!");
+		LM_ERR("Hep context not there!\n");
 		return -1;
 	}
 
@@ -4838,66 +4419,6 @@ static void set_rtcp_keys(void)
 	}
 }
 
-
-#define FIXUP_RC_PARAMS(param, fix_func, param_no) \
-	do {                                           \
-		switch (param_no) {                        \
-		case 1:                                    \
-			return fix_func(param, &rc_list);      \
-		case 2:                                    \
-		case 3:                                    \
-			return fixup_sgp(param);               \
-		default:                                   \
-			LM_ERR("Invalid param number!\n");     \
-			return -1;                             \
-		}                                          \
-	} while(0);
-
-
-static int rc_fixup_1(void** param, int param_no)
-{
-	if (param_no != 1) {
-		LM_ERR("Invalid param number!\n");
-		return -1;
-	}
-
-	return fixup_sgp(param);
-}
-
-static int rc_fixup(void** param, int param_no)
-{
-	if (param_no < 1 || param_no > 3) {
-		LM_ERR("Invalid param number!\n");
-		return -1;
-	}
-
-	FIXUP_RC_PARAMS(param, fixup_tz_table, param_no);
-
-	return 0;
-}
-
-static int rc_async_fixup_1(void** param, int param_no)
-{
-	if (param_no != 1) {
-		LM_ERR("Invalid param number!\n");
-		return -1;
-	}
-
-	return fixup_sgp(param);
-}
-
-static int rc_async_fixup(void** param, int param_no)
-{
-	if (param_no < 1 || param_no > 3) {
-		LM_ERR("Invalid param number!\n");
-		return -1;
-	}
-
-	FIXUP_RC_PARAMS(param, fixup_async_tz_table, param_no);
-
-	return 0;
-}
-
 static inline void build_hepv3_obj(struct hepv3* h3, struct _sipcapture_object* sco) {
 
 	sco->proto = h3->hg.ip_proto.data;
@@ -5071,7 +4592,7 @@ static int report_capture(struct sip_msg* msg, str* table, str* cor_id,
 		db_vals[10].val.str_val = capture_node;
 	}
 
-	db_vals[11].type = DB_BLOB;
+	db_vals[11].type = DB_STR;
 
 
 	/* we can have other pyload than sip only for hepv3 */
@@ -5174,7 +4695,7 @@ static int report_capture(struct sip_msg* msg, str* table, str* cor_id,
 		}
 	} else if ( homerV == HOMER6 ) {
 		/* only warn; continue as usual */
-		LM_WARN("using homer6 but hepv2 message received!");
+		LM_WARN("using homer6 but hepv2 message received!\n");
 	}
 
 	/* each query has it's own parameters for the prepared statements */
@@ -5193,89 +4714,33 @@ static int report_capture(struct sip_msg* msg, str* table, str* cor_id,
 	return 1;
 }
 
-static int w_report_capture_1(struct sip_msg* msg, char* cor_id_p)
+static int w_report_capture_async(struct sip_msg* msg, async_ctx *actx,
+                                  str* cor_id, void* table, int* proto_t)
 {
-	return w_report_capture(msg, NULL, cor_id_p, NULL, NULL);
-}
-
-static int w_report_capture_2(struct sip_msg* msg, char* table_p, char* cor_id_p)
-{
-	return w_report_capture(msg, table_p, cor_id_p, NULL, NULL);
-}
-
-static int w_report_capture_3(struct sip_msg* msg, char* table_p,
-		char* cor_id_p, char* proto_t_p)
-{
-	return w_report_capture(msg, table_p, cor_id_p, proto_t_p, NULL);
-}
-
-static int w_report_capture_async_1(struct sip_msg* msg,
-		async_ctx *actx, char* cor_id_p)
-{
-	return w_report_capture(msg, NULL, cor_id_p, NULL, actx);
-}
-
-static int w_report_capture_async_2(struct sip_msg* msg,
-		async_ctx *actx, char* table_p, char* cor_id_p)
-{
-	return w_report_capture(msg, table_p, cor_id_p, NULL, actx);
-}
-
-static int w_report_capture_async_3(struct sip_msg* msg,
-		async_ctx *actx, char* table_p, char* cor_id_p, char* proto_t_p)
-{
-	return w_report_capture(msg, table_p, cor_id_p, proto_t_p, actx);
+	return w_report_capture(msg, cor_id, table, proto_t, actx);
 }
 
 
-static int w_report_capture(struct sip_msg* msg, char* table_p, char* cor_id_p,
-		char* proto_t_p, async_ctx *actx)
+static int w_report_capture(struct sip_msg* msg, str* cor_id, void* table,
+                            int* _proto_t, async_ctx* actx)
 {
-	unsigned int proto_t;
-
-	str cor_id_s;
-	str proto_t_s;
-
+	unsigned int proto_t = (unsigned int)*_proto_t;
 	tz_table_t* rct;
 	struct tz_table_list* t_el=&rc_global;
 
-
-	if (cor_id_p == NULL) {
-		LM_ERR("correaltion id param is mandatory!\n");
-		return -1;
-	}
-
-
-	if (table_p) {
-		rct = (tz_table_t *)table_p;
+	if (table) {
+		rct = *(tz_table_t **)table;
 	}	else {
 		rct = &rc_table;
 	}
 
-	if (fixup_get_svalue(msg, (gparam_p)cor_id_p, &cor_id_s) < 0 ) {
-		LM_ERR("failed to fetch correlation id!\n");
-		return -1;
-	}
-
-	if (cor_id_s.s == NULL || cor_id_s.len == 0) {
+	if (!cor_id->s || cor_id->len == 0) {
 		LM_ERR("empty correlation id!\n");
 		return -1;
 	}
 
-	if (proto_t_p) {
-		if (fixup_get_svalue(msg, (gparam_p)proto_t_p, &proto_t_s) < 0 ) {
-			LM_ERR("failed to fetch correlation id!\n");
-			return -1;
-		}
-
-		if (str2int(&proto_t_s, &proto_t) < 0) {
-			LM_ERR("Invalid proto type value!\n");
-			return -1;
-		}
-	}
-
 	if (IS_ASYNC_F && HAVE_MULTIPLE_ASYNC_INSERT) {
-		if (table_p) {
+		if (table) {
 			if ((t_el=search_table(rct, rc_list)) == NULL) {
 				LM_ERR("Invalid table given!\n");
 				return -1;
@@ -5289,8 +4754,7 @@ static int w_report_capture(struct sip_msg* msg, char* table_p, char* cor_id_p,
 			return -1;
 	}
 
-	return report_capture(msg, &current_table, &cor_id_s,
-			proto_t_p?&proto_t:NULL, t_el, actx);
+	return report_capture(msg, &current_table, cor_id, &proto_t, t_el, actx);
 }
 
 /*
@@ -5304,43 +4768,55 @@ static int w_report_capture(struct sip_msg* msg, char* table_p, char* cor_id_p,
  * name: sip_capture
  * attribute: name=none, value=[on|off]
  */
-static struct mi_root* sip_capture_mi(struct mi_root* cmd_tree, void* param )
+static mi_response_t *sip_capture_mi(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_node* node;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
 
-	struct mi_node *rpl;
-	struct mi_root *rpl_tree ;
+	if (capture_on_flag==NULL)
+		return init_mi_error(500, MI_SSTR("Internal error"));
 
-	node = cmd_tree->node.kids;
-	if(node == NULL) {
-		rpl_tree = init_mi_tree( 200, MI_SSTR(MI_OK));
-		if (rpl_tree == 0)
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return 0;
+
+	if ( *capture_on_flag ) {
+		if (add_mi_string(resp_obj, MI_SSTR("SIP capturing"), MI_SSTR("on")) < 0) {
+			free_mi_response(resp);
 			return 0;
-		rpl = &rpl_tree->node;
-
-		if (*capture_on_flag == 0 ) {
-			node = add_mi_node_child(rpl,0,0,0,MI_SSTR("off"));
-		} else if (*capture_on_flag == 1) {
-			node = add_mi_node_child(rpl,0,0,0,MI_SSTR("on"));
 		}
-		return rpl_tree ;
-	}
-	if(capture_on_flag==NULL)
-		return init_mi_tree( 500, MI_SSTR(MI_INTERNAL_ERR));
-
-	if ( node->value.len==2 && (node->value.s[0]=='o'
-				|| node->value.s[0]=='O') &&
-			(node->value.s[1]=='n'|| node->value.s[1]=='N')) {
-		*capture_on_flag = 1;
-		return init_mi_tree( 200, MI_SSTR(MI_OK));
-	} else if ( node->value.len==3 && (node->value.s[0]=='o'
-				|| node->value.s[0]=='O')
-			&& (node->value.s[1]=='f'|| node->value.s[1]=='F')
-			&& (node->value.s[2]=='f'|| node->value.s[2]=='F')) {
-		*capture_on_flag = 0;
-		return init_mi_tree( 200, MI_SSTR(MI_OK));
 	} else {
-		return init_mi_tree( 400, MI_SSTR(MI_BAD_PARM));
+		if (add_mi_string(resp_obj, MI_SSTR("SIP capturing"), MI_SSTR("off")) < 0) {
+			free_mi_response(resp);
+			return 0;
+		}
+	}
+
+	return resp;
+}
+
+static mi_response_t *sip_capture_mi_1(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	str new_mode;
+
+	if (get_mi_string_param(params, "trace_mode", &new_mode.s, &new_mode.len) < 0)
+		return init_mi_param_error();
+
+	if ( (new_mode.s[0] | 0x20) == 'o' &&
+			(new_mode.s[1] | 0x20) == 'n' ) {
+		*capture_on_flag = 1;
+		return init_mi_result_ok();
+	} else
+	if ( (new_mode.s[0] | 0x20) == 'o' &&
+			(new_mode.s[1] | 0x20) == 'f' &&
+			(new_mode.s[2] | 0x20) == 'f' ) {
+		*capture_on_flag = 0;
+		return init_mi_result_ok();
+	} else {
+		return init_mi_error_extra(500, MI_SSTR("Bad parameter value"),
+			MI_SSTR("trace_mode should be 'on' or 'off'"));
 	}
 }
 
@@ -5546,7 +5022,7 @@ int raw_capture_rcv_loop(int rsock, int port1, int port2, int ipip) {
 		if((!port1 && !port2)
 		        || (src_port >= port1 && src_port <= port2) || (dst_port >= port1 && dst_port <= port2)
 		        || (!port2 && (src_port == port1 || dst_port == port1)))
-		                          receive_msg(buf+offset, len, &ri, NULL);
+		                          receive_msg(buf+offset, len, &ri, NULL, 0);
 	}
 
 	return 0;

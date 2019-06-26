@@ -1,30 +1,4 @@
 ratelimit Module
-
-Ovidiu Sas
-
-Bogdan Vasile Harjoc
-
-Hendrik Scholz
-
-Razvan Crainea
-
-Edited by
-
-Ovidiu Sas
-
-Bogdan Vasile Harjoc
-
-Hendrik Scholz
-
-Razvan Crainea
-
-   Copyright © 2006 Freenet Cityline GmbH
-
-   Copyright © 2008 VoIP Embedded Inc.
-
-   Copyright © 2011 OpenSIPS Foundation
-   Revision History
-   Revision $Revision: 5901 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -52,20 +26,18 @@ Razvan Crainea
         1.6. Exported Parameters
 
               1.6.1. timer_interval (integer)
-              1.6.2. expire_time (integer)
-              1.6.3. hash_size (integer)
-              1.6.4. default_algorithm (string)
-              1.6.5. cachedb_url (string)
-              1.6.6. db_prefix (string)
-              1.6.7. repl_buffer_threshold (string)
-              1.6.8. repl_timer_interval (string)
-              1.6.9. repl_timer_expire (string)
-              1.6.10. replicate_pipes_to (integer)
-              1.6.11. accept_pipes_from (integer)
-              1.6.12. accept_pipes_timeout (integer)
-              1.6.13. repl_pipes_auth_check (int)
-              1.6.14. window_size (int)
-              1.6.15. slot_period (int)
+              1.6.2. limit_per_interval (integer)
+              1.6.3. expire_time (integer)
+              1.6.4. hash_size (integer)
+              1.6.5. default_algorithm (string)
+              1.6.6. cachedb_url (string)
+              1.6.7. db_prefix (string)
+              1.6.8. repl_buffer_threshold (string)
+              1.6.9. repl_timer_interval (string)
+              1.6.10. repl_timer_expire (string)
+              1.6.11. pipe_replication_cluster (integer)
+              1.6.12. window_size (int)
+              1.6.13. slot_period (int)
 
         1.7. Exported Functions
 
@@ -81,30 +53,44 @@ Razvan Crainea
               1.8.4. rl_get_pid
               1.8.5. rl_bin_status
 
-        1.9. Exported pseudo-variables
+        1.9. Exported Pseudo-Variables
 
               1.9.1. $rl_count(name)
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
    1.1. Set timer_interval parameter
-   1.2. Set expire_time parameter
-   1.3. Set hash_size parameter
-   1.4. Set default_algorithm parameter
-   1.5. Set cachedb_url parameter
-   1.6. Set db_prefix parameter
-   1.7. Set repl_buffer_threshold parameter
-   1.8. Set repl_timer_interval parameter
-   1.9. Set repl_timer_expire parameter
-   1.10. Set replicate_pipes_to parameter
-   1.11. Set accept_pipes_from parameter
-   1.12. Set accept_pipes_timeout parameter
-   1.13. Set repl_pipes_auth_check parameter
-   1.14. Set window_size parameter
-   1.15. Set slot_period parameter
-   1.16. rl_check usage
-   1.17. rl_dec_count usage
-   1.18. rl_reset_count usage
+   1.2. Set limit_per_interval parameter
+   1.3. Set expire_time parameter
+   1.4. Set hash_size parameter
+   1.5. Set default_algorithm parameter
+   1.6. Set cachedb_url parameter
+   1.7. Set db_prefix parameter
+   1.8. Set repl_buffer_threshold parameter
+   1.9. Set repl_timer_interval parameter
+   1.10. Set repl_timer_expire parameter
+   1.11. Set pipe_replication_cluster parameter
+   1.12. Set window_size parameter
+   1.13. Set slot_period parameter
+   1.14. rl_check usage
+   1.15. rl_dec_count usage
+   1.16. rl_reset_count usage
 
 Chapter 1. Admin Guide
 
@@ -118,14 +104,19 @@ Chapter 1. Admin Guide
    interface can be used to change tunables while running
    OpenSIPS.
 
-   This module is also integrated with the OpenSIPS Key-Value
+   This module is integrated with the OpenSIPS Key-Value
    Interface, providing support for distributed rate limiting
-   using Redis or Memcached CacheDB backends.
+   using Redis or Memcached CacheDB backends. The internal
+   limiting data will no longer be kept on each OpenSIPS instance.
+   It will be stored in the distributed Key-Value database and
+   queried by each instance before deciding if a SIP message
+   should be blocked or not.
 
-   To achieve a distributed ratelimit feature, the module can
-   replicate its pipes counters to different OpenSIPS interfaces
-   using the binary replicate interface (BIN). To do that, define
-   the repl_* parameters in your configuration script.
+   To achieve a distributed ratelimit feature, the module can also
+   replicate its pipes counters to different OpenSIPS instances
+   using the clusterer module. To do that, define the
+   pipe_replication_cluster parameter in your configuration
+   script.
 
 1.2. Use Cases
 
@@ -136,18 +127,15 @@ Chapter 1. Admin Guide
 
    Distributed limiting is useful when the rate limit should be
    performed not only on a specific node, but on the entire
-   platform. The internal limiting data will no longer be kept on
-   each OpenSIPS instance. It will be stored in a distributed
-   Key-Value database and queried by each instance before deciding
-   if a SIP message should be blocked or not.
+   platform.
 
    NOTE: that this behavior only makes sense when the pipe
    algorithm used is TAILDROP or RED.
 
    A sample configuration snippet might look like this:
 ...
-        if (!rl_check("$rU", "50", "TAILDROP")) {
-                sl_send_reply("503", "Server Unavailable");
+        if (!rl_check($rU, 50, "TAILDROP")) {
+                sl_send_reply(503, "Server Unavailable");
                 exit;
         };
 ...
@@ -202,9 +190,9 @@ Chapter 1. Admin Guide
    should be. The number of slots will be window_size/slot_period.
    If, for example, you have window_size= slot_period=1 second,
    then after each second you shall lose the call count, but if
-   you set the slot_period to 100 microseconds, then when your
+   you set the slot_period to 100 milliseconds, then when your
    call will be outside the window, the calls in the first 100
-   microseconds shall be dropped, and the rest in the next 900
+   milliseconds shall be dropped, and the rest in the next 900
    shall be kept.
 
 1.3.4. Network Algorithm (NETWORK)
@@ -280,19 +268,34 @@ Chapter 1. Admin Guide
 modparam("ratelimit", "timer_interval", 5)
 ...
 
-1.6.2. expire_time (integer)
+1.6.2. limit_per_interval (integer)
+
+   This parameter configures the way that a pipe's limit is
+   specified in the rl_check function and only affects the
+   Taildrop and RED algorithms. A value of 1 means that the limit
+   is set per-timer_interval while a value of 0 means per-second.
+
+   Default value is 0(limit per-second).
+
+   Example 1.2. Set limit_per_interval parameter
+...
+modparam("ratelimit", "limit_per_interval", 1)
+...
+
+1.6.3. expire_time (integer)
 
    This parameter specifies how long a pipe should be kept in
-   memory until deleted.
+   memory after it becomes idle (no more operations are performed
+   on the pipe) until deleted.
 
    Default value is 3600.
 
-   Example 1.2. Set expire_time parameter
+   Example 1.3. Set expire_time parameter
 ...
 modparam("ratelimit", "expire_time", 1800)
 ...
 
-1.6.3. hash_size (integer)
+1.6.4. hash_size (integer)
 
    The size of the hash table internally used to keep the pipes. A
    larger table is much faster but consumes more memory. The hash
@@ -300,48 +303,48 @@ modparam("ratelimit", "expire_time", 1800)
 
    Default value is 1024.
 
-   Example 1.3. Set hash_size parameter
+   Example 1.4. Set hash_size parameter
 ...
 modparam("ratelimit", "hash_size", 512)
 ...
 
-1.6.4. default_algorithm (string)
+1.6.5. default_algorithm (string)
 
    Specifies which algorithm should be assumed in case it isn't
    explicitly specified in the rl_check function.
 
    Default value is "TAILDROP".
 
-   Example 1.4. Set default_algorithm parameter
+   Example 1.5. Set default_algorithm parameter
 ...
 modparam("ratelimit", "default_algorithm", "RED")
 ...
 
-1.6.5. cachedb_url (string)
+1.6.6. cachedb_url (string)
 
    Enables distributed rate limiting and specifies the backend
    that should be used by the CacheDB interface.
 
    Default value is "disabled".
 
-   Example 1.5. Set cachedb_url parameter
+   Example 1.6. Set cachedb_url parameter
 ...
 modparam("ratelimit", "cachedb_url", "redis://root:root@127.0.0.1/")
 ...
 
-1.6.6. db_prefix (string)
+1.6.7. db_prefix (string)
 
    Specifies what prefix should be added to the pipe name. This is
    only used when distributed rate limiting is enabled.
 
    Default value is "rl_pipe_".
 
-   Example 1.6. Set db_prefix parameter
+   Example 1.7. Set db_prefix parameter
 ...
 modparam("ratelimit", "db_prefix", "ratelimit_")
 ...
 
-1.6.7. repl_buffer_threshold (string)
+1.6.8. repl_buffer_threshold (string)
 
    Used to specify the length of the buffer used by the binary
    replication, in bytes. Usually this should be big enough to
@@ -351,24 +354,24 @@ modparam("ratelimit", "db_prefix", "ratelimit_")
 
    Default value is 1400 bytes.
 
-   Example 1.7. Set repl_buffer_threshold parameter
+   Example 1.8. Set repl_buffer_threshold parameter
 ...
 modparam("ratelimit", "repl_buffer_threshold", 500)
 ...
 
-1.6.8. repl_timer_interval (string)
+1.6.9. repl_timer_interval (string)
 
    Timer in milliseconds, used to specify how often the module
    should replicate its counters to the other instances.
 
    Default value is 10 ms.
 
-   Example 1.8. Set repl_timer_interval parameter
+   Example 1.9. Set repl_timer_interval parameter
 ...
 modparam("ratelimit", "repl_timer_interval", 100)
 ...
 
-1.6.9. repl_timer_expire (string)
+1.6.10. repl_timer_expire (string)
 
    Timer in seconds, used to specify when the counter received
    from a different instance should no longer be taken into
@@ -377,80 +380,46 @@ modparam("ratelimit", "repl_timer_interval", 100)
 
    Default value is 10 s.
 
-   Example 1.9. Set repl_timer_expire parameter
+   Example 1.10. Set repl_timer_expire parameter
 ...
 modparam("ratelimit", "repl_timer_expire", 10)
 ...
 
-1.6.10. replicate_pipes_to (integer)
+1.6.11. pipe_replication_cluster (integer)
 
-   Used to specify the instances, that belong to a certain
-   cluster, where the pipes should be replicated.
+   Specifies the cluster ID where pipes will be replicated to and
+   received from.
 
-   Default value is 0. (no replication destinations)
+   Default value is 0. (no replication)
 
-   Example 1.10. Set replicate_pipes_to parameter
+   Example 1.11. Set pipe_replication_cluster parameter
 ...
-modparam("ratelimit", "replicate_pipes_to", 1)
-...
-
-1.6.11. accept_pipes_from (integer)
-
-   Used to specify the instances, that belong to a certain
-   cluster, from which we should expect incoming packets.
-
-   Default value is 0. (disabled)
-
-   Example 1.11. Set accept_pipes_from parameter
-...
-modparam("ratelimit", "accept_pipes_from", 1)
+modparam("ratelimit", "pipe_replication_cluster", 1)
 ...
 
-1.6.12. accept_pipes_timeout (integer)
-
-   The time between two succesive incoming packets.
-
-   Default value is 10.
-
-   Example 1.12. Set accept_pipes_timeout parameter
-...
-modparam("ratelimit", "accept_pipes_timeout", 1)
-...
-
-1.6.13. repl_pipes_auth_check (int)
-
-   Authentication check for incoming packets.
-
-   Default value is “0” (disabled).
-
-   Example 1.13. Set repl_pipes_auth_check parameter
-...
-modparam("ratelimit", "repl_pipes_auth_check", 1)
-...
-
-1.6.14. window_size (int)
+1.6.12. window_size (int)
 
    How long the history in SBT should be in seconds.
 
    Default value is “10”.
 
-   Example 1.14. Set window_size parameter
+   Example 1.12. Set window_size parameter
 ...
 modparam("ratelimit", "window_size", 5)
 ...
 
-1.6.15. slot_period (int)
+1.6.13. slot_period (int)
 
-   Value of one slot in microseconds. This parameter determines
+   Value of one slot in milliseconds. This parameter determines
    how granular the algorithm should be. The number of slots will
    be determined by window_size/slot_period.
 
    Default value is “200”.
 
-   Example 1.15. Set slot_period parameter
+   Example 1.13. Set slot_period parameter
 ...
 modparam("ratelimit", "window_size", 5)
-#we will have 50 slots of 100 microseconds
+#we will have 50 slots of 100 milliseconds
 modparam("ratelimit", "slot_period", 100)
 ...
 
@@ -467,39 +436,52 @@ modparam("ratelimit", "slot_period", 100)
    NOTE: A pipe's algorithm cannot be dynamically changed. Only
    the one specified when the pipe was created will be considered.
 
+   NOTE: This function increments the pipe's counter every time it
+   is called, even if the call should be declined. Therefore If
+   you are using ratelimit to limit only successful traffic, you
+   need to explicitely decrease the counter for the declined calls
+   using the rl_dec_count() function.
+
    The method will return an error code if the limit for the
    matched pipe is reached.
 
    Meaning of the parameters is as follows:
-     * name - this is the name that identifies the pipe which
-       should be checked. This parameter accepts both strings and
-       pseudovariables.
-     * limit - this specifies the threshold limit of the pipe. It
-       is strongly related to the algorithm used. This parameter
-       accepts an integer or a pseudovariable. Note that the limit
-       should be specified as per-second, not per-timer_interval.
-     * algorithm - this is parameter is optional and reffers to
+     * name (string) - this is the name that identifies the pipe
+       which should be checked.
+     * limit (int) - this specifies the threshold limit of the
+       pipe. It is strongly related to the algorithm used. Note
+       that the limit should be specified as per-second, not
+       per-timer_interval.
+     * algorithm (string, optional) - this parameter reffers to
        the algorithm used to check the pipe. If it is not set, the
-       default value is used. It accepts a string or a
-       pseudovariable.
+       default value is used.
 
-   This function can be used from REQUEST_ROUTE.
+   This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
+   ONREPLY_ROUTE, BRANCH_ROUTE, ERROR_ROUTE, LOCAL_ROUTE,
+   TIMER_ROUTE and EVENT_ROUTE.
 
-   Example 1.16. rl_check usage
+   Example 1.14. rl_check usage
 ...
         # perform a pipe match for all INVITE methods using RED algorith
 m
         if (is_method("INVITE")) {
-                if (!rl_check("pipe_INVITE", "100", "RED")) {
-                        sl_send_reply("503", "Server Unavailable");
+                if (!rl_check("pipe_INVITE", 100, "RED")) {
+                        sl_send_reply(503, "Server Unavailable");
                         exit;
                 };
         };
 ...
         # use default algorithm for each different gateway
         $var(limit) = 10;
-        if (!rl_check("gw_$ru", "$var(limit)")) {
-                sl_send_reply("503", "Server Unavailable");
+        if (!rl_check("gw_$ru", $var(limit))) {
+                sl_send_reply(503, "Server Unavailable");
+                exit;
+        };
+...
+        # count only successful calls
+        if (!rl_check("gw_$ru", 100)) {
+                rl_dec_count("gw_$ru");
+                sl_send_reply(503, "Server Unavailable");
                 exit;
         };
 ...
@@ -510,13 +492,15 @@ m
    previously increased by rl_check function.
 
    Meaning of the parameters is as follows:
-     * name - identifies the name of the pipe.
+     * name (string) - identifies the name of the pipe.
 
-   This function can be used from REQUEST_ROUTE.
+   This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
+   ONREPLY_ROUTE, BRANCH_ROUTE, ERROR_ROUTE, LOCAL_ROUTE,
+   TIMER_ROUTE and EVENT_ROUTE.
 
-   Example 1.17. rl_dec_count usage
+   Example 1.15. rl_dec_count usage
 ...
-        if (!rl_check("gw_$ru", "100", "TAILDROP")) {
+        if (!rl_check("gw_$ru", 100, "TAILDROP")) {
                 exit;
         } else {
                 rl_dec_count("gw_$ru");
@@ -531,11 +515,13 @@ m
    Meaning of the parameters is as follows:
      * name - identifies the name of the pipe.
 
-   This function can be used from REQUEST_ROUTE.
+   This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
+   ONREPLY_ROUTE, BRANCH_ROUTE, ERROR_ROUTE, LOCAL_ROUTE,
+   TIMER_ROUTE and EVENT_ROUTE.
 
-   Example 1.18. rl_reset_count usage
+   Example 1.16. rl_reset_count usage
 ...
-        if (!rl_check("gw_$ru", "100", "TAILDROP")) {
+        if (!rl_check("gw_$ru", 100, "TAILDROP")) {
                 exit;
         } else {
                 rl_reset_count("gw_$ru");
@@ -551,17 +537,12 @@ m
    Name: rl_list
 
    Parameters:
-     * pipe - indicates the name of the pipe. This parameter is
-       optional. If it doesn't exist, all the active pipes are
-       listed. Otherwise only the one specified.
+     * pipe (optional) - indicates the name of the pipe. If the
+       parameter doesn't exist, all the active pipes are listed.
+       Otherwise only the one specified.
 
    MI FIFO Command Format:
-                :rl_list:_reply_fifo_file_
-                gw_10.0.0.1
-                _empty_line_
-
-                :rl_list:_reply_fifo_file_
-                _empty_line_
+                opensips-cli -x mi rl_list gw_10.0.0.1
 
 1.8.2.  rl_reset_pipe
 
@@ -570,13 +551,11 @@ m
    Name: rl_reset_pipe
 
    Parameters:
-     * pipe - indicates the name of the pipe whose couter should
+     * pipe - indicates the name of the pipe whose counter should
        be reset.
 
    MI FIFO Command Format:
-                :rl_reset_pipe:_reply_fifo_file_
-                gw_10.0.0.1
-                _empty_line_
+                opensips-cli -x mi rl_reset_pipe gw_10.0.0.1
 
 1.8.3.  rl_set_pid
 
@@ -590,11 +569,7 @@ m
      * kd - the derivative parameter.
 
    MI FIFO Command Format:
-                :rl_set_pid:_reply_fifo_file_
-                0.5
-                0.5
-                0.5
-                _empty_line_
+                opensips-cli -x mi rl_set_pid 0.5 0.5 0.5
 
 1.8.4.  rl_get_pid
 
@@ -605,8 +580,7 @@ m
    Parameters: none
 
    MI FIFO Command Format:
-                :rl_get_pid:_reply_fifo_file_
-                _empty_line_
+                opensips-cli -x mi rl_get_pid
 
 1.8.5.  rl_bin_status
 
@@ -618,13 +592,96 @@ m
    Parameters: none
 
    MI FIFO Command Format:
-                :rl_bin_status:_reply_fifo_file_
-                _empty_line_
+                opensips-cli -x mi rl_bin_status
 
-1.9. Exported pseudo-variables
+1.9. Exported Pseudo-Variables
 
 1.9.1. $rl_count(name)
 
    Returns the counter of a pipe. The variable is read-only.
 
    NULL will be returned if the pipe does not exist.
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Razvan Crainea (@razvancrainea) 119 47 2988 2634
+   2. Ovidiu Sas (@ovidiusas) 38 17 2481 44
+   3. Vlad Patrascu (@rvlad-patrascu) 30 17 359 558
+   4. Bogdan-Andrei Iancu (@bogdan-iancu) 28 24 108 118
+   5. Liviu Chircu (@liviuchircu) 18 14 45 114
+   6. Eseanu Marius Cristian (@eseanucristian) 13 6 329 195
+   7. Daniel-Constantin Mierla (@miconda) 9 7 24 18
+   8. Ionel Cerghit (@ionel-cerghit) 4 2 34 24
+   9. Henning Westerholt (@henningw) 4 2 4 2
+   10. Walter Doekes (@wdoekes) 4 2 2 2
+
+   All remaining contributors: Ionut Ionita (@ionutrazvanionita),
+   Arnaud Boussus, Sergio Gutierrez, Stanislaw Pitucha, Bill Hau,
+   Konstantin Bokarius, Vlad Paiu (@vladpaiu), Julián Moreno
+   Patiño, Peter Lemenkov (@lemenkov), Edson Gellert Schubert.
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                         Name                     Commit Activity
+   1.  Liviu Chircu (@liviuchircu)              Mar 2014 - May 2019
+   2.  Razvan Crainea (@razvancrainea)          Sep 2011 - May 2019
+   3.  Vlad Patrascu (@rvlad-patrascu)          Jul 2016 - Apr 2019
+   4.  Bogdan-Andrei Iancu (@bogdan-iancu)      Feb 2008 - Apr 2019
+   5.  Peter Lemenkov (@lemenkov)               Jun 2018 - Jun 2018
+   6.  Ionel Cerghit (@ionel-cerghit)           Jul 2015 - Dec 2016
+   7.  Julián Moreno Patiño                     Feb 2016 - Feb 2016
+   8.  Ionut Ionita (@ionutrazvanionita)        Dec 2015 - Dec 2015
+   9.  Eseanu Marius Cristian (@eseanucristian) Aug 2015 - Sep 2015
+   10. Bill Hau                                 Jul 2014 - Jul 2014
+
+   All remaining contributors: Walter Doekes (@wdoekes), Vlad Paiu
+   (@vladpaiu), Ovidiu Sas (@ovidiusas), Stanislaw Pitucha, Arnaud
+   Boussus, Sergio Gutierrez, Henning Westerholt (@henningw),
+   Daniel-Constantin Mierla (@miconda), Konstantin Bokarius, Edson
+   Gellert Schubert.
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Liviu Chircu (@liviuchircu), Vlad Patrascu
+   (@rvlad-patrascu), Razvan Crainea (@razvancrainea), Peter
+   Lemenkov (@lemenkov), Ionut Ionita (@ionutrazvanionita), Eseanu
+   Marius Cristian (@eseanucristian), Bogdan-Andrei Iancu
+   (@bogdan-iancu), Walter Doekes (@wdoekes), Arnaud Boussus,
+   Daniel-Constantin Mierla (@miconda), Konstantin Bokarius,
+   Henning Westerholt (@henningw), Ovidiu Sas (@ovidiusas), Edson
+   Gellert Schubert.
+
+   Documentation Copyrights:
+
+   Copyright © 2011 OpenSIPS Foundation
+
+   Copyright © 2008 VoIP Embedded Inc.
+
+   Copyright © 2006 Freenet Cityline GmbH

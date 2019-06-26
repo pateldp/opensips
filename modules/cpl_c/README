@@ -1,14 +1,4 @@
 cpl_c Module
-
-Bogdan-Andrei Iancu
-
-Edited by
-
-Bogdan-Andrei Iancu
-
-   Copyright © 2003 FhG FOKUS
-   Revision History
-   Revision $Revision: 8740 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -54,6 +44,22 @@ Bogdan-Andrei Iancu
         1.6. Installation and Running
 
               1.6.1. Database setup
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -335,13 +341,14 @@ modparam("cpl_c","use_domain",1)
    script).
 
    Meaning of the parameters is as follows:
-     * type - which part of the script should be run; set it to
-       "incoming" for having the incoming part of script executed
-       (when an INVITE is received) or to "outgoing" for running
-       the outgoing part of script (when a user is generating an
-       INVITE - call).
-     * mode - sets the interpreter mode as stateless/stateful
-       behavior. The following modes are accepted:
+     * type (string) - which part of the script should be run; set
+       it to "incoming" for having the incoming part of script
+       executed (when an INVITE is received) or to "outgoing" for
+       running the outgoing part of script (when a user is
+       generating an INVITE - call).
+     * mode (string) - sets the interpreter mode as
+       stateless/stateful behavior. The following modes are
+       accepted:
           + IS_STATELESS - the current INVITE has no transaction
             created yet. All replies (redirection or deny) will be
             done is a stateless way. The execution will switch to
@@ -438,10 +445,8 @@ if ($rm=="REGISTER") {
      * cpl_filename: file name
 
    MI FIFO Command format:
-                 :LOAD_CPL:_reply_fifo_file_
-                 username
-                 cpl_filename
-                 _empty_line_
+                 opensips-cli -x mi LOAD_CPL sip:bob@domain.com cpl_scri
+pt.xml
 
 1.5.2.  REMOVE_CPL
 
@@ -454,9 +459,7 @@ if ($rm=="REGISTER") {
      * username : name of the user
 
    MI FIFO Command format:
-                 :REMOVE_CPL:_reply_fifo_file_
-                 username
-                 _empty_line_
+                 opensips-cli -x mi REMOVE_CPL sip:bob@domain.com
 
 1.5.3.  GET_CPL
 
@@ -468,9 +471,7 @@ if ($rm=="REGISTER") {
      * username : name of the user
 
    MI FIFO Command format:
-                 :GET_CPL:_reply_fifo_file_
-                 username
-                 _empty_line_
+                 opensips-cli -x mi GET_CPL sip:bob@domain.com
 
 1.6. Installation and Running
 
@@ -487,3 +488,85 @@ if ($rm=="REGISTER") {
    You can also find the complete database documentation on the
    project webpage,
    http://www.opensips.org/html/docs/db/db-schema-devel.html.
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Bogdan-Andrei Iancu (@bogdan-iancu) 409 170 15545 6543
+   2. Daniel-Constantin Mierla (@miconda) 18 15 80 73
+   3. Jan Janak (@janakj) 18 10 463 219
+   4. Razvan Crainea (@razvancrainea) 17 11 251 216
+   5. Henning Westerholt (@henningw) 16 12 108 132
+   6. Liviu Chircu (@liviuchircu) 12 9 59 106
+   7. Vlad Patrascu (@rvlad-patrascu) 11 8 117 111
+   8. Andrei Pelinescu-Onciul 10 7 107 60
+   9. Jiri Kuthan (@jiriatipteldotorg) 6 2 372 25
+   10. Elena-Ramona Modroiu 5 3 105 15
+
+   All remaining contributors: Eric Tamme (@etamme), Dan Pascu
+   (@danpascu), Nick Altmann (@nikbyte), Ovidiu Sas (@ovidiusas),
+   Konstantin Bokarius, Jesus Rodrigues, Norman Brandinger
+   (@NormB), Andreas Granig, Ionel Cerghit (@ionel-cerghit),
+   Julián Moreno Patiño, Peter Lemenkov (@lemenkov), UnixDev,
+   Edson Gellert Schubert, Maksym Sobolyev (@sobomax).
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Razvan Crainea (@razvancrainea)     Sep 2010 - May 2019
+   2.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   3.  Bogdan-Andrei Iancu (@bogdan-iancu) Aug 2002 - Apr 2019
+   4.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   5.  Liviu Chircu (@liviuchircu)         Mar 2014 - Jun 2018
+   6.  Eric Tamme (@etamme)                Sep 2017 - Sep 2017
+   7.  Maksym Sobolyev (@sobomax)          Feb 2017 - Feb 2017
+   8.  Julián Moreno Patiño                Feb 2016 - Feb 2016
+   9.  Nick Altmann (@nikbyte)             Jan 2016 - Jan 2016
+   10. Ionel Cerghit (@ionel-cerghit)      Oct 2015 - Oct 2015
+
+   All remaining contributors: Ovidiu Sas (@ovidiusas), UnixDev,
+   Dan Pascu (@danpascu), Henning Westerholt (@henningw),
+   Daniel-Constantin Mierla (@miconda), Konstantin Bokarius, Edson
+   Gellert Schubert, Jesus Rodrigues, Elena-Ramona Modroiu, Norman
+   Brandinger (@NormB), Andreas Granig, Andrei Pelinescu-Onciul,
+   Jan Janak (@janakj), Jiri Kuthan (@jiriatipteldotorg).
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Razvan Crainea
+   (@razvancrainea), Peter Lemenkov (@lemenkov), Liviu Chircu
+   (@liviuchircu), Nick Altmann (@nikbyte), Bogdan-Andrei Iancu
+   (@bogdan-iancu), Daniel-Constantin Mierla (@miconda),
+   Konstantin Bokarius, Edson Gellert Schubert, Henning Westerholt
+   (@henningw), Jesus Rodrigues, Elena-Ramona Modroiu, Jan Janak
+   (@janakj).
+
+   Documentation Copyrights:
+
+   Copyright © 2003 FhG FOKUS

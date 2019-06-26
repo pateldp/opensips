@@ -65,8 +65,8 @@ enum fd_types { F_NONE=0,
 		F_TCPMAIN, F_TCPCONN,
 		/* fd types for TCP management process (TCP main process) */
 		F_TCP_LISTENER, F_TCP_TCPWORKER, F_TCP_WORKER,
-		/* fd type specific to FreeSWITCH ESL traffic (FS Stats process) */
-		F_FS_STATS,
+		/* fd type specific to FreeSWITCH ESL traffic (FS worker process) */
+		F_FS_CONN,
 		};
 
 extern io_wait_h _worker_io;
@@ -96,7 +96,16 @@ int init_reactor_size(void);
 	destroy_io_wait(&_worker_io)
 
 #define reactor_has_async() \
-	(io_poll_method==POLL_POLL || io_poll_method==POLL_EPOLL_LT || io_poll_method==POLL_EPOLL_ET)
+	(io_poll_method==POLL_POLL || io_poll_method==POLL_EPOLL)
+
+#define reactor_is_empty() \
+	(_worker_io.fd_no==0)
+
+#define reactor_set_app_flag( _type, _app_flag) \
+	io_set_app_flag( &_worker_io , _type, _app_flag)
+
+#define reactor_check_app_flag(_app_flag) \
+	io_check_app_flag( &_worker_io , _app_flag)
 
 #endif
 

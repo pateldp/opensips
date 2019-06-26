@@ -36,9 +36,11 @@
 #include "../../mem/mem.h"
 #include "../../mem/shm_mem.h"
 #include "../../mod_fix.h"
-#include "../../mi/tree.h"
+#include "../../mi/item.h"
+#include "../clusterer/api.h"
 
 #include "cachedb_local.h"
+#include "cachedb_local_replication.h"
 #include "hash.h"
 
 #include <fnmatch.h>
@@ -55,11 +57,16 @@ int local_exec_threshold = 0;
 lcache_col_t* lcache_collection = NULL;
 url_lst_t* url_list=NULL;
 
+str cache_repl_cap = str_init("cachedb-local-repl");
+int cluster_id = 0;
+enum cachedb_rr_persist rr_persist = RRP_SYNC_FROM_CLUSTER;
+char *cluster_persist;
 
-static int w_remove_chunk_1(struct sip_msg* msg, char* glob);
-static int w_remove_chunk_2(struct sip_msg* msg, char* collection, char* glob);
-static int remove_chunk_f(struct sip_msg* msg, char* collection, char* glob);
-struct mi_root * mi_cache_remove_chunk(struct mi_root *cmd_tree,void *param);
+static int remove_chunk_f(struct sip_msg* msg, str* collection, str* glob);
+mi_response_t *mi_cache_remove_chunk_1(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *mi_cache_remove_chunk_2(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 void localcache_clean(unsigned int ticks,void *param);
 static int parse_collections(unsigned int type, void *val);
 static int store_urls(unsigned int type, void *val);
@@ -69,22 +76,35 @@ static param_export_t params[]={
 	{ "exec_threshold",     INT_PARAM, &local_exec_threshold },
 	{ "cache_collections",  STR_PARAM|USE_FUNC_PARAM, (void *)parse_collections },
 	{ "cachedb_url",        STR_PARAM|USE_FUNC_PARAM, (void *)store_urls },
+	{ "cluster_id",INT_PARAM, &cluster_id },
+	{ "cluster_persistency",STR_PARAM, &cluster_persist },
 	{0,0,0}
 };
 
 static cmd_export_t cmds[]= {
-	{"cache_remove_chunk",        (cmd_function)w_remove_chunk_1,  1,
-	fixup_str_str, 0,
-	REQUEST_ROUTE|ONREPLY_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|STARTUP_ROUTE},
-	{"cache_remove_chunk",        (cmd_function)w_remove_chunk_2,  1,
-	fixup_str_str, 0,
-	REQUEST_ROUTE|ONREPLY_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|STARTUP_ROUTE},
-	{0,0,0,0,0,0}
+	{"cache_remove_chunk",        (cmd_function)remove_chunk_f, {
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0},
+		{CMD_PARAM_STR,0,0}, {0,0,0}},
+		REQUEST_ROUTE|ONREPLY_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|STARTUP_ROUTE},
+	{0,0,{{0,0,0}},0}
 };
 
 static mi_export_t mi_cmds[] = {
-	{ "cache_remove_chunk",           0, mi_cache_remove_chunk,         0,  0,  0},
-	{ 0, 0, 0, 0, 0, 0}
+	{ "cache_remove_chunk", 0, 0, 0, {
+		{mi_cache_remove_chunk_1, {"glob", 0}},
+		{mi_cache_remove_chunk_2, {"glob", "collection", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
+};
+
+static dep_export_t deps = {
+	{ /* OpenSIPS module dependencies */
+		{ MOD_TYPE_NULL, NULL, 0},
+	},
+	{ /* modparam dependencies */
+		{"cluster_id", get_deps_clusterer},
+	},
 };
 
 /** module exports */
@@ -93,7 +113,8 @@ struct module_exports exports= {
 	MOD_TYPE_CACHEDB,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,            /* dlopen flags */
-	NULL,            /* OpenSIPS module dependencies */
+	0,                          /* load functionpen flags */
+	&deps,            /* OpenSIPS module dependencies */
 	cmds,                       /* exported functions */
 	0,                          /* exported async functions */
 	params,                     /* exported parameters */
@@ -105,7 +126,8 @@ struct module_exports exports= {
 	mod_init,                   /* module initialization function */
 	(response_function) 0,      /* response handling function */
 	(destroy_function) destroy, /* destroy function */
-	child_init                  /* per-child init function */
+	child_init,                 /* per-child init function */
+	0                           /* reload confirm function */
 };
 
 static char *key_buff = NULL;
@@ -113,29 +135,17 @@ static int key_buff_size = 0;
 static char *pat_buff = NULL;
 static int pat_buff_size = 0;
 
-static int w_remove_chunk_1(struct sip_msg* msg, char* glob)
-{
-	return remove_chunk_f(msg, NULL, glob);
-}
 
-static int w_remove_chunk_2(struct sip_msg* msg, char* collection, char* glob)
-{
-	return remove_chunk_f(msg, collection, glob);
-}
-
-
-static int remove_chunk_f(struct sip_msg* msg, char* collection, char* glob)
+static int remove_chunk_f(struct sip_msg* msg, str* col_s, str* pat)
 {
 	int i;
-	str *pat = (str *)glob;
-	str *col_s = (str *)collection;
 	lcache_entry_t* me1, *me2;
 	struct timeval start;
 
 	lcache_col_t* col;
 	lcache_t* cache_htable;
 
-	if ( !collection ) {
+	if ( !col_s ) {
 		/* use default collection; default collection is always first in list */
 		col = lcache_collection;
 	} else {
@@ -181,8 +191,9 @@ static int remove_chunk_f(struct sip_msg* msg, char* collection, char* glob)
 					LM_ERR("No more pkg mem\n");
 					key_buff_size = 0;
 					lock_release(&cache_htable[i].lock);
-					stop_expire_timer(start,local_exec_threshold,
-					"cachedb_local remove_chunk",pat->s,pat->len,0);
+					_stop_expire_timer(start,local_exec_threshold,
+						"cachedb_local remove_chunk",pat->s,pat->len,0,
+						cdb_slow_queries, cdb_total_queries);
 					return -1;
 				}
 
@@ -213,46 +224,40 @@ static int remove_chunk_f(struct sip_msg* msg, char* collection, char* glob)
 		lock_release(&cache_htable[i].lock);
 	}
 
-	stop_expire_timer(start,local_exec_threshold,
-	"cachedb_local remove_chunk",pat->s,pat->len,0);
+	_stop_expire_timer(start,local_exec_threshold,
+		"cachedb_local remove_chunk",pat->s,pat->len,0,
+		cdb_slow_queries, cdb_total_queries);
 	return 1;
 }
 
-struct mi_root * mi_cache_remove_chunk(struct mi_root *cmd_tree,void *param)
+mi_response_t *mi_cache_remove_chunk(const mi_params_t *params, str *collection)
 {
-	struct mi_node* node;
-	int status, msg_len;
-	char *msg;
+	str glob;
 
-	char* collection;
-	char* glob;
+	if (get_mi_string_param(params, "glob", &glob.s, &glob.len) < 0)
+		return init_mi_param_error();
 
-	node = cmd_tree->node.kids;
-	if (node == NULL)
-		return init_mi_tree( 400, MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
+	if (remove_chunk_f(NULL,collection, &glob) < 1)
+		return init_mi_error(500, MI_SSTR("Internal error"));
+	else
+		return init_mi_result_ok();
+}
 
-	if (!node->value.s || !node->value.len)
-		return init_mi_tree( 400, MI_BAD_PARM_S, MI_BAD_PARM_LEN);
+mi_response_t *mi_cache_remove_chunk_1(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	return mi_cache_remove_chunk(params, NULL);
+}
 
-	if ( !node->next ) {
-		collection = NULL;
-		glob = (char *)(&node->value);
-	} else {
-		collection = (char *)(&node->value);
-		glob = (char *)(&node->next->value);
-	}
+mi_response_t *mi_cache_remove_chunk_2(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	str col;
 
-	if (remove_chunk_f(NULL,collection,glob) < 1) {
-		status = 500;
-		msg = MI_INTERNAL_ERR_S;
-		msg_len = MI_INTERNAL_ERR_LEN;
-	} else {
-		status = 200;
-		msg = MI_OK_S;
-		msg_len = MI_OK_LEN;
-	}
+	if (get_mi_string_param(params, "collection", &col.s, &col.len) < 0)
+		return init_mi_param_error();
 
-	return init_mi_tree(status,msg,msg_len);
+	return mi_cache_remove_chunk(params, &col);
 }
 
 lcache_con* lcache_new_connection(struct cachedb_id* id)
@@ -326,6 +331,8 @@ static int mod_init(void)
 
 	url_lst_t *it=url_list, *foo=NULL;
 	lcache_col_t *default_col, *col_it;
+
+	memset(&cde, 0, sizeof cde);
 
 	/* register the cache system */
 	cde.name = cache_mod_name;
@@ -429,6 +436,37 @@ static int mod_init(void)
 	/* register timer to delete the expired entries */
 	register_timer("localcache-expire",localcache_clean, 0,
 		cache_clean_period, TIMER_FLAG_DELAY_ON_DELAY);
+
+	/* register clusterer module */
+	if (cluster_id) {
+		if (cluster_persist) {
+			if (!strcasecmp(cluster_persist, "none"))
+				rr_persist = RRP_NONE;
+			else if (!strcasecmp(cluster_persist, "sync-from-cluster"))
+				rr_persist = RRP_SYNC_FROM_CLUSTER;
+			else
+				LM_ERR("unknown 'cluster_persistency' value: %s, "
+				       "using 'sync-from-cluster'\n", cluster_persist);
+		}
+
+		if (load_clusterer_api(&clusterer_api) < 0) {
+			LM_DBG("failed to load clusterer API - is clusterer module loaded?\n");
+			return -1;
+		}
+
+		if (clusterer_api.register_capability(&cache_repl_cap, receive_binary_packet,
+		    receive_cluster_event, cluster_id,
+		    rr_persist == RRP_SYNC_FROM_CLUSTER? 1 : 0,
+		    NODE_CMP_ANY) < 0 ) {
+			LM_ERR("Cannot register clusterer callback for cache replication!\n");
+			return -1;
+		}
+
+		if (rr_persist == RRP_SYNC_FROM_CLUSTER &&
+		    clusterer_api.request_sync(&cache_repl_cap, cluster_id, 0) < 0)
+			LM_ERR("cachedb sync request failed\n");
+
+	}
 
 	return 0;
 }
@@ -660,4 +698,3 @@ static int store_urls(unsigned int type, void *val)
 
 	return 0;
 }
-

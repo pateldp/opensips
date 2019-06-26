@@ -32,21 +32,26 @@
 
 #include "mem/mem.h"
 #include "mem/shm_mem.h"
+#include "mem/rpm_mem.h"
 
-#define avl_malloc(dest,size,flags) do		\
-{						\
-	if(flags & AVLMAP_SHARED)			\
-		(dest) = shm_malloc(size);	\
-	else					\
-		(dest) = pkg_malloc(size);	\
+#define avl_malloc(dest,size,flags) do \
+{ \
+	if(flags & AVLMAP_SHARED) \
+		(dest) = shm_malloc(size); \
+	else if (flags & AVLMAP_PERSISTENT) \
+		(dest) = rpm_malloc(size); \
+	else \
+		(dest) = pkg_malloc(size); \
 } while(0)
 
-#define avl_free(dest,flags)	do		\
-{						\
-	if(flags & AVLMAP_SHARED)			\
-		shm_free(dest);			\
-	else					\
-		pkg_free(dest);			\
+#define avl_free(dest,flags) do \
+{ \
+	if(flags & AVLMAP_SHARED) \
+		shm_free(dest); \
+	else if (flags & AVLMAP_PERSISTENT) \
+		rpm_free(dest); \
+	else \
+		pkg_free(dest); \
 } while(0)
 
 
@@ -72,7 +77,7 @@ static int str_cmp(str s1, str s2)
    and memory allocator |allocator|.
    Returns |NULL| if memory allocation failed. */
 
-map_t map_create(int flags)
+map_t map_create(enum map_flags flags)
 {
 	map_t tree;
 
@@ -148,6 +153,8 @@ void ** map_get( map_t tree, str key)
 	if( !( tree->flags & AVLMAP_NO_DUPLICATE ) )
 	{
 		avl_malloc(key_copy.s, key.len, tree->flags );
+		if (!key_copy.s)
+			return NULL;
 
 		memcpy(key_copy.s,key.s,key.len);
 		key_copy.len = key.len;

@@ -23,6 +23,8 @@
 #ifndef cJSON__h
 #define cJSON__h
 
+#include "../str.h"
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -80,6 +82,9 @@ typedef struct cJSON_Hooks
       void (*free_fn)(void *ptr);
 } cJSON_Hooks;
 
+/* function that is called by cJSON_PrintFlushed to flush the buffered string built */
+typedef int (flush_fn)(unsigned char *buf, int len, void *param);
+
 /* Supply malloc, realloc and free functions to cJSON */
 extern void cJSON_InitHooks(cJSON_Hooks* hooks);
 
@@ -96,6 +101,8 @@ extern char  *cJSON_PrintUnformatted(const cJSON *item);
 extern char *cJSON_PrintBuffered(const cJSON *item, int prebuffer, int fmt);
 /* Render a cJSON entity to text using a buffer already allocated in memory with length buf_len. Returns 1 on success and 0 on failure. */
 extern int cJSON_PrintPreallocated(cJSON *item, char *buf, const int len, const int fmt);
+/* Render a cJSON entity to a limited buffer, and call a flush function when the buffer gets full. Returns 1 on success and 0 on failure. */
+extern int cJSON_PrintFlushed(cJSON *item, char *buf, const int len, const int fmt, flush_fn *func, void *param);
 /* Delete a cJSON entity and all subentities. */
 extern void   cJSON_Delete(cJSON *c);
 
@@ -130,6 +137,7 @@ extern cJSON *cJSON_CreateStringArray(const char **strings, int count);
 
 /* Append item to the specified array/object. */
 extern void cJSON_AddItemToArray(cJSON *array, cJSON *item);
+extern void	_cJSON_AddItemToObject(cJSON *object, const str *string, cJSON *item);
 extern void	cJSON_AddItemToObject(cJSON *object, const char *string, cJSON *item);
 /* Use this when string is definitely const (i.e. a literal, or as good as), and will definitely survive the cJSON object.
  * WARNING: When this function was used, make sure to always check that (item->type & cJSON_StringIsConst) is zero before
@@ -170,6 +178,7 @@ extern void cJSON_Minify(char *json);
 #define cJSON_AddNumberToObject(object,name,n) cJSON_AddItemToObject(object, name, cJSON_CreateNumber(n))
 #define cJSON_AddStringToObject(object,name,s) cJSON_AddItemToObject(object, name, cJSON_CreateString(s))
 #define cJSON_AddStrToObject(object,name,s,len) cJSON_AddItemToObject(object, name, cJSON_CreateStr(s,len))
+#define _cJSON_AddStrToObject(object,name,s,len) _cJSON_AddItemToObject(object, name, cJSON_CreateStr(s,len))
 #define cJSON_AddRawToObject(object,name,s) cJSON_AddItemToObject(object, name, cJSON_CreateRaw(s))
 
 /* When assigning an integer value, it needs to be propagated to valuedouble too. */
@@ -177,6 +186,8 @@ extern void cJSON_Minify(char *json);
 /* helper for the cJSON_SetNumberValue macro */
 extern double cJSON_SetNumberHelper(cJSON *object, double number);
 #define cJSON_SetNumberValue(object, number) ((object) ? cJSON_SetNumberHelper(object, (double)number) : (number))
+
+int cJSON_NumberIsInt(cJSON *item);
 
 /* Macro for iterating over an array */
 #define cJSON_ArrayForEach(pos, head) for(pos = (head)->child; pos != NULL; pos = pos->next)

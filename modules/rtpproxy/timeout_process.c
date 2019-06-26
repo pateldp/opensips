@@ -73,13 +73,13 @@ void timeout_listener_process(int rank)
 	struct sockaddr* saddr;
 	int len, i,n, left;
 	int optval = 1;
-	struct sockaddr rtpp_info;
+	struct sockaddr_storage rtpp_info;
 	struct rtpp_notify_node *rtpp_lst;
 	str terminate_reason = str_init("RTPProxy Timeout");
 	int offset = 0;
 
 	if (init_child(PROC_MODULE) != 0) {
-		LM_ERR("cannot init child process");
+		LM_ERR("cannot init child process\n");
 		return;
 	}
 
@@ -176,14 +176,14 @@ void timeout_listener_process(int rank)
 		if (pfds[0].revents & POLLIN) {
 			i = sizeof(rtpp_info);
 			memset(&rtpp_info, 0, i);
-			connect_fd = accept(socket_fd, &rtpp_info, (socklen_t *)&i);
+			connect_fd = accept(socket_fd, (struct sockaddr *)&rtpp_info, (socklen_t *)&i);
 			if(connect_fd < 0) {
 				LM_ERR("socket accept failed: %s(%d)\n", strerror(errno), errno);
 				continue;
 			}
 
 			/* if it is a unix socket, try to authenticate it */
-			if (rtpp_info.sa_family == AF_UNIX) {
+			if (((struct sockaddr *)&rtpp_info)->sa_family == AF_UNIX) {
 				s_un = (struct sockaddr_un*)&rtpp_info;
 				/* check if the socket is already opened */
 				lock_get(rtpp_notify_h->lock);
@@ -220,14 +220,14 @@ void timeout_listener_process(int rank)
 				}
 			} else {
 				/* search if I can find this connection */
-				if (rtpp_info.sa_family == AF_INET) {
+				if (((struct sockaddr *)&rtpp_info)->sa_family == AF_INET) {
 					s_in = (struct sockaddr_in*)&rtpp_info;
 					lock_get(rtpp_notify_h->lock);
 					for (rtpp_lst = rtpp_notify_h->rtpp_list; rtpp_lst; rtpp_lst = rtpp_lst->next)
 						if (rtpp_lst->mode == 1 && rtpp_lst->index == 0 &&
 							memcmp(rtpp_lst->addr, &s_in->sin_addr.s_addr, 4) == 0)
 							break;
-				} else if (rtpp_info.sa_family == AF_INET6) {
+				} else if (((struct sockaddr *)&rtpp_info)->sa_family == AF_INET6) {
 					s_in6 = (struct sockaddr_in6*)&rtpp_info;
 					lock_get(rtpp_notify_h->lock);
 					for (rtpp_lst = rtpp_notify_h->rtpp_list; rtpp_lst; rtpp_lst = rtpp_lst->next)
@@ -241,11 +241,11 @@ void timeout_listener_process(int rank)
 
 			if (!rtpp_lst) {
 				lock_release(rtpp_notify_h->lock);
-				if (rtpp_info.sa_family == AF_UNIX)
+				if (((struct sockaddr *)&rtpp_info)->sa_family == AF_UNIX)
 					p = ((struct sockaddr_un*)&rtpp_info)->sun_path;
 				else {
 					struct ip_addr ip;
-					sockaddr2ip_addr(&ip, &rtpp_info);
+					sockaddr2ip_addr(&ip, (struct sockaddr *)&rtpp_info);
 					p = ip_addr2a(&ip); \
 				}
 				LM_DBG("unknown rtpproxy  %s -- ignoring\n", p);
@@ -350,7 +350,7 @@ void timeout_listener_process(int rank)
 				if(str2int(&id, &h_entry)< 0) {
 					LM_ERR("Wrong formatted message received from rtpproxy - invalid"
 							" dialog entry [%.*s]\n", id.len, id.s);
-					break;
+					goto error;
 				}
 
 				sp = memchr(p, '\n', left);
@@ -369,7 +369,7 @@ void timeout_listener_process(int rank)
 				if(str2int(&id, &h_id)< 0) {
 					LM_ERR("Wrong formatted message received from rtpproxy - invalid"
 							" dialog id [%.*s]\n", id.len, id.s);
-					break;
+					goto error;
 				}
 				LM_DBG("hentry = %u, h_id = %u\n", h_entry, h_id);
 
@@ -382,6 +382,10 @@ void timeout_listener_process(int rank)
 
 			offset = end - start;
 			memmove(buffer, start, end - start);
+			continue;
+error:
+			/* invalidate entire buffer on error */
+			offset = 0;
 		}
 	}
 }

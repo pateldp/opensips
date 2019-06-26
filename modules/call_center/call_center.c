@@ -30,7 +30,6 @@
 #include "../../error.h"
 #include "../../timer.h"
 #include "../../ut.h"
-#include "../../mod_fix.h"
 #include "../../locking.h"
 #include "../../flags.h"
 #include "../../parser/parse_from.h"
@@ -58,16 +57,23 @@ static void mod_destroy(void);
 static int child_init( int rank );
 static int mi_child_init();
 
-static struct mi_root* mi_cc_reload(struct mi_root *cmd_tree, void *param);
-static struct mi_root* mi_cc_list_flows(struct mi_root *cmd_tree, void *param);
-static struct mi_root* mi_cc_list_queue(struct mi_root *cmd_tree, void *param);
-static struct mi_root* mi_agent_login(struct mi_root *cmd_tree, void *param);
-static struct mi_root* mi_cc_list_agents(struct mi_root *cmd_tree, void *param);
-static struct mi_root* mi_cc_list_calls(struct mi_root *cmd_tree, void *param);
-static struct mi_root* mi_reset_stats(struct mi_root *cmd_tree, void *param);
+static mi_response_t *mi_cc_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_cc_list_flows(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_cc_list_queue(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_agent_login(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_cc_list_agents(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_cc_list_calls(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_reset_stats(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 
-static int w_handle_call(struct sip_msg *req, char *id);
-static int w_agent_login(struct sip_msg *req, char *agent, char *state);
+static int w_handle_call(struct sip_msg *msg, str *flow_name);
+static int w_agent_login(struct sip_msg *req, str *agent_s, int *state);
 
 static void cc_timer_agents(unsigned int ticks, void* param);
 static void cc_timer_cleanup(unsigned int ticks, void* param);
@@ -88,16 +94,15 @@ unsigned int wrapup_time = 30;
 /* the name of the URI param to report the queue position */
 str queue_pos_param = {NULL,0};
 
-
-
 static cmd_export_t cmds[]={
-	{"cc_handle_call",           (cmd_function)w_handle_call,         1,
-		fixup_sgp_null, 0, REQUEST_ROUTE},
-	{"cc_agent_login",           (cmd_function)w_agent_login,         2,
-		fixup_sgp_sgp, 0, REQUEST_ROUTE},
-	{0,0,0,0,0,0}
-	};
-
+	{"cc_handle_call", (cmd_function)w_handle_call,
+		{{CMD_PARAM_STR, 0,0}, {0,0,0}},
+		REQUEST_ROUTE},
+	{"cc_agent_login", (cmd_function)w_agent_login,
+		{{CMD_PARAM_STR, 0,0}, {CMD_PARAM_INT, 0,0}, {0,0,0}},
+		REQUEST_ROUTE},
+	{0,0,{{0,0,0}},0}
+};
 
 static param_export_t mod_params[]={
 	{ "db_url",               STR_PARAM, &db_url.s             },
@@ -109,17 +114,48 @@ static param_export_t mod_params[]={
 };
 
 
-static mi_export_t mi_cmds[] = {
-	{ "cc_reload",      "", mi_cc_reload,    MI_NO_INPUT_FLAG,0,mi_child_init},
-	{ "cc_agent_login", "", mi_agent_login,                  0, 0, 0},
-	{ "cc_list_queue",  "", mi_cc_list_queue, MI_NO_INPUT_FLAG, 0, 0},
-	{ "cc_list_flows",  "", mi_cc_list_flows, MI_NO_INPUT_FLAG, 0, 0},
-	{ "cc_list_agents", "", mi_cc_list_agents,MI_NO_INPUT_FLAG, 0, 0},
-	{ "cc_list_calls",  "", mi_cc_list_calls, MI_NO_INPUT_FLAG, 0, 0},
-	{ "cc_reset_stats", "", mi_reset_stats,   MI_NO_INPUT_FLAG, 0, 0},
-	{ 0, 0, 0, 0, 0, 0}
-};
+// static mi_export_t mi_cmds[] = {
+// 	{ "cc_reload",      "", mi_cc_reload,    MI_NO_INPUT_FLAG,0,mi_child_init},
+// 	{ "cc_agent_login", "", mi_agent_login,                  0, 0, 0},
+// 	{ "cc_list_queue",  "", mi_cc_list_queue, MI_NO_INPUT_FLAG, 0, 0},
+// 	{ "cc_list_flows",  "", mi_cc_list_flows, MI_NO_INPUT_FLAG, 0, 0},
+// 	{ "cc_list_agents", "", mi_cc_list_agents,MI_NO_INPUT_FLAG, 0, 0},
+// 	{ "cc_list_calls",  "", mi_cc_list_calls, MI_NO_INPUT_FLAG, 0, 0},
+// 	{ "cc_reset_stats", "", mi_reset_stats,   MI_NO_INPUT_FLAG, 0, 0},
+// 	{ 0, 0, 0, 0, 0, 0}
+// };
 
+static mi_export_t mi_cmds[] = {
+	{"cc_reload", 0, 0, mi_child_init, {
+		{mi_cc_reload, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{"cc_agent_login", 0, 0, 0, {
+		{mi_agent_login, {"agent_id", "state", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{"cc_list_queue", 0, 0, 0, {
+		{mi_cc_list_queue, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{"cc_list_flows", 0, 0, 0, {
+		{mi_cc_list_flows, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{"cc_list_agents", 0, 0, 0, {
+		{mi_cc_list_agents, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{"cc_list_calls", 0, 0, 0, {
+		{mi_cc_list_calls, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{"cc_reset_stats", 0, 0, 0, {
+		{mi_reset_stats, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
+};
 
 static stat_export_t mod_stats[] = {
 	{"ccg_incalls",             0,             &stg_incalls                  },
@@ -149,6 +185,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,            /* exported functions */
 	0,               /* exported async functions */
@@ -161,7 +198,8 @@ struct module_exports exports= {
 	mod_init,        /* module initialization function */
 	0,               /* reply processing function */
 	mod_destroy,
-	child_init       /* per-child init function */
+	child_init,      /* per-child init function */
+	0                /* reload confirm function */
 };
 
 
@@ -738,24 +776,17 @@ done:
 }
 
 
-static int w_handle_call(struct sip_msg *msg, char *flow_var)
+static int w_handle_call(struct sip_msg *msg, str *flow_name)
 {
 	struct cc_flow *flow;
 	struct cc_call *call;
 	str leg = {NULL,0};
 	str *dn;
-	str val;
 	int dec;
 	int ret = -1;
 
 	call = NULL;
 	dec = 0;
-
-	/* get the flow name */
-	if (fixup_get_svalue(msg, (gparam_p)flow_var, &val)!=0) {
-		LM_ERR("failed to evaluate the flow name variable\n");
-		return -1;
-	}
 
 	/* parse FROM URI */
 	if (parse_from_uri(msg)==NULL) {
@@ -766,9 +797,9 @@ static int w_handle_call(struct sip_msg *msg, char *flow_var)
 	lock_get( data->lock );
 
 	/* get the flow ID */
-	flow = get_flow_by_name(data, &val);
+	flow = get_flow_by_name(data, flow_name);
 	if (flow==NULL) {
-		LM_ERR("flow <%.*s> does not exists\n", val.len, val.s);
+		LM_ERR("flow <%.*s> does not exists\n", flow_name->len, flow_name->s);
 		ret = -3;
 		goto error;
 	}
@@ -863,49 +894,33 @@ error1:
 }
 
 
-static int w_agent_login(struct sip_msg *req, char *agent_v, char *state_v)
+static int w_agent_login(struct sip_msg *req, str *agent_s, int *state)
 {
 	struct cc_agent *agent, *prev_agent;
-	str agent_s;
-	int state;
-	unsigned int flags;
-
-
-	/* get state */
-	if (fixup_get_isvalue( req, (gparam_p)state_v, &state, &agent_s,
-	&flags)!=0 || ((flags|GPARAM_INT_VALUE_FLAG)==0) ) {
-		LM_ERR("unable to evaluate state spec \n");
-		return -1;
-	}
-	/* get agent */
-	if (fixup_get_svalue( req, (gparam_p)agent_v, &agent_s)!=0) {
-		LM_ERR("unable to evaluate agent spec \n");
-		return -2;
-	}
 
 	/* block access to data */
 	lock_get( data->lock );
 
 	/* name of the agent */
-	agent = get_agent_by_name( data, &agent_s, &prev_agent);
+	agent = get_agent_by_name( data, agent_s, &prev_agent);
 	if (agent==NULL) {
 		lock_release( data->lock );
-		LM_DBG("agent <%.*s> not found\n",agent_s.len,agent_s.s);
+		LM_DBG("agent <%.*s> not found\n",agent_s->len,agent_s->s);
 		return -3;
 	}
 
-	if (agent->loged_in != state) {
+	if (agent->loged_in != *state) {
 
-		if(state && (agent->state==CC_AGENT_WRAPUP) &&
+		if(*state && (agent->state==CC_AGENT_WRAPUP) &&
 			(get_ticks() - agent->last_call_end > wrapup_time))
 			agent->state = CC_AGENT_FREE;
 
-		if(state && data->agents[CC_AG_ONLINE] == NULL)
+		if(*state && data->agents[CC_AG_ONLINE] == NULL)
 			data->last_online_agent = agent;
 
 		agent_switch_login(data, agent, prev_agent);
 
-		if(state) {
+		if(*state) {
 			data->logedin_agents++;
 			log_agent_to_flows( data, agent, 1);
 		} else {
@@ -1072,7 +1087,8 @@ static void cc_timer_cleanup(unsigned int ticks, void* param)
 
 /******************** MI commands ***********************/
 
-static struct mi_root* mi_cc_reload(struct mi_root *cmd_tree, void *param)
+static mi_response_t *mi_cc_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
 	int ret;
 
@@ -1093,246 +1109,248 @@ static struct mi_root* mi_cc_reload(struct mi_root *cmd_tree, void *param)
 	lock_release( data->lock );
 
 	if (ret==0)
-		return init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
+		return init_mi_result_ok();
 	else
-		return init_mi_tree( 500, "Failed to reload",16);
+		return init_mi_error(500, MI_SSTR("Failed to reload"));
 }
 
-
-static struct mi_root* mi_cc_list_flows(struct mi_root *cmd, void *param)
+static mi_response_t *mi_cc_list_flows(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
 	struct cc_flow *flow;
-	struct mi_root *rpl_tree;
-	struct mi_node *node;
-	struct mi_node *rpl;
-	struct mi_attr *attr;
-	int len;
-	char *p;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	mi_item_t *flows_arr, *flow_item;
 
-	rpl_tree = init_mi_tree( 200, MI_SSTR("OK") );
-	if ( rpl_tree==NULL)
-		return NULL;
-	rpl = &rpl_tree->node;
-	rpl->flags |= MI_IS_ARRAY;
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return 0;
+
+	flows_arr = add_mi_array(resp_obj, MI_SSTR("Flows"));
+	if (!flows_arr) {
+		free_mi_response(resp);
+		return 0;
+	}
 
 	/* block access to data */
 	lock_get( data->lock );
 
 	for( flow=data->flows; flow ; flow=flow->next ) {
+		flow_item = add_mi_object(flows_arr, NULL, 0);
+		if (!flow_item)
+			goto error;
 
-		node = add_mi_node_child( rpl, MI_DUP_VALUE, MI_SSTR("Flow"),
-				flow->id.s, flow->id.len );
-		if (node==NULL)
-				goto error;
+		if (add_mi_string(flow_item, MI_SSTR("id"),
+			flow->id.s, flow->id.len) < 0)
+			goto error;
 
-		p = int2str( (unsigned long)(flow->avg_call_duration), &len);
-		attr = add_mi_attr( node, MI_DUP_VALUE, MI_SSTR("Avg Call Duration"), p, len);
-		if (attr==NULL)
-				goto error;
+		if (add_mi_number(flow_item, MI_SSTR("Avg Call Duration"),
+			flow->avg_call_duration) < 0)
+			goto error;
 
-		p = int2str( (unsigned long)(flow->processed_calls), &len);
-		attr = add_mi_attr( node, MI_DUP_VALUE, MI_SSTR("Processed Calls"), p, len);
-		if (attr==NULL)
-				goto error;
+		if (add_mi_number(flow_item, MI_SSTR("Processed Calls"),
+			flow->processed_calls) < 0)
+			goto error;
 
-		p = int2str( (unsigned long)(flow->logged_agents), &len);
-		attr = add_mi_attr( node, MI_DUP_VALUE, MI_SSTR("Logged Agents"), p, len);
-		if (attr==NULL)
-				goto error;
+		if (add_mi_number(flow_item, MI_SSTR("Logged Agents"),
+			flow->logged_agents) < 0)
+			goto error;
 
-		p = int2str( (unsigned long)(flow->ongoing_calls), &len);
-		attr = add_mi_attr( node, MI_DUP_VALUE, MI_SSTR("Ongoing Calls"), p, len);
-		if (attr==NULL)
-				goto error;
+		if (add_mi_number(flow_item, MI_SSTR("Ongoing Calls"),
+			flow->ongoing_calls) < 0)
+			goto error;
 
-		p = int2str( (unsigned long)(flow->ref_cnt), &len);
-		attr = add_mi_attr( node, MI_DUP_VALUE, MI_SSTR("Ref"), p, len);
-		if (attr==NULL)
-				goto error;
-
+		if (add_mi_number(flow_item, MI_SSTR("Ref Calls"),
+			flow->ref_cnt) < 0)
+			goto error;
 	}
 
 	lock_release( data->lock );
 
-	return rpl_tree;
+	return resp;
 
 error:
 	lock_release( data->lock );
+	free_mi_response(resp);
 	return 0;
 }
 
-
-static struct mi_root* mi_cc_list_agents(struct mi_root *cmd_tree, void *param)
+static mi_response_t *mi_cc_list_agents(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	mi_item_t *agents_arr, *agent_item;
 	struct cc_agent *agent;
-	struct mi_root *rpl_tree;
-	struct mi_node *node;
-	struct mi_node *rpl;
-	struct mi_attr *attr;
 	str state;
 	static str s_free={"free", 4};
 	static str s_wrapup={"wrapup", 6};
 	static str s_incall={"incall", 6};
-	char *p;
-	int len;
 	int i;
 
-	rpl_tree = init_mi_tree( 200, MI_SSTR("OK") );
-	if ( rpl_tree==NULL)
-		return NULL;
-	rpl = &rpl_tree->node;
-	rpl->flags |= MI_IS_ARRAY;
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return 0;
+
+	agents_arr = add_mi_array(resp_obj, MI_SSTR("Agents"));
+	if (!agents_arr) {
+		free_mi_response(resp);
+		return 0;
+	}
 
 	/* block access to data */
 	lock_get( data->lock );
 
-	for(i=0; i< 2; i++) {
+	for(i=0; i< 2; i++)
 		for( agent=data->agents[i] ; agent ; agent=agent->next ) {
-			node = add_mi_node_child( rpl, MI_DUP_VALUE, "Agent", 5,
-					agent->id.s, agent->id.len );
-			if (node==NULL)
+			agent_item = add_mi_object(agents_arr, NULL, 0);
+			if (!agent_item)
+				goto error;
+
+			if (add_mi_string(agent_item, MI_SSTR("id"),
+				agent->id.s, agent->id.len) < 0)
+				goto error;
+
+			if (add_mi_number(agent_item, MI_SSTR("Ref"),
+				agent->ref_cnt) < 0)
+				goto error;
+
+			if(!agent->loged_in) {
+				if (add_mi_string(agent_item, MI_SSTR("Loged in"),
+					MI_SSTR("NO")) < 0)
+					goto error;
+			} else {
+				if (add_mi_string(agent_item, MI_SSTR("Loged in"),
+					MI_SSTR("YES")) < 0)
 					goto error;
 
-			p = int2str( (unsigned long)(agent->ref_cnt), &len);
-			attr = add_mi_attr( node, MI_DUP_VALUE, MI_SSTR("Ref"), p, len);
-			if (attr==NULL)
-					goto error;
-
-			if(!agent->loged_in)
-				attr = add_mi_attr( node, MI_DUP_VALUE, "Loged in", 8, "NO", 2);
-			else {
-				attr = add_mi_attr( node, MI_DUP_VALUE, "Loged in", 8, "YES", 3);
-				if (attr==NULL)
-					goto error;
-				
 				switch ( agent->state ) {
 					case CC_AGENT_FREE:   state = s_free;   break;
 					case CC_AGENT_WRAPUP: state = s_wrapup; break;
 					case CC_AGENT_INCALL: state = s_incall; break;
 					default: state.s =0;  state.len = 0;
 				}
-				attr = add_mi_attr( node, MI_DUP_VALUE, "State", 5,
-						state.s, state.len );
-			
-			}
-			if (attr==NULL)
+				if (add_mi_string(agent_item, MI_SSTR("State"),
+					state.s, state.len) < 0)
 					goto error;
+			}
 		}
-	}
+
 	lock_release( data->lock );
 
-	return rpl_tree;
+	return resp;
 
 error:
 	lock_release( data->lock );
+	free_mi_response(resp);
 	return 0;
 }
 
-
-static struct mi_root* mi_cc_list_calls(struct mi_root *cmd_tree, void *param)
+static mi_response_t *mi_cc_list_calls(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
 	struct cc_call *call;
 	struct cc_agent *agent;
-	struct mi_root *rpl_tree;
-	struct mi_node *node;
-	struct mi_node *rpl;
-	struct mi_attr *attr;
-	char *p;
-	int len;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	mi_item_t *calls_arr, *call_item;
 	static str call_state[12]= {{"none", 4},
 			{"welcome", 7},
 			{"queued", 6},
 			{"toagent", 7},
 			{"ended", 5}};
 
-	rpl_tree = init_mi_tree( 200, MI_SSTR("OK") );
-	if ( rpl_tree==NULL)
-		return NULL;
-	rpl = &rpl_tree->node;
-	rpl->flags |= MI_IS_ARRAY;
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return 0;
+
+	calls_arr = add_mi_array(resp_obj, MI_SSTR("Calls"));
+	if (!calls_arr) {
+		free_mi_response(resp);
+		return 0;
+	}
 
 	/* block access to data */
 	lock_get( data->lock );
 
 	for( call=data->list.first ; call ; call=call->next_list ) {
+		call_item = add_mi_object(calls_arr, NULL, 0);
+		if (!call_item)
+			goto error;
 
-		node = add_mi_node_child( rpl, MI_DUP_VALUE, "Call", 4,
-				call->b2bua_id.s, call->b2bua_id.len);
-		if (node==NULL)
-				goto error;
+		if (add_mi_string(call_item, MI_SSTR("id"),
+			call->b2bua_id.s, call->b2bua_id.len) < 0)
+			goto error;
 
-		p = int2str( (unsigned long)(call->ref_cnt), &len);
-		attr = add_mi_attr( node, MI_DUP_VALUE, MI_SSTR("Ref"), p, len);
-		if (attr==NULL)
+		if (add_mi_number(call_item, MI_SSTR("Ref"),
+			call->ref_cnt) < 0)
+			goto error;
+
+		if(call->ign_cback) {
+			if (add_mi_string(call_item, MI_SSTR("State"),
+				MI_SSTR("ignored")) < 0)
 				goto error;
-		if(call->ign_cback)
-			attr = add_mi_attr( node, MI_DUP_VALUE, MI_SSTR("State"), MI_SSTR("ignored"));
-		else
-			attr = add_mi_attr( node, MI_DUP_VALUE, MI_SSTR("State"), call_state[call->state].s, call_state[call->state].len);
-		if (attr==NULL)
+		} else
+			if (add_mi_string(call_item, MI_SSTR("State"),
+				call_state[call->state].s, call_state[call->state].len) < 0)
 				goto error;
 
 		LM_DBG("call->recv_time= %d, ticks= %d\n", call->recv_time, get_ticks());
 		if(call->state != CC_CALL_ENDED)
 		{
-			p = int2str( (unsigned long)(call->recv_time?(get_ticks() - call->recv_time):0), &len);
-			attr = add_mi_attr( node, MI_DUP_VALUE, MI_SSTR("Call Time"), p, len);
-			if (attr==NULL)
+			if (add_mi_number(call_item, MI_SSTR("Call Time"),
+				(unsigned long)(call->recv_time?(get_ticks() - call->recv_time):0)) < 0)
 				goto error;
 
 			if(call->flow) {
-				attr = add_mi_attr( node, MI_DUP_VALUE, MI_SSTR("Flow"), call->flow->id.s, call->flow->id.len);
-				if (attr==NULL)
+				if (add_mi_string(call_item, MI_SSTR("Flow"),
+					call->flow->id.s, call->flow->id.len) < 0)
 					goto error;
 			}
 		}
 		if(call->agent) {
 				agent = call->agent;
-				attr = add_mi_attr( node, MI_DUP_VALUE, MI_SSTR("Agent"), agent->id.s, agent->id.len);
-				if (attr==NULL)
-					goto error;	
+				if (add_mi_string(call_item, MI_SSTR("Agent"),
+					agent->id.s, agent->id.len) < 0)
+					goto error;
 		}
 
 	}
-	
+
 	lock_release( data->lock );
 
-	return rpl_tree;
+	return resp;
 
 error:
 	lock_release( data->lock );
+	free_mi_response(resp);
 	return 0;
 }
 
 
 /* FORMAT :  agent_id  log_state */
-static struct mi_root* mi_agent_login(struct mi_root *cmd_tree, void *param)
+static mi_response_t *mi_agent_login(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_node *node;
 	struct cc_agent *agent;
-	unsigned int loged_in;
+	int loged_in;
 	struct cc_agent* prev_agent= 0;
+	str agent_id;
 
-	node = cmd_tree->node.kids;
+	if (get_mi_string_param(params, "agent_id", &agent_id.s, &agent_id.len) < 0)
+		return init_mi_param_error();
 
-	if (node==NULL || node->next==NULL || node->next->next!=NULL)
-		return init_mi_tree( 400, MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
+	if (get_mi_int_param(params, "state", &loged_in) < 0)
+		return init_mi_param_error();
 
 	/* block access to data */
 	lock_get( data->lock );
 
 	/* name of the agent */
-	agent = get_agent_by_name( data, &node->value, &prev_agent);
+	agent = get_agent_by_name( data, &agent_id, &prev_agent);
 	if (agent==NULL) {
 		lock_release( data->lock );
-		return init_mi_tree( 404, MI_SSTR("Agent not found") );
-	}
-
-	/* login state */
-	node = node->next;
-	if (str2int( &node->value , &loged_in)!=0 ) {
-		lock_release( data->lock );
-		return init_mi_tree( 400, MI_SSTR("Bad loged_in state") );
+		return init_mi_error( 404, MI_SSTR("Agent not found"));
 	}
 
 	if (agent->loged_in != loged_in) {
@@ -1358,11 +1376,12 @@ static struct mi_root* mi_agent_login(struct mi_root *cmd_tree, void *param)
 	/* release the readers */
 	lock_release( data->lock );
 
-	return init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
+	return init_mi_result_ok();
 }
 
 
-static struct mi_root* mi_reset_stats(struct mi_root *cmd_tree, void *param)
+static mi_response_t *mi_reset_stats(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
 	struct cc_flow *flow;
 	struct cc_agent *agent;
@@ -1406,27 +1425,29 @@ static struct mi_root* mi_reset_stats(struct mi_root *cmd_tree, void *param)
 	/* release the readers */
 	lock_release( data->lock );
 
-	return init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
+	return init_mi_result_ok();
 }
 
 
-static struct mi_root* mi_cc_list_queue(struct mi_root *cmd_tree, void *param)
+static mi_response_t *mi_cc_list_queue(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root *rpl_tree;
-	struct mi_node *node;
-	struct mi_attr *attr;
-	struct mi_node *rpl;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	mi_item_t *calls_arr, *call_item;
 	struct cc_call *call;
 	unsigned int n, now;
-	char *p;
-	int len;
 	str *s;
 
-	rpl_tree = init_mi_tree( 200, MI_SSTR("OK") );
-	if ( rpl_tree==NULL)
-		return NULL;
-	rpl = &rpl_tree->node;
-	rpl->flags |= MI_IS_ARRAY;
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return 0;
+
+	calls_arr = add_mi_array(resp_obj, MI_SSTR("Calls"));
+	if (!calls_arr) {
+		free_mi_response(resp);
+		return 0;
+	}
 
 	n = 0;
 	now = get_ticks();
@@ -1435,48 +1456,41 @@ static struct mi_root* mi_cc_list_queue(struct mi_root *cmd_tree, void *param)
 	lock_get( data->lock );
 
 	for ( call=data->queue.first ; call ; call=call->lower_in_queue, n++) {
+		call_item = add_mi_object(calls_arr, NULL, 0);
+		if (!call_item)
+			goto error;
 
-		p = int2str( (unsigned long)n, &len);
-		node = add_mi_node_child( rpl, MI_DUP_VALUE, "Call", 4, p, len);
-		if (node==NULL)
-				goto error;
+		if (add_mi_number(call_item, MI_SSTR("index"), n) < 0)
+			goto error;
 
-		p = int2str( (unsigned long)(now-call->last_start), &len);
-		attr = add_mi_attr( node, MI_DUP_VALUE, "Waiting for", 11, p, len);
-		if (attr==NULL)
-				goto error;
+		if (add_mi_number(call_item, MI_SSTR("Waiting for"),
+			now-call->last_start) < 0)
+			goto error;
 
-		p = int2str( (unsigned long)(call->eta), &len);
-		attr = add_mi_attr( node, MI_DUP_VALUE, "ETW", 3, p, len);
-		if (attr==NULL)
-				goto error;
+		if (add_mi_number(call_item, MI_SSTR("ETW"), call->eta) < 0)
+			goto error;
 
 		/* flow data */
-		node = add_mi_node_child( node, MI_DUP_VALUE, "Flow", 4,
-				call->flow->id.s, call->flow->id.len);
-		if (node==NULL)
-				goto error;
+		if (add_mi_string(call_item, MI_SSTR("Flow"),
+			call->flow->id.s, call->flow->id.len) < 0)
+			goto error;
 
-		p = int2str( (unsigned long)(call->flow->priority), &len);
-		attr = add_mi_attr( node, MI_DUP_VALUE, "Priority", 8, p, len);
-		if (attr==NULL)
-				goto error;
+		if (add_mi_number(call_item, MI_SSTR("Priority"), call->flow->priority) < 0)
+			goto error;
 
 		s = get_skill_by_id(data,call->flow->skill);
-		if (s) {
-			attr = add_mi_attr( node, MI_DUP_VALUE, "Skill", 5, s->s, s->len);
-			if (attr==NULL)
-					goto error;
-		}
+		if (s && add_mi_string(call_item, MI_SSTR("Skill"),
+			s->s, s->len) < 0)
+			goto error;
 	}
 
 	/* release the readers */
 	lock_release( data->lock );
 
-	return rpl_tree;
+	return resp;
 error:
 	lock_release( data->lock );
-	free_mi_tree(rpl_tree);
+	free_mi_response(resp);
 	return NULL;
 }
 

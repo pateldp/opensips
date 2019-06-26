@@ -60,9 +60,30 @@ str presence_server= {0, 0};
  * Exported MI functions
  */
 static mi_export_t mi_cmds[] = {
-	{ "pua_publish",	0, mi_pua_publish,     MI_ASYNC_RPL_FLAG,  0,  0},
-	{ "pua_subscribe",	0, mi_pua_subscribe,   0,				     0,  0},
-	{ 0,				0, 0,					 0,					 0,  0}
+	{ "pua_publish", 0,MI_ASYNC_RPL_FLAG,0,{
+		{mi_pua_publish_1, {"presentity_uri", "expires", "event_package", 0}},	
+		{mi_pua_publish_2, {"presentity_uri", "expires", "event_package",
+							"etag", 0}},
+		{mi_pua_publish_3, {"presentity_uri", "expires", "event_package",
+							"extra_headers", 0}},
+		{mi_pua_publish_4, {"presentity_uri", "expires", "event_package",
+							"content_type", "body", 0}},
+		{mi_pua_publish_5, {"presentity_uri", "expires", "event_package",
+							"etag", "extra_headers", 0}},
+		{mi_pua_publish_6, {"presentity_uri", "expires", "event_package",
+							"etag", "content_type", "body", 0}},
+		{mi_pua_publish_7, {"presentity_uri", "expires", "event_package",
+							"extra_headers", "content_type", "body", 0}},
+		{mi_pua_publish_8, {"presentity_uri", "expires", "event_package",
+							"etag", "extra_headers", "content_type", "body", 0}},
+		{EMPTY_MI_RECIPE}},
+	},
+	{ "pua_subscribe", 0,0,0,{
+		{mi_pua_subscribe, {"presentity_uri", "watcher_uri", "event_package",
+							"expires", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
 
 /*
@@ -89,6 +110,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,           /* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,            /* dlopen flags */
+	0,				            /* load function */
 	&deps,                      /* OpenSIPS module dependencies */
 	 0,							/* exported functions */
 	 0,							/* exported async functions */
@@ -101,7 +123,8 @@ struct module_exports exports= {
 	 mod_init,					/* module initialization function */
 	 (response_function) 0,		/* response handling function */
  	 destroy,					/* destroy function */
-	 child_init                 /* per-child init function */
+	 child_init,                /* per-child init function */
+	 0                          /* reload confirm function */
 };
 
 /**
@@ -114,7 +137,7 @@ static int mod_init(void)
 	if(presence_server.s)
 		presence_server.len = strlen(presence_server.s);
 
-	bind_pua= (bind_pua_t)find_export("bind_pua", 1,0);
+	bind_pua= (bind_pua_t)find_export("bind_pua", 0);
 	if (!bind_pua)
 	{
 		LM_ERR("Can't bind pua (check if pua module is loaded)\n");

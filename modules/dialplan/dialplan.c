@@ -15,11 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
- *
- * History:
- * --------
- *  2007-08-01 initial version (ancuta onofrei)
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 
@@ -40,6 +36,7 @@
 #include "../../mi/mi.h"
 #include "../../parser/parse_to.h"
 #include "../../mod_fix.h"
+#include "../../ipc.h"
 #include "dialplan.h"
 #include "dp_db.h"
 
@@ -55,24 +52,35 @@
 #define DP_CHAR_SCOLON     ';'
 #define DP_TYPE_URL 	    0
 #define DP_TYPE_TABLE 	    1
-#define is_space(p) (*(p) == ' ' || *(p) == '\t' || \
-					 *(p) == '\r' || *(p) == '\n')
 
 static int mod_init(void);
 static int child_init(int rank);
 static int mi_child_init(void);
 static void mod_destroy();
 
-static struct mi_root * mi_reload_rules(struct mi_root *cmd_tree,void *param);
-static struct mi_root * mi_translate(struct mi_root *cmd_tree, void *param);
-static struct mi_root * mi_show_partition(struct mi_root *cmd_tree, void *param);
-static int dp_translate_f(struct sip_msg *m, char *id, char *out, char *attrs);
-static int dp_trans_fixup(void ** param, int param_no);
+static mi_response_t *mi_reload_rules(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_reload_rules_1(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_translate2(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_translate3(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_show_partition(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_show_partition_1(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+
+
+static int dp_translate_f(struct sip_msg *m, int* dpid, str *in_str,
+		pv_spec_t *out_var, pv_spec_t *attr_var, dp_connection_list_t *part);
+static int fix_partition(void** param);
+
 static int dp_set_partition(modparam_t type, void* val);
 static void dp_print_list(void);
 
-str default_param_s = str_init(DEFAULT_PARAM);
-str default_dp_partition = {NULL, 0};
+static str default_param_s = str_init(DEFAULT_PARAM);
+static str default_dp_partition = {NULL, 0};
 dp_param_p default_par2 = NULL;
 static str database_url = {NULL, 0};
 
@@ -96,23 +104,37 @@ static param_export_t mod_params[]={
 };
 
 static mi_export_t mi_cmds[] = {
-	{ "dp_reload",  0, mi_reload_rules,   0,       0,  mi_child_init},
-	{ "dp_translate",  0, mi_translate,   0,       0,              0},
-	{ "dp_show_partition",  0, mi_show_partition,   0,       0,              0},
-	{ 0, 0, 0, 0, 0, 0}
+	{ "dp_reload", 0, 0, mi_child_init, {
+		{mi_reload_rules, {0}},
+		{mi_reload_rules_1, {"table_name", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ "dp_translate", 0, 0, 0, {
+		{mi_translate2, {"dpid", "input", 0}},
+		{mi_translate3, {"partition", "dpid", "input", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ "dp_show_partition", 0, 0, mi_child_init, {
+		{mi_show_partition, {0}},
+		{mi_show_partition_1, {"partition", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
 
 static cmd_export_t cmds[]={
-	{"dp_translate",(cmd_function)dp_translate_f,	3,	dp_trans_fixup,  0,
-			REQUEST_ROUTE|FAILURE_ROUTE|LOCAL_ROUTE|BRANCH_ROUTE|
-			STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"dp_translate",(cmd_function)dp_translate_f,	2,	dp_trans_fixup,  0,
-			REQUEST_ROUTE|FAILURE_ROUTE|LOCAL_ROUTE|BRANCH_ROUTE|
-			STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"dp_translate",(cmd_function)dp_translate_f,	1,	dp_trans_fixup,  0,
-			REQUEST_ROUTE|FAILURE_ROUTE|LOCAL_ROUTE|BRANCH_ROUTE|
-			STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{0,0,0,0,0,0}
+	{"dp_translate", (cmd_function)dp_translate_f,
+		{ {CMD_PARAM_INT, NULL, NULL},
+		  {CMD_PARAM_STR, NULL, NULL},
+		  {CMD_PARAM_VAR|CMD_PARAM_OPT, NULL, NULL},
+		  {CMD_PARAM_VAR|CMD_PARAM_OPT, NULL, NULL},
+		  {CMD_PARAM_STR|CMD_PARAM_OPT|CMD_PARAM_FIX_NULL, fix_partition,NULL},
+		  {0 , 0, 0}
+		},
+		REQUEST_ROUTE|FAILURE_ROUTE|LOCAL_ROUTE|BRANCH_ROUTE|
+		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE
+	},
+	{0,0,{{0,0,0}},0}
 };
 
 static dep_export_t deps = {
@@ -130,6 +152,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,            /* exported functions */
 	0,               /* exported async functions */
@@ -142,41 +165,9 @@ struct module_exports exports= {
 	mod_init,		/* module initialization function */
 	0,				/* reply processing function */
 	mod_destroy,
-	child_init		/* per-child init function */
+	child_init,		/* per-child init function */
+	0               /* reload confirm function */
 };
-
-static inline char* strchrchr(char* str, char c1, char c2)
-{
-
-	char* ret = NULL;
-
-	if (!str)
-		return NULL;
-
-	for (ret = str; (ret = *ret == '\0' ? NULL : ret)
-			&& *ret !=  c1 && *ret != c2; ret++);
-
-	return ret;
-}
-
-static inline char* memchrchr(char* str, char c1, char c2, int len)
-{
-
-	int i;
-
-	if (len == 0)
-		return NULL;
-
-	for (i = 0; i < len; i++) {
-		register char c = *(str + i);
-		if(c == c1 || c == c2)
-			return str + i;
-	}
-
-	return NULL;
-
-}
-
 
 static dp_head_p dp_get_head(str part_name){
 
@@ -466,9 +457,24 @@ static int mod_init(void)
 		LM_ERR("could not initialize data\n");
 		return -1;
 	}
+
 	return 0;
 #undef init_db_url_part
 }
+
+
+/* RPC function for (re)loading (no db init) data for all partitions;
+ * This is fired from child_init(child==1) only once, so close connections
+ * when done */
+static void dp_rpc_data_load(int sender_id, void *unused)
+{
+	if(dp_load_all_db() != 0){
+		LM_ERR("failed to reload database\n");
+		return;
+	}
+	dp_disconnect_all_db();
+}
+
 
 static int child_init(int rank)
 {
@@ -478,33 +484,44 @@ static int child_init(int rank)
 	if (rank != 1)
 		return 0;
 
-	/*Connect to DB s and get rules*/
-	for(el = dp_conns; el; el = el->next){
-		if (init_db_data(el) != 0) {
-			/* all el shall be freed in mod destroy */
-			LM_ERR("Unable to init db data\n");
-			return -1;
-		}
-	}
-
-	dp_disconnect_all_db();
-
-	return 0;
-}
-static int mi_child_init(void)
-{
-
-	dp_connection_list_p el;
-
-	/*Connect to DB s and get rules*/
+	/* Connect to DBs.... */
 	for(el = dp_conns; el; el = el->next){
 		if (dp_connect_db(el) != 0) {
 			/* all el shall be freed in mod destroy */
-			LM_ERR("Unable to init db data\n");
+			LM_ERR("Unable to init/connect db connection\n");
 			return -1;
 		}
 	}
 
+	/* ...and fire the RPC to perform the data load in the
+	 * same process, but after child_init is done */
+	if (ipc_send_rpc( process_no, dp_rpc_data_load, NULL)<0) {
+		LM_ERR("failed to fire RPC for data load\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+
+static int mi_child_init(void)
+{
+	static int mi_child_initialized = 0;
+	dp_connection_list_p el;
+
+	if (mi_child_initialized)
+		return 0;
+
+	/* Connect to DB s */
+	for(el = dp_conns; el; el = el->next){
+		if (dp_connect_db(el) != 0) {
+			/* all el shall be freed in mod destroy */
+			LM_ERR("Unable to init/connect db connection\n");
+			return -1;
+		}
+	}
+
+	mi_child_initialized = 1;
 	return 0;
 }
 
@@ -512,83 +529,13 @@ static int mi_child_init(void)
 
 static void mod_destroy(void)
 {
-	dp_connection_list_p el;
 	/*destroy shared memory*/
 	if(default_par2){
 		shm_free(default_par2);
 		default_par2 = NULL;
 	}
 
-	LM_DBG("Disconnecting from all databases\n");
-	for(el = dp_conns; el ; el = el->next){
-		dp_disconnect_db(el);
-
-		LM_DBG("Successfully disconnected from DB %.*s\n" ,
-						 el->db_url.len, el->db_url.s);
-	}
-
-
 	destroy_data();
-}
-
-
-static int dp_get_ivalue(struct sip_msg* msg, dp_param_p dp, int *val)
-{
-	pv_value_t value;
-
-	switch (dp->type) {
-		case DP_VAL_STR :
-			*val = dp->v.id;
-			return 0;
-		case DP_VAL_INT :
-			*val = dp->v.pv_id.id;
-			return 0;
-		default :
-			break;
-	}
-
-	LM_DBG("searching %d\n",dp->v.sp[0].type);
-
-	if (pv_get_spec_value( msg, &dp->v.sp[0], &value)!=0) {
-		LM_ERR("no PV found (error in script)\n");
-		return -1;
-	}
-
-	if (value.flags&(PV_VAL_NULL|PV_VAL_EMPTY)) {
-		LM_ERR("NULL or empty val found (error in script)\n");
-		return -1;
-	}
-
-	if (value.flags&PV_VAL_INT) {
-		*val = value.ri;
-	} else if (value.flags&PV_VAL_STR) {
-		if (str2sint(&value.rs, val) != 0) {
-			LM_ERR("Unbale to convert to INT [%.*s]\n", value.rs.len, value.rs.s);
-			return -1;
-		}
-	} else {
-		LM_ERR("non-INT/STR val found (error in script)\n");
-		return -1;
-	}
-
-	return 0;
-}
-
-
-static int dp_get_svalue(struct sip_msg * msg, pv_spec_t spec, str* val)
-{
-	pv_value_t value;
-
-	LM_DBG("searching %d \n", spec.type);
-
-	if ( pv_get_spec_value(msg,&spec,&value)!=0 || value.flags&PV_VAL_NULL
-	|| value.flags&PV_VAL_EMPTY || !(value.flags&PV_VAL_STR)){
-			LM_ERR("no PV or NULL or non-STR val found (error in script)\n");
-			return -1;
-	}
-
-	*val = value.rs;
-	return 0;
 }
 
 
@@ -609,115 +556,26 @@ static int dp_update(struct sip_msg * msg, pv_spec_t * src, pv_spec_t * dest,
 	return 0;
 }
 
-static int dp_translate_f(struct sip_msg *msg, char *str1, char *str2,
-						  char *attr_spec)
+
+static int fix_partition(void** param)
 {
+	str def_str = str_init(DEFAULT_PARTITION);
+	str *s=(str*)*param;
 
-	int dpid;
-	str input, output;
-	dpl_id_p idp;
-	dp_param_p id_par, repl_par;
-	str attrs, *attrs_par;
-	dp_connection_list_p connection;
-	pv_value_t pval;
-	str partition_name;
+	/* handle the special case when the fix is triggered for 
+	   missing parameter */
+	if (s==NULL)
+		s = &def_str;
 
-	if (!msg)
-		return -1;
-
-	/* verify first param's value */
-	id_par = (dp_param_p) str1;
-
-	if (dp_get_ivalue(msg, id_par, &dpid) != 0){
-		LM_ERR("no dpid value\n");
+	*param = (void*)dp_get_connection( s );
+	if (*param==NULL) {
+		LM_ERR("partition <%.*s> not found\n", s->len, s->s);
 		return -1;
 	}
 
-	switch( id_par->type ) {
-		case DP_VAL_INT :
-			if (dp_get_svalue(msg, id_par->v.pv_id.partition,
-								&partition_name)) {
-				LM_ERR("invalid partition\n");
-				return -1;
-			}
-			goto GET_CONN;
-		case DP_VAL_SPEC :
-			if (dp_get_svalue(msg, id_par->v.sp[1],
-								&partition_name)) {
-				LM_ERR("invalid partition\n");
-				return -1;
-			}
-		GET_CONN:
-			if (!(id_par->hash = dp_get_connection(&partition_name))) {
-				LM_ERR("invalid partition\n");
-				return -1;
-			}
-
-			break;
-		default :
-			break;
-	}
-
-	LM_DBG("dpid is %i partition is %.*s\n", dpid,
-			id_par->hash->partition.len, id_par->hash->partition.s);
-
-	repl_par = (str2!=NULL) ? ((dp_param_p)str2) : default_par2;
-	if (dp_get_svalue(msg, repl_par->v.sp[0], &input)!=0){
-		LM_ERR("invalid param 2\n");
-		return -1;
-	}
-
-	LM_DBG("input is %.*s\n", input.len, input.s);
-	connection = id_par->hash;
-
-	/* ref the data for reading */
-	lock_start_read( connection->ref_lock );
-
-	if ((idp = select_dpid(connection, dpid, connection->crt_index)) == 0) {
-		LM_DBG("no information available for dpid %i\n", dpid);
-		goto error;
-	}
-
-	LM_DBG("Checking with dpid %i\n", idp->dp_id);
-
-	attrs_par =  attr_spec ? &attrs : NULL;
-	if (translate(msg, input, &output, idp, attrs_par) != 0) {
-		LM_DBG("could not translate %.*s "
-			"with dpid %i\n", input.len, input.s, idp->dp_id);
-		goto error;
-	}
-
-	LM_DBG("input %.*s with dpid %i => output %.*s\n",
-			input.len, input.s, idp->dp_id, output.len, output.s);
-
-	/* set the output */
-	if (dp_update(msg, &repl_par->v.sp[0], &repl_par->v.sp[1], &output) != 0) {
-		LM_ERR("cannot set the output\n");
-		goto error;
-	}
-
-	/* we are done reading -> unref the data */
-	lock_stop_read( connection->ref_lock );
-
-	if (attr_spec && attrs.s && attrs.len) {
-		pval.flags = PV_VAL_STR;
-		pval.rs = attrs;
-
-		if (pv_set_value(msg, (pv_spec_p)attr_spec, 0, &pval) != 0) {
-			LM_ERR("failed to set value '%.*s' for the attr pvar!\n",
-					attrs.len, attrs.s);
-			goto error;
-		}
-	}
-
-	return 1;
-
-error:
-	/* we are done reading -> unref the data */
-	lock_stop_read( connection->ref_lock );
-
-	return -1;
+	return 0;
 }
+
 
 #define verify_par_type(_spec)\
 	do{\
@@ -728,185 +586,73 @@ error:
 		}\
 	}while(0);
 
-/**
- * Parses a dp command of the type "table_name/dpid". Skips all whitespaces.
- */
 
-static char *parse_dp_command(char * p, int len, str * partition_name)
+static int dp_translate_f(struct sip_msg *msg, int* dpid, str *in_str,
+		pv_spec_t *out_var, pv_spec_t *attr_var, dp_connection_list_t *part)
 {
-	char *s, *q;
 
-	while (is_space(p)) {
-		p++;
-		len--;
+	dpl_id_p idp;
+	str out_str, attrs;
+	pv_value_t pval;
+
+	if (!msg)
+		return -1;
+
+	LM_DBG("dpid is %i partition is %.*s\n", *dpid,
+		part->partition.len, part->partition.s);
+
+	LM_DBG("input is %.*s\n", in_str->len, in_str->s);
+
+	/* ref the data for reading */
+	lock_start_read( part->ref_lock );
+
+	if ((idp = select_dpid(part, *dpid, part->crt_index)) == 0) {
+		LM_DBG("no information available for dpid %i\n", *dpid);
+		goto error;
+	}
+	LM_DBG("checking with dpid %i\n", idp->dp_id);
+
+	if (translate(msg, *in_str, &out_str, idp, attr_var?&attrs:NULL) != 0) {
+		LM_DBG("could not translate\n");
+		goto error;
 	}
 
-	if (len <= 0) {
-		s = strchrchr(p, DP_CHAR_SLASH, DP_CHAR_COLON);
-	} else {
-		s = memchrchr(p, DP_CHAR_SLASH, DP_CHAR_COLON, len);
-	}
-	if (s != 0) {
-		q = s+1;
+	LM_DBG("input %.*s with dpid %i => output %.*s\n",
+			in_str->len, in_str->s, idp->dp_id, out_str.len, out_str.s);
 
-		while (s > p && is_space(s-1))
-			s--;
-
-		if (s == p || (*q == '\0'))
-			return NULL;
-
-		partition_name->s = p;
-		partition_name->len = s-p;
-
-		p = q;
-
-		while (is_space(p))
-			p++;
-
-	} else {
-		partition_name->s = 0;
-		partition_name->len = 0;
-	}
-
-	return p;
-}
-
-#undef is_space
-
-/* first param: DPID: type: INT, AVP, SVAR
- * second param: SRC/DST type: RURI, RURI_USERNAME, AVP, SVAR
- * default value for the second param: $ru.user/$ru.user
- */
-static int dp_trans_fixup(void ** param, int param_no){
-
-	int dpid;
-	dp_param_p dp_par= NULL;
-	char *p, *s = NULL;
-	str lstr, partition_name;
-	dp_connection_list_t *list = NULL;
-
-	if (param_no < 1 || param_no > 3)
-		return 0;
-
-	p = (char*)*param;
-	if(!p || (*p == '\0')){
-		LM_DBG("null param %i\n", param_no);
-		return E_CFG;
-	}
-
-	dp_par = (dp_param_p)pkg_malloc(sizeof(dp_param_t));
-	if(dp_par == NULL){
-		LM_ERR("no more pkg memory\n");
-		return E_OUT_OF_MEM;
-	}
-	memset(dp_par, 0, sizeof(dp_param_t));
-
-	switch (param_no) {
-	case 1:
-		p = parse_dp_command(p, -1, &partition_name);
-
-		if (p == NULL) {
-			LM_ERR("Invalid dp command\n");
-			return E_CFG;
-		}
-
-		if (!partition_name.s && !partition_name.len) {
-			partition_name.s = DEFAULT_PARTITION;
-			partition_name.len = sizeof(DEFAULT_PARTITION) - 1;
-		}
-
-		if (*partition_name.s != PV_MARKER) {
-			list = dp_get_connection(&partition_name);
-
-			if(!list){
-				LM_ERR("Partition with name [%.*s] is not defined\n",
-						partition_name.len, partition_name.s );
-				return -1;
-			}
-			dp_par->type = DP_VAL_STR;
-
-		} else {
-			dp_par->type = DP_VAL_SPEC;
-		}
-
-		if (*p != PV_MARKER) {
-			lstr.s = p; lstr.len = strlen(p);
-			if(str2sint(&lstr, &dpid) != 0) {
-				LM_ERR("bad number <%s>\n",(char *)(*param));
-				pkg_free(dp_par);
-				return E_CFG;
-			}
-
-			if(dp_par->type == DP_VAL_SPEC){
-				/*int dpid and pv partition_name*/
-				dp_par->type = DP_VAL_INT;
-				dp_par->v.pv_id.id = dpid;
-				if( !pv_parse_spec( &partition_name,
-						&dp_par->v.pv_id.partition))
-					goto error;
-			} else {
-				/*DP_VAL_STR remains DP_VAL_STR
-					   ( int dpid and str partition_name)*/
-				dp_par->v.id = dpid;
-			}
-		} else {
-			if (dp_par->type == DP_VAL_STR) {
-				/*pv dpid and str partition_name*/
-				dp_par->type = DP_VAL_STR_SPEC;
-			} else {
-				/*DP_VAL_SPEC remains DP_VAL_SPEC
-						( pv dpid and pv partition_name) */
-				if( !pv_parse_spec( &partition_name,
-							 &dp_par->v.sp[1]))
-					goto error;
-			}
-
-			lstr.s = p; lstr.len = strlen(p);
-			if (pv_parse_spec( &lstr, &dp_par->v.sp[0])==NULL)
-				goto error;
-
-			verify_par_type(dp_par->v.sp[0]);
-		}
-
-		dp_par->hash = list;
-		break;
-
-	case 2:
-		if( ((s = strchr(p, '/')) == 0) ||( *(s+1)=='\0'))
-				goto error;
-		*s = '\0'; s++;
-
-		lstr.s = p; lstr.len = strlen(p);
-		if(pv_parse_spec( &lstr, &dp_par->v.sp[0])==NULL)
+	if (out_var) {
+		verify_par_type(*out_var);
+		/* set the output */
+		if (dp_update( msg, NULL, out_var, &out_str) != 0) {
+			LM_ERR("cannot set the output\n");
 			goto error;
-
-		verify_par_type(dp_par->v.sp[0]);
-
-		lstr.s = s; lstr.len = strlen(s);
-		if (pv_parse_spec( &lstr, &dp_par->v.sp[1] )==NULL)
-			goto error;
-
-		verify_par_type(dp_par->v.sp[1]);
-		if (dp_par->v.sp[1].setf==NULL) {
-			LM_ERR("the output PV is read-only!!\n");
-			return E_CFG;
 		}
-
-		dp_par->type = DP_VAL_SPEC;
-		break;
-
-	case 3:
-		return fixup_pvar(param);
 	}
 
-	*param = (void *)dp_par;
+	/* we are done reading -> unref the data */
+	lock_stop_read( part->ref_lock );
 
-	return 0;
+	if (attr_var && attrs.s && attrs.len) {
+		verify_par_type(*attr_var);
+		pval.flags = PV_VAL_STR;
+		pval.rs = attrs;
+
+		if (pv_set_value(msg, attr_var, 0, &pval) != 0) {
+			LM_ERR("failed to set value '%.*s' for the attr pvar!\n",
+					attrs.len, attrs.s);
+			goto error;
+		}
+	}
+
+	return 1;
 
 error:
-	LM_ERR("failed to parse param %i\n", param_no);
-	return E_INVALID_PARAMS;
+	/* we are done reading -> unref the data */
+	lock_stop_read( part->ref_lock );
+
+	return -1;
 }
+
 
 /* creates an url string without password field*/
 static void db_get_url(const str* url){
@@ -971,89 +717,125 @@ static void db_get_url(const str* url){
 	free_db_id(id);
 }
 
-static struct mi_root * mi_show_partition(struct mi_root *cmd_tree, void *param)
+static mi_response_t *mi_show_partition(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_node *node = NULL;
-	struct mi_root *rpl_tree = NULL;
-	struct mi_node* root= NULL;
-	struct mi_attr* attr;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	mi_item_t *parts_arr, *part_item;
 	dp_connection_list_t *el;
 
-
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==NULL) return NULL;
-
-	if (cmd_tree) node = cmd_tree->node.kids;
-	if (node == NULL) {
-		el = dp_get_connections();
-		root = &rpl_tree->node;
-		while (el) {
-			node = add_mi_node_child(root, 0, "Partition", 9, el->partition.s, el->partition.len);
-			if( node == NULL) goto error;
-			attr = add_mi_attr(node, 0, "table", 5, el->table_name.s, el->table_name.len);
-			if(attr == NULL) goto error;
-			db_get_url(&el->db_url);
-			if(database_url.len == 0) goto error;
-			attr = add_mi_attr(node, MI_DUP_VALUE, "db_url", 6, database_url.s, database_url.len);
-			if(attr == NULL) goto error;
-			el = el->next;
-		}
-	} else {
-		el = dp_get_connection(&node->value);
-		if (!el) goto error;
-		root = &rpl_tree->node;
-		node = add_mi_node_child(root, 0, "Partition", 9, el->partition.s, el->partition.len);
-		if( node == NULL) goto error;
-		attr = add_mi_attr(node, 0, "table", 5, el->table_name.s, el->table_name.len);
-		if(attr == NULL) goto error;
-		db_get_url(&el->db_url);
-		if(database_url.len == 0) goto error;
-		attr = add_mi_attr(node, MI_DUP_VALUE, "db_url", 6, database_url.s, database_url.len);
-		if(attr == NULL) goto error;
-	}
-
-	return rpl_tree;
-
-error:
-	if(rpl_tree) free_mi_tree(rpl_tree);
-	return NULL;
-}
-
-static struct mi_root * mi_reload_rules(struct mi_root *cmd_tree, void *param)
-{
-	struct mi_node *node = NULL;
-	struct mi_root *rpl_tree = NULL;
-	dp_connection_list_t *el;
-
-
-	if (cmd_tree)
-		node = cmd_tree->node.kids;
-
-	if (node == NULL) {
-			/* Reload rules from all partitions */
-			if(dp_load_all_db() != 0){
-					LM_ERR("failed to reload database\n");
-					return 0;
-			}
-	} else if (node->value.s == NULL || node->value.len == 0) {
-			return init_mi_tree( 400, MI_BAD_PARM_S, MI_BAD_PARM_LEN);
-	} else {
-			el = dp_get_connection(&node->value);
-			if (!el)
-					return init_mi_tree( 400, MI_BAD_PARM_S, MI_BAD_PARM_LEN);
-			/* Reload rules from specified  partition */
-			LM_DBG("Reloading rules from table %.*s\n", node->value.len, node->value.s);
-			if(dp_load_db(el) != 0){
-					LM_ERR("failed to reload database data\n");
-					return 0;
-			}
-	}
-
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==0)
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
 		return 0;
 
-	return rpl_tree;
+	parts_arr = add_mi_array(resp_obj, MI_SSTR("Partitions"));
+	if (parts_arr)
+		goto error;
+
+	el = dp_get_connections();
+	while (el) {
+		part_item = add_mi_object(parts_arr, NULL, 0);
+		if (!part_item)
+			goto error;
+
+		if (add_mi_string(part_item, MI_SSTR("name"),
+			el->partition.s, el->partition.len) < 0)
+			goto error;
+
+		if (add_mi_string(resp_obj, MI_SSTR("Table"),
+				el->table_name.s, el->table_name.len) < 0)
+				goto error;
+
+		db_get_url(&el->db_url);
+		if(database_url.len == 0) goto error;
+
+		if (add_mi_string(resp_obj, MI_SSTR("db_url"),
+			database_url.s, database_url.len) < 0)
+			goto error;
+
+		el = el->next;
+	}
+
+	return resp;
+
+error:
+	free_mi_response(resp);
+	return 0;
+}
+
+static mi_response_t *mi_show_partition_1(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	str part;
+	dp_connection_list_t *el;
+
+	if (get_mi_string_param(params, "partition", &part.s, &part.len) < 0)
+		return init_mi_param_error();
+
+	el = dp_get_connection(&part);
+	if (!el)
+		return 0;
+
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return 0;
+
+	if (add_mi_string(resp_obj, MI_SSTR("Partition"),
+		el->partition.s, el->partition.len) < 0)
+		goto error;
+
+	if (add_mi_string(resp_obj, MI_SSTR("Table"),
+		el->table_name.s, el->table_name.len) < 0)
+		goto error;
+
+	db_get_url(&el->db_url);
+	if(database_url.len == 0) goto error;
+
+	if (add_mi_string(resp_obj, MI_SSTR("db_url"),
+		database_url.s, database_url.len) < 0)
+		goto error;
+
+	return resp;
+
+error:
+	free_mi_response(resp);
+	return 0;
+}
+
+static mi_response_t *mi_reload_rules(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	if(dp_load_all_db() != 0){
+			LM_ERR("failed to reload database\n");
+			return 0;
+	}
+
+	return init_mi_result_ok();
+}
+
+static mi_response_t *mi_reload_rules_1(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	dp_connection_list_t *el;
+	str table;
+
+	if (get_mi_string_param(params, "table_name", &table.s, &table.len) < 0)
+		return init_mi_param_error();
+
+	el = dp_get_connection(&table);
+	if (!el)
+			return init_mi_error( 400, MI_SSTR("Bad parameter value"));
+	/* Reload rules from specified  partition */
+	LM_DBG("Reloading rules from table %.*s\n", table.len, table.s);
+	if(dp_load_db(el) != 0){
+			LM_ERR("failed to reload database data\n");
+			return 0;
+	}
+
+	return init_mi_result_ok();
 }
 
 /*
@@ -1062,112 +844,110 @@ static struct mi_root * mi_reload_rules(struct mi_root *cmd_tree, void *param)
  *			<input>
  *		* */
 
-static struct mi_root * mi_translate(struct mi_root *cmd, void *param)
+static mi_response_t *mi_translate(const mi_params_t *params,
+												dp_connection_list_t *part)
 {
-	struct mi_root* rpl= NULL;
-	struct mi_node* root, *node;
-	char *p;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
 	dpl_id_p idp;
-	str dpid_str, partition_str;
+	str dpid_str;
 	str input;
 	int dpid;
 	str attrs;
 	str output= {0, 0};
-	dp_connection_list_p connection = NULL;
 
-	node = cmd->node.kids;
-	if(node == NULL)
-		return init_mi_tree( 400, MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
+	if (get_mi_string_param(params, "dpid", &dpid_str.s, &dpid_str.len) < 0)
+		return init_mi_param_error();
 
-	/* Get the id parameter */
-	dpid_str = node->value;
 	if(dpid_str.s == NULL || dpid_str.len== 0)	{
-		LM_ERR( "empty idp parameter\n");
-		return init_mi_tree(404, "Empty id parameter", 18);
-	}
-
-	p = parse_dp_command(dpid_str.s, dpid_str.len, &partition_str);
-
-	if (p == NULL) {
-		LM_ERR("Invalid dp command\n");
-		return init_mi_tree(404, "Invalid dp command", 18);
-	}
-
-	if (partition_str.s == NULL || partition_str.len == 0) {
-		partition_str.s = DEFAULT_PARTITION;
-		partition_str.len = sizeof(DEFAULT_PARTITION) - 1;
-	}
-
-	connection = dp_get_connection(&partition_str);
-
-	dpid_str.len -= (p - dpid_str.s);
-	dpid_str.s = p;
-
-	if (!connection) {
-		LM_ERR("Unable to get connection\n");
-		return init_mi_tree(400, "Wrong db connection parameter", 24);
+		LM_ERR( "empty dpid parameter\n");
+		return init_mi_error(404, MI_SSTR("Empty id parameter"));
 	}
 
 	if(str2sint(&dpid_str, &dpid) != 0)	{
 		LM_ERR("Wrong id parameter - should be an integer\n");
-		return init_mi_tree(404, "Wrong id parameter", 18);
+		return init_mi_error(404, MI_SSTR("Wrong id parameter"));
 	}
-	node = node->next;
-	if(node == NULL)
-		return init_mi_tree( 400, MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
 
-	if(node->next!= NULL)
-		return init_mi_tree( 400, MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
+	if (get_mi_string_param(params, "input", &input.s, &input.len) < 0)
+		return init_mi_param_error();
 
-	input = node->value;
-	if(input.s == NULL || input.len== 0)	{
+	if(input.s == NULL || input.len== 0) {
 		LM_ERR( "empty input parameter\n");
-		return init_mi_tree(404, "Empty input parameter", 21);
+		return init_mi_error(404, MI_SSTR("Empty input parameter"));
 	}
 
 	/* ref the data for reading */
-	lock_start_read( connection->ref_lock );
+	lock_start_read( part->ref_lock );
 
-	if ((idp = select_dpid(connection, dpid, connection->crt_index)) ==0 ){
+	if ((idp = select_dpid(part, dpid, part->crt_index)) ==0 ){
 		LM_ERR("no information available for dpid %i\n", dpid);
-		lock_stop_read( connection->ref_lock );
-		return init_mi_tree(404, "No information available for dpid", 33);
+		lock_stop_read( part->ref_lock );
+		return init_mi_error(404, MI_SSTR("No information available for dpid"));
 	}
 
 	if (translate(NULL, input, &output, idp, &attrs)!=0){
 		LM_DBG("could not translate %.*s with dpid %i\n",
 			input.len, input.s, idp->dp_id);
-		lock_stop_read( connection->ref_lock );
-		return init_mi_tree(404, "No translation", 14);
+		lock_stop_read( part->ref_lock );
+		return init_mi_error(404, MI_SSTR("No translation"));
 	}
 	/* we are done reading -> unref the data */
-	lock_stop_read( connection->ref_lock );
+	lock_stop_read( part->ref_lock );
 
 	LM_DBG("input %.*s with dpid %i => output %.*s\n",
 			input.len, input.s, idp->dp_id, output.len, output.s);
 
-	rpl = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl==0)
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return 0;
+
+	if (add_mi_string(resp_obj, MI_SSTR("Output"), output.s, output.len) < 0)
+		goto error;
+	
+	if (add_mi_string(resp_obj, MI_SSTR("ATTRIBUTES"), attrs.s, attrs.len) < 0)
 		goto error;
 
-	root= &rpl->node;
-
-	node = add_mi_node_child(root, 0, "Output", 6, output.s, output.len );
-	if( node == NULL)
-		goto error;
-
-	node = add_mi_node_child(root, 0, "ATTRIBUTES", 10, attrs.s, attrs.len);
-	if( node == NULL)
-		goto error;
-
-	return rpl;
+	return resp;
 
 error:
-	if(rpl)
-		free_mi_tree(rpl);
+	free_mi_response(resp);
 	return 0;
 }
 
+
+static mi_response_t *mi_translate2(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	str def_str = str_init(DEFAULT_PARTITION);
+	dp_connection_list_t *part;
+
+	part = dp_get_connection(&def_str);
+	if (part==NULL){
+		LM_ERR("translating without partition, but no default defined\n");
+		return init_mi_error(400, MI_SSTR("Default partition not found"));
+	}
+	return mi_translate( params, part);
+}
+
+
+static mi_response_t *mi_translate3(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	dp_connection_list_t *part;
+	str name;
+
+	if (get_mi_string_param(params, "partition", &name.s, &name.len) < 0)
+		return init_mi_param_error();
+
+	part = dp_get_connection(&name);
+	if (part==NULL) {
+		LM_ERR("Unable to find partition <%.*s>\n",name.len,name.s);
+		return init_mi_error(400, MI_SSTR("Partition not found"));
+	}
+
+	return mi_translate( params, part);
+}
 
 
 void * wrap_shm_malloc(size_t size)

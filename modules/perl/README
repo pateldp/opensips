@@ -1,16 +1,4 @@
 perl Module
-
-Bastian Friedrich
-
-   Collax GmbH
-
-Edited by
-
-Bastian Friedrich
-
-   Copyright © 2007 Collax GmbH
-   Revision History
-   Revision $Revision: 5901 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -62,7 +50,7 @@ Bastian Friedrich
               2.2.17. isFlagSet(flag)
               2.2.18. pseudoVar(string)
               2.2.19. append_branch(branch,qval)
-              2.2.20. serialize_branches(clean_before)
+              2.2.20. serialize_branches(clean_before, keep_order)
               2.2.21. next_branches()
               2.2.22. getParsedRURI()
 
@@ -173,6 +161,21 @@ Bastian Friedrich
               3.1.1. Script descriptions
 
    4. Frequently Asked Questions
+   5. Contributors
+
+        5.1. By Commit Statistics
+        5.2. By Commit Activity
+
+   6. Documentation
+
+        6.1. Contributors
+
+   List of Tables
+
+   5.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   5.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -234,8 +237,8 @@ if (perl_exec("ldap_alias")) {
 
    just as you would have done with the current alias_db module.
 
-   The functions you can use are listed in the "Exported
-   Functions" section below.
+   The functions you can use are listed in the exported_functions
+   section below.
 
    On the Perl side, there are a number of functions that let you
    read and modify the current SIP message, such as the RURI or
@@ -552,7 +555,6 @@ $m->xlog("L_INFO", "foo");
 * load_rr
 * sip_trace
 * sl_reply_error
-* sms_send_msg
 * sd_lookup
 * sstCheckMin
 * append_time
@@ -623,7 +625,7 @@ if ($m->getRURI() =~ m/\@somedomain.net/) {
 
    Append a branch to current message.
 
-2.2.20. serialize_branches(clean_before)
+2.2.20. serialize_branches(clean_before, keep_order)
 
    Serialize branches.
 
@@ -1013,7 +1015,7 @@ reworks,ou=de");
 
 2.12. OpenSIPS::VDB::Adapter::AccountingSIPtrace
 
-   This package is an Adapter for the acc and siptrace modules,
+   This package is an Adapter for the acc and tracer modules,
    featuring only an insert operation.
 
 2.13. OpenSIPS::VDB::Adapter::Describe
@@ -1311,50 +1313,125 @@ Chapter 4. Frequently Asked Questions
 
    4.1.
 
-   Are there known bugs in the Perl module?
+       Are there known bugs in the Perl module?
 
-   The Perl module does have a few shortcomings that may be
-   regarded as bugs.
-     * Missing module functions. Not all functions of other
-       modules are available for Perl access. The reason for this
-       is a design property of OpenSIPS. Making available more
-       functions is work in progress.
-     * Perl and threads. Perl itself is, when compiled with the
-       correct parameters, thread safe; unfortunately, not all
-       Perl modules are. The DBI modules, especially (but not
-       restricted to) DBI::ODBC are known NOT to be thread safe.
-       Using DBI::ODBC -- and possibly other non-thread-safe Perl
-       extensions -- may result in erroneous behavior of OpenSIPS,
-       including (but not restricted to) server crashes and wrong
-       routing.
+       The Perl module does have a few shortcomings that may be
+       regarded as bugs.
+         * Missing module functions. Not all functions of other
+           modules are available for Perl access. The reason for this
+           is a design property of OpenSIPS. Making available more
+           functions is work in progress.
+         * Perl and threads. Perl itself is, when compiled with the
+           correct parameters, thread safe; unfortunately, not all
+           Perl modules are. The DBI modules, especially (but not
+           restricted to) DBI::ODBC are known NOT to be thread safe.
+           Using DBI::ODBC -- and possibly other non-thread-safe Perl
+           extensions -- may result in erroneous behavior of OpenSIPS,
+           including (but not restricted to) server crashes and wrong
+           routing.
 
    4.2.
 
-   Where can I find more about OpenSIPS?
+       Where can I find more about OpenSIPS?
 
-   Take a look at http://www.opensips.org/.
+       Take a look at http://www.opensips.org/.
 
    4.3.
 
-   Where can I post a question about this module?
+       Where can I post a question about this module?
 
-   First at all check if your question was already answered on one
-   of our mailing lists:
-     * User Mailing List -
-       http://lists.opensips.org/cgi-bin/mailman/listinfo/users
-     * Developer Mailing List -
-       http://lists.opensips.org/cgi-bin/mailman/listinfo/devel
+       First at all check if your question was already answered on one
+       of our mailing lists:
+         * User Mailing List -
+           http://lists.opensips.org/cgi-bin/mailman/listinfo/users
+         * Developer Mailing List -
+           http://lists.opensips.org/cgi-bin/mailman/listinfo/devel
 
-   E-mails regarding any stable OpenSIPS release should be sent to
-   <users@lists.opensips.org> and e-mails regarding development
-   versions should be sent to <devel@lists.opensips.org>.
+       E-mails regarding any stable OpenSIPS release should be sent to
+       <users@lists.opensips.org> and e-mails regarding development
+       versions should be sent to <devel@lists.opensips.org>.
 
-   If you want to keep the mail private, send it to
-   <users@lists.opensips.org>.
+       If you want to keep the mail private, send it to
+       <users@lists.opensips.org>.
 
    4.4.
 
-   How can I report a bug?
+       How can I report a bug?
 
-   Please follow the guidelines provided at:
-   https://github.com/OpenSIPS/opensips/issues.
+       Please follow the guidelines provided at:
+       https://github.com/OpenSIPS/opensips/issues.
+
+Chapter 5. Contributors
+
+5.1. By Commit Statistics
+
+   Table 5.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Bastian Friedrich 112 38 8597 284
+   2. Bogdan-Andrei Iancu (@bogdan-iancu) 48 29 702 682
+   3. Razvan Crainea (@razvancrainea) 21 18 96 59
+   4. Daniel-Constantin Mierla (@miconda) 19 14 164 125
+   5. Liviu Chircu (@liviuchircu) 16 13 54 67
+   6. Vlad Patrascu (@rvlad-patrascu) 15 6 173 348
+   7. Julien Blache 4 1 80 64
+   8. Edson Gellert Schubert 4 1 0 141
+   9. Ionut Ionita (@ionutrazvanionita) 3 1 100 7
+   10. Ancuta Onofrei 3 1 27 40
+
+   All remaining contributors: Konstantin Bokarius, Boris Ratner,
+   Julián Moreno Patiño, Klaus Darilion, Peter Lemenkov
+   (@lemenkov), Ovidiu Sas (@ovidiusas), Dan Pascu (@danpascu).
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+5.2. By Commit Activity
+
+   Table 5.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Bogdan-Andrei Iancu (@bogdan-iancu) Dec 2006 - Jun 2019
+   2.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - May 2019
+   3.  Razvan Crainea (@razvancrainea)     Jun 2011 - May 2019
+   4.  Liviu Chircu (@liviuchircu)         Mar 2014 - Nov 2018
+   5.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   6.  Julián Moreno Patiño                Feb 2016 - Feb 2016
+   7.  Ionut Ionita (@ionutrazvanionita)   Oct 2015 - Oct 2015
+   8.  Boris Ratner                        Jan 2013 - Jan 2013
+   9.  Ovidiu Sas (@ovidiusas)             Oct 2010 - Oct 2010
+   10. Dan Pascu (@danpascu)               Aug 2008 - Aug 2008
+
+   All remaining contributors: Klaus Darilion, Daniel-Constantin
+   Mierla (@miconda), Konstantin Bokarius, Edson Gellert Schubert,
+   Bastian Friedrich, Ancuta Onofrei, Julien Blache.
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 6. Documentation
+
+6.1. Contributors
+
+   Last edited by: Bogdan-Andrei Iancu (@bogdan-iancu), Razvan
+   Crainea (@razvancrainea), Peter Lemenkov (@lemenkov), Liviu
+   Chircu (@liviuchircu), Vlad Patrascu (@rvlad-patrascu), Ovidiu
+   Sas (@ovidiusas), Klaus Darilion, Daniel-Constantin Mierla
+   (@miconda), Konstantin Bokarius, Edson Gellert Schubert,
+   Bastian Friedrich.
+
+   Documentation Copyrights:
+
+   Copyright © 2007 Collax GmbH

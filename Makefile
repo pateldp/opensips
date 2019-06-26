@@ -53,17 +53,6 @@ makefile_defs=0
 DEFS:= $(DEFS_EXTRA_OPTS)
 DEBUG_PARSER?=
 
-# json libs check
-ifeq ($(JSONPATH),)
-ifneq ("$(wildcard /usr/include/json-c/json.h)","")
-DEFS += -I/usr/include/json-c
-else
-DEFS += -I/usr/include/json
-endif
-else
-DEFS += -I$(JSONPATH)
-endif
-
 # create the template only if the file is not yet created
 ifeq (,$(wildcard Makefile.conf))
 $(shell cp Makefile.conf.template Makefile.conf)
@@ -250,6 +239,16 @@ tool-xsltproc:
 	@if [ -z "$(DBHTMLXSL)" ]; then \
 		echo "error: docbook.xsl not found (docbook-xsl)"; exit 1; \
 	fi
+
+.PHONY: git-dir
+git-dir:
+	@if [ ! -r .git ]; then \
+		echo "error: Not a git repo! (.git dir not found)"; exit 1; \
+	fi
+
+.PHONY: modules-contrib
+modules-contrib: git-dir
+	@set -e; ./doc/build-contrib.sh $(modules)
 
 .PHONY: modules-readme
 modules-readme: tool-lynx tool-xsltproc
@@ -476,7 +475,7 @@ install-app: app mk-install-dirs install-cfg install-bin \
 install-modules-all: install-modules install-modules-doc
 
 # Install everything (except modules-docbook?)
-install: install-app install-console install-modules-all
+install: install-app install-modules-all
 
 opensipsmc: $(cfg_prefix)/$(cfg_dir) $(data_prefix)/$(data_dir)
 	$(MAKE) -C menuconfig proper
@@ -514,35 +513,6 @@ install-cfg: $(cfg_prefix)/$(cfg_dir)
 			mv -f $(cfg_prefix)/$(cfg_dir)$(NAME).cfg.sample \
 				$(cfg_prefix)/$(cfg_dir)$(NAME).cfg; \
 		fi
-		# opensipsctl config
-		$(INSTALL_TOUCH)   $(cfg_prefix)/$(cfg_dir)/opensipsctlrc.sample
-		$(INSTALL_CFG) scripts/opensipsctlrc \
-			$(cfg_prefix)/$(cfg_dir)/opensipsctlrc.sample
-		if [ ! -f $(cfg_prefix)/$(cfg_dir)/opensipsctlrc ]; then \
-			mv -f $(cfg_prefix)/$(cfg_dir)/opensipsctlrc.sample \
-				$(cfg_prefix)/$(cfg_dir)/opensipsctlrc; \
-		fi
-		# osipsconsole config
-		$(INSTALL_TOUCH)   $(cfg_prefix)/$(cfg_dir)/osipsconsolerc.sample
-		$(INSTALL_CFG) scripts/osipsconsolerc \
-			$(cfg_prefix)/$(cfg_dir)/osipsconsolerc.sample
-		if [ ! -f $(cfg_prefix)/$(cfg_dir)/osipsconsolerc ]; then \
-			mv -f $(cfg_prefix)/$(cfg_dir)/osipsconsolerc.sample \
-				$(cfg_prefix)/$(cfg_dir)/osipsconsolerc; \
-		fi
-
-install-console: $(bin_prefix)/$(bin_dir)
-		# install osipsconsole
-		cat scripts/osipsconsole | \
-		sed -e "s#PATH_BIN[ \t]*=[ \t]*\"\./\"#PATH_BIN = \"$(bin-target)\"#g" | \
-		sed -e "s#PATH_CTLRC[ \t]*=[ \t]*\"\./scripts/\"#PATH_CTLRC = \"$(cfg_target)\"#g" | \
-		sed -e "s#PATH_LIBS[ \t]*=[ \t]*\"\./scripts/\"#PATH_LIBS = \"$(lib-target)/opensipsctl/\"#g" | \
-		sed -e "s#PATH_SHARE[ \t]*=[ \t]*\"\./scripts/\"#PATH_SHARE = \"$(data_target)\"#g" | \
-		sed -e "s#PATH_ETC[ \t]*=[ \t]*\"\./etc/\"#PATH_ETC = \"$(cfg_target)\"#g" \
-		> /tmp/osipsconsole
-		$(INSTALL_TOUCH) $(bin_prefix)/$(bin_dir)/osipsconsole
-		$(INSTALL_BIN) /tmp/osipsconsole $(bin_prefix)/$(bin_dir)
-		rm -fr /tmp/osipsconsole
 
 install-bin: $(bin_prefix)/$(bin_dir) opensipsmc utils
 		# install opensips binary
@@ -551,63 +521,9 @@ install-bin: $(bin_prefix)/$(bin_dir) opensipsmc utils
 		# install opensips menuconfig
 		$(INSTALL_TOUCH) $(bin_prefix)/$(bin_dir)/osipsconfig
 		$(INSTALL_BIN) menuconfig/configure $(bin_prefix)/$(bin_dir)/osipsconfig
-		# install opensipsctl (and family) tool
-		cat scripts/opensipsctl | \
-		sed -e "s#/usr/local/sbin#$(bin-target)#g" | \
-		sed -e "s#/usr/local/lib/opensips#$(lib-target)#g" | \
-		sed -e "s#/usr/local/etc/opensips#$(cfg_target)#g"  >/tmp/opensipsctl
-		$(INSTALL_TOUCH) $(bin_prefix)/$(bin_dir)/opensipsctl
-		$(INSTALL_BIN) /tmp/opensipsctl $(bin_prefix)/$(bin_dir)
-		rm -fr /tmp/opensipsctl
-		sed -e "s#/usr/local/sbin#$(bin-target)#g" \
-			< scripts/opensipsctl.base > /tmp/opensipsctl.base
-		mkdir -p $(modules_prefix)/$(lib_dir)/opensipsctl
-		$(INSTALL_TOUCH) \
-			$(modules_prefix)/$(lib_dir)/opensipsctl
-		$(INSTALL_CFG) /tmp/opensipsctl.base \
-			$(modules_prefix)/$(lib_dir)/opensipsctl/opensipsctl.base
-		rm -fr /tmp/opensipsctl.base
-		sed -e "s#/usr/local#$(bin-target)#g" \
-			< scripts/opensipsctl.ctlbase > /tmp/opensipsctl.ctlbase
-		$(INSTALL_CFG) /tmp/opensipsctl.ctlbase \
-			$(modules_prefix)/$(lib_dir)/opensipsctl/opensipsctl.ctlbase
-		rm -fr /tmp/opensipsctl.ctlbase
-		sed -e "s#/usr/local#$(bin-target)#g" \
-			< scripts/opensipsctl.fifo > /tmp/opensipsctl.fifo
-		$(INSTALL_CFG) /tmp/opensipsctl.fifo \
-			$(modules_prefix)/$(lib_dir)/opensipsctl/opensipsctl.fifo
-		rm -fr /tmp/opensipsctl.fifo
-		sed -e "s#/usr/local#$(bin-target)#g" \
-			< scripts/opensipsctl.unixsock > /tmp/opensipsctl.unixsock
-		$(INSTALL_CFG) /tmp/opensipsctl.unixsock \
-			$(modules_prefix)/$(lib_dir)/opensipsctl/opensipsctl.unixsock
-		rm -fr /tmp/opensipsctl.unixsock
-		sed -e "s#/usr/local#$(bin-target)#g" \
-			< scripts/opensipsctl.sqlbase > /tmp/opensipsctl.sqlbase
-		$(INSTALL_CFG) /tmp/opensipsctl.sqlbase \
-			$(modules_prefix)/$(lib_dir)/opensipsctl/opensipsctl.sqlbase
-		rm -fr /tmp/opensipsctl.sqlbase
-		# install db setup base script
-		sed -e "s#/usr/local/sbin#$(bin-target)#g" \
-			-e "s#/usr/local/etc/opensips#$(cfg_target)#g" \
-			-e "s#/usr/local/share/opensips#$(data_target)#g" \
-			< scripts/opensipsdbctl.base > /tmp/opensipsdbctl.base
-		$(INSTALL_CFG) /tmp/opensipsdbctl.base \
-			$(modules_prefix)/$(lib_dir)/opensipsctl/opensipsdbctl.base
-		rm -fr /tmp/opensipsdbctl.base
-		cat scripts/opensipsdbctl | \
-		sed -e "s#/usr/local/sbin#$(bin-target)#g" | \
-		sed -e "s#/usr/local/lib/opensips#$(lib-target)#g" | \
-		sed -e "s#/usr/local/etc/opensips#$(cfg_target)#g"  >/tmp/opensipsdbctl
-		$(INSTALL_TOUCH) $(bin_prefix)/$(bin_dir)/opensipsdbctl
-		$(INSTALL_BIN) /tmp/opensipsdbctl $(bin_prefix)/$(bin_dir)
-		rm -fr /tmp/opensipsdbctl
-		$(INSTALL_TOUCH)   $(bin_prefix)/$(bin_dir)/$(NAME)unix
-		$(INSTALL_BIN) utils/$(NAME)unix/$(NAME)unix $(bin_prefix)/$(bin_dir)
 
 .PHONY: utils
 utils:
-		cd utils/$(NAME)unix; $(MAKE) all
 		if [ "$(BERKELEYDBON)" = "yes" ]; then \
 			cd utils/db_berkeley; $(MAKE) all ; \
 		fi ;
@@ -667,19 +583,6 @@ install-man: $(man_prefix)/$(man_dir)/man8 $(man_prefix)/$(man_dir)/man5
 			-e "s#/usr/share/doc/$(NAME)/#$(doc-target)#g" \
 			< $(NAME).cfg.5 >  $(man_prefix)/$(man_dir)/man5/$(NAME).cfg.5
 		chmod 644  $(man_prefix)/$(man_dir)/man5/$(NAME).cfg.5
-		sed -e "s#/etc/$(NAME)/$(NAME)\.cfg#$(cfg_target)$(NAME).cfg#g" \
-			-e "s#/usr/sbin/#$(bin-target)#g" \
-			-e "s#/usr/lib/$(NAME)/modules/#$(modules_target)#g" \
-			-e "s#/usr/share/doc/$(NAME)/#$(doc-target)#g" \
-			< scripts/opensipsctl.8 > $(man_prefix)/$(man_dir)/man8/opensipsctl.8
-		chmod 644  $(man_prefix)/$(man_dir)/man8/opensipsctl.8
-		sed -e "s#/etc/$(NAME)/$(NAME)\.cfg#$(cfg_target)$(NAME).cfg#g" \
-			-e "s#/usr/sbin/#$(bin-target)#g" \
-			-e "s#/usr/lib/$(NAME)/modules/#$(modules_target)#g" \
-			-e "s#/usr/share/doc/$(NAME)/#$(doc-target)#g" \
-			< utils/opensipsunix/opensipsunix.8 > \
-			$(man_prefix)/$(man_dir)/man8/opensipsunix.8
-		chmod 644  $(man_prefix)/$(man_dir)/man8/opensipsunix.8
 
 install-modules-docbook: $(doc_prefix)/$(doc_dir)
 	-@for r in $(modules_basenames) "" ; do \
@@ -704,12 +607,6 @@ install-modules-docbook: $(doc_prefix)/$(doc_dir)
 		fi ; \
 	done
 
-.PHONY: test
-test:
-	-@echo "Start tests"
-	$(MAKE) -C test/
-	-@echo "Tests finished"
-
 doxygen:
 	-@echo "Create Doxygen documentation"
 	# disable call graphes, because of the DOT dependencies
@@ -722,3 +619,5 @@ comp_menuconfig:
 	$(MAKE) -C menuconfig
 menuconfig: comp_menuconfig
 	./menuconfig/configure --local
+
+include Makefile.test

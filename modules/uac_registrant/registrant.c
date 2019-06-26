@@ -38,6 +38,7 @@
 #include "../uac_auth/uac_auth.h"
 #include "reg_records.h"
 #include "reg_db_handler.h"
+#include "clustering.h"
 
 
 #define UAC_REGISTRAR_URI_PARAM              1
@@ -60,6 +61,8 @@
 #define UAC_REG_INTERNAL_ERROR_STATE    "INTERNAL_ERROR_STATE"
 #define UAC_REG_WRONG_CREDENTIALS_STATE "WRONG_CREDENTIALS_STATE"
 #define UAC_REG_REGISTRAR_ERROR_STATE   "REGISTRAR_ERROR_STATE"
+#define UAC_REG_UNREGISTERING_STATE		"UNREGISTERING_STATE"
+#define UAC_REG_AUTHENTICATING_UNREGISTER_STATE	"AUTHENTICATING_UNREGISTER_STATE"
 
 const str uac_reg_state[]={
 	str_init(UAC_REG_NOT_REGISTERED_STATE),
@@ -70,6 +73,8 @@ const str uac_reg_state[]={
 	str_init(UAC_REG_INTERNAL_ERROR_STATE),
 	str_init(UAC_REG_WRONG_CREDENTIALS_STATE),
 	str_init(UAC_REG_REGISTRAR_ERROR_STATE),
+	str_init(UAC_REG_UNREGISTERING_STATE),
+	str_init(UAC_REG_AUTHENTICATING_UNREGISTER_STATE),
 };
 
 /** Functions declarations */
@@ -78,10 +83,14 @@ static void mod_destroy(void);
 static int child_init(int rank);
 
 void timer_check(unsigned int ticks, void* hash_counter);
+void handle_shtag_change(str *tag_name, int state, int c_id, void *param);
 
-static struct mi_root* mi_reg_list(struct mi_root* cmd, void* param);
-static struct mi_root* mi_reg_reload(struct mi_root* cmd, void* param);
+static mi_response_t *mi_reg_list(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_reg_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 int send_register(unsigned int hash_index, reg_record_t *rec, str *auth_hdr);
+int send_unregister(unsigned int hash_index, reg_record_t *rec, str *auth_hdr);
 
 
 /** Global variables */
@@ -114,18 +123,12 @@ typedef struct reg_tm_cb {
 	reg_record_t *uac;
 }reg_tm_cb_t;
 
-/** Exported functions */
-static cmd_export_t cmds[]=
-{
-	{0,0,0,0,0,0}
-};
-
-
 /** Exported parameters */
 static param_export_t params[]= {
 	{"hash_size",		INT_PARAM,			&reg_hsize},
 	{"default_expires",	INT_PARAM,			&default_expires},
 	{"timer_interval",	INT_PARAM,			&timer_interval},
+	{"enable_clustering",	INT_PARAM,			&enable_clustering},
 	{"db_url",		STR_PARAM,			&db_url.s},
 	{"table_name",		STR_PARAM,			&reg_table_name},
 	{"registrar_column",	STR_PARAM,			&registrar_column.s},
@@ -138,15 +141,22 @@ static param_export_t params[]= {
 	{"binding_params_column",	STR_PARAM,	&binding_params_column.s},
 	{"expiry_column",	STR_PARAM,		&expiry_column.s},
 	{"forced_socket_column",	STR_PARAM,	&forced_socket_column.s},
+	{"cluster_shtag_column",	STR_PARAM,	&cluster_shtag_column.s},
 	{0,0,0}
 };
 
 
 /** MI commands */
 static mi_export_t mi_cmds[] = {
-	{"reg_list",   0, mi_reg_list,   0, 0, 0},
-	{"reg_reload", 0, mi_reg_reload, 0,	0, 0},
-	{0,            0, 0,             0, 0, 0}
+	{ "reg_list", 0, 0, 0, {
+		{mi_reg_list, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ "reg_reload", 0, 0, 0, {
+		{mi_reg_reload, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
 
 static dep_export_t deps = {
@@ -156,6 +166,7 @@ static dep_export_t deps = {
 		{ MOD_TYPE_NULL, NULL, 0 },
 	},
 	{ /* modparam dependencies */
+		{ "enable_clustering", get_deps_clusterer},
 		{ NULL, NULL },
 	},
 };
@@ -166,8 +177,9 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,       /* class of this module */
 	MODULE_VERSION,			/* module version */
 	DEFAULT_DLFLAGS,		/* dlopen flags */
+	0,						/* load function */
 	&deps,                  /* OpenSIPS module dependencies */
-	cmds,				/* exported functions */
+	0,				/* exported functions */
 	0,					/* exported async functions */
 	params,				/* exported parameters */
 	NULL,				/* exported statistics */
@@ -178,7 +190,8 @@ struct module_exports exports= {
 	mod_init,			/* module initialization function */
 	(response_function) NULL,	/* response handling function */
 	(destroy_function) mod_destroy,	/* destroy function */
-	child_init			/* per-child init function */
+	child_init,			/* per-child init function */
+	0					/* reload confirm function */
 };
 
 
@@ -196,6 +209,11 @@ static int mod_init(void)
 	/* load all TM stuff */
 	if(load_tm_api(&tmb)==-1) {
 		LM_ERR("can't load tm functions\n");
+		return -1;
+	}
+
+	if (enable_clustering && ureg_init_cluster( handle_shtag_change )<0) {
+		LM_ERR("failed to initialized clustering support\n");
 		return -1;
 	}
 
@@ -229,6 +247,7 @@ static int mod_init(void)
 	binding_params_column.len = strlen(binding_params_column.s);
 	expiry_column.len = strlen(expiry_column.s);
 	forced_socket_column.len = strlen(forced_socket_column.s);
+	cluster_shtag_column.len = strlen(cluster_shtag_column.s);
 	init_db_url(db_url , 0 /*cannot be null*/);
 	if (init_reg_db(&db_url) != 0) {
 		LM_ERR("failed to initialize the DB support\n");
@@ -290,6 +309,7 @@ int run_reg_tm_cback(void *e_data, void *data, void *r_data)
 	struct sip_msg *msg;
 	int statuscode = 0;
 	unsigned int exp = 0;
+	unsigned int bindings_counter = 0;
 	reg_record_t *rec = (reg_record_t*)e_data;
 	struct hdr_field *c_ptr, *head_contact;
 	struct uac_credential crd;
@@ -345,9 +365,56 @@ int run_reg_tm_cback(void *e_data, void *data, void *r_data)
 				c_ptr = c_ptr->next;
 			}
 		} else {
-			LM_ERR("No contact header in received 200ok\n");
-			goto done;
+			switch(rec->state) {
+			case UNREGISTERING_STATE:
+			case AUTHENTICATING_UNREGISTER_STATE:
+				if(send_register(cb_param->hash_index, rec, NULL)==1) {
+					rec->last_register_sent = now;
+					rec->state = REGISTERING_STATE;
+				} else {
+					rec->registration_timeout = now + rec->expires - timer_interval;
+					rec->state = INTERNAL_ERROR_STATE;
+				}
+				break;
+			default:
+				LM_ERR("No contact header in received 200ok in state [%d]\n",
+					rec->state);
+				goto done;
+			}
+			break; /* done with 200ok handling */
 		}
+
+		if (rec->flags&FORCE_SINGLE_REGISTRATION) {
+			head_contact = msg->contact;
+			contact = ((contact_body_t*)msg->contact->parsed)->contacts;
+			while (contact) {
+				bindings_counter++;
+				if (contact->next == NULL) {
+					contact = NULL;
+					c_ptr = head_contact->next;
+					while(c_ptr) {
+						if (c_ptr->type == HDR_CONTACT_T) {
+							head_contact = c_ptr;
+							contact = ((contact_body_t*)c_ptr->parsed)->contacts;
+							break;
+						}
+						c_ptr = c_ptr->next;
+					}
+				} else {
+					contact = contact->next;
+				}
+			}
+			if (bindings_counter>1) {
+				LM_DBG("got [%d] bindings\n", bindings_counter);
+				if(send_unregister(cb_param->hash_index, rec, NULL)==1) {
+					rec->state = UNREGISTERING_STATE;
+				} else {
+					rec->state = INTERNAL_ERROR_STATE;
+				}
+				break;
+			}
+		}
+
 		head_contact = msg->contact;
 		contact = ((contact_body_t*)msg->contact->parsed)->contacts;
 		while (contact) {
@@ -432,8 +499,10 @@ int run_reg_tm_cback(void *e_data, void *data, void *r_data)
 
 		switch(rec->state) {
 		case REGISTERING_STATE:
+		case UNREGISTERING_STATE:
 			break;
 		case AUTHENTICATING_STATE:
+		case AUTHENTICATING_UNREGISTER_STATE:
 			/* We already sent an authenticated REGISTER and we are still challanged! */
 			LM_WARN("Wrong credentials for [%.*s]\n",
 				rec->td.rem_uri.len, rec->td.rem_uri.s);
@@ -466,10 +535,25 @@ int run_reg_tm_cback(void *e_data, void *data, void *r_data)
 			LM_ERR("failed to build authorization hdr\n");
 			goto done;
 		}
-		if(send_register(cb_param->hash_index, rec, new_hdr)==1) {
-			rec->state = AUTHENTICATING_STATE;
-		} else {
-			rec->state = INTERNAL_ERROR_STATE;
+		switch(rec->state) {
+		case REGISTERING_STATE:
+			if(send_register(cb_param->hash_index, rec, new_hdr)==1) {
+				rec->state = AUTHENTICATING_STATE;
+			} else {
+				rec->state = INTERNAL_ERROR_STATE;
+			}
+			break;
+		case UNREGISTERING_STATE:
+			if(send_unregister(cb_param->hash_index, rec, new_hdr)==1) {
+				rec->state = AUTHENTICATING_UNREGISTER_STATE;
+			} else {
+				rec->state = INTERNAL_ERROR_STATE;
+			}
+			break;
+		default:
+			LM_ERR("Unexpected [%d] notification cb in state [%d]\n",
+				statuscode, rec->state);
+			goto done;
 		}
 		pkg_free(new_hdr->s);
 		new_hdr->s = NULL; new_hdr->len = 0;
@@ -631,6 +715,53 @@ int send_register(unsigned int hash_index, reg_record_t *rec, str *auth_hdr)
 	return result;
 }
 
+int send_unregister(unsigned int hash_index, reg_record_t *rec, str *auth_hdr)
+{
+	int result;
+	reg_tm_cb_t *cb_param;
+	char *p;
+
+	/* Allocate space for tm callback params */
+	cb_param = shm_malloc(sizeof(reg_tm_cb_t));
+	if (!cb_param) {
+		LM_ERR("oom\n");
+		return -1;
+	}
+	cb_param->hash_index = hash_index;
+	cb_param->uac = rec;
+
+	p = extra_hdrs.s;
+	memcpy(p, contact_hdr.s, contact_hdr.len);
+	p += contact_hdr.len;
+	*p = '*'; p++;
+	memcpy(p, CRLF, CRLF_LEN); p += CRLF_LEN;
+
+	/* adding exires header */
+	memcpy(p, expires_hdr.s, expires_hdr.len);
+	p += expires_hdr.len;
+	*p = '0'; p++;
+	memcpy(p, CRLF, CRLF_LEN); p += CRLF_LEN;
+
+	if (auth_hdr) {
+		memcpy(p, auth_hdr->s, auth_hdr->len);
+		p += auth_hdr->len;
+	}
+	extra_hdrs.len = (int)(p - extra_hdrs.s);
+
+	LM_DBG("extra_hdrs=[%p][%d]->[%.*s]\n",
+		extra_hdrs.s, extra_hdrs.len, extra_hdrs.len, extra_hdrs.s);
+
+	result=tmb.t_request_within(
+		&register_method,	/* method */
+		&extra_hdrs,		/* extra headers*/
+		NULL,			/* body */
+		&rec->td,		/* dialog structure*/
+		reg_tm_cback,		/* callback function */
+		(void *)cb_param,	/* callback param */
+		shm_free_param);	/* function to release the parameter */
+	LM_DBG("result=[%d]\n", result);
+	return result;
+}
 
 struct timer_check_data {
 	time_t now;
@@ -646,9 +777,14 @@ int run_timer_check(void *e_data, void *data, void *r_data)
 	str *s_now = t_check_data->s_now;
 	unsigned int i = t_check_data->hash_counter;
 
+	if (!ureg_cluster_shtag_is_active( &rec->cluster_shtag, rec->cluster_id))
+		return 0;
+
 	switch(rec->state){
 	case REGISTERING_STATE:
+	case UNREGISTERING_STATE:
 	case AUTHENTICATING_STATE:
+	case AUTHENTICATING_UNREGISTER_STATE:
 		break;
 	case WRONG_CREDENTIALS_STATE:
 	case REGISTER_TIMEOUT_STATE:
@@ -728,111 +864,193 @@ void timer_check(unsigned int ticks, void* hash_counter)
 }
 
 
-/*** MI **/
+struct shtag_check_data {
+	str *tag;
+	int c_id;
+};
 
+static int cluster_shtag_check(void *e_data, void *data, void *r_data)
+{
+	reg_record_t *rec = (reg_record_t*)e_data;
+	struct shtag_check_data *shtag_data = (struct shtag_check_data*)data;
+
+	LM_DBG("checking record with cluster_id [%d] and shtag [%.*s]\n",
+		rec->cluster_id, rec->cluster_shtag.len, rec->cluster_shtag.s);
+	if (rec->cluster_id==shtag_data->c_id &&
+		rec->cluster_shtag.s && rec->cluster_shtag.len &&
+		rec->cluster_shtag.len==shtag_data->tag->len &&
+		0==memcmp(rec->cluster_shtag.s, shtag_data->tag->s, shtag_data->tag->len)) {
+		/* this record matches the shtag + cluster_id, so we need to de-active it */
+		LM_DBG("Moving record to NOT_REGISTERED_STATE\n");
+		rec->state = NOT_REGISTERED_STATE;
+	}
+
+
+	return 0;
+}
+
+
+void handle_shtag_change(str *tag_name, int state, int c_id, void *param)
+{
+	struct shtag_check_data shtag_data;
+	int ret, i;
+
+	if (state!=SHTAG_STATE_BACKUP)
+		return;
+
+	shtag_data.c_id = c_id;
+	shtag_data.tag = tag_name;
+
+	/* a shatg in cluster became backup on local node-> check if
+	 * one of our uac reg depends on it */
+	LM_DBG("checking for shtag [%.*s] in cluster [%d]\n",
+		shtag_data.tag->len, shtag_data.tag->s, shtag_data.c_id);
+
+	for( i=0 ; i<reg_hsize ; i++) {
+
+		lock_get(&reg_htable[i].lock);
+		ret = slinkedl_traverse(reg_htable[i].p_list, &cluster_shtag_check,
+							(void*)&shtag_data, NULL);
+		if (ret<0) LM_CRIT("Unexpected return code %d\n", ret);
+		lock_release(&reg_htable[i].lock);
+
+	}
+}
+
+
+/*** MI **/
 int run_mi_reg_list(void *e_data, void *data, void *r_data)
 {
-	struct mi_root* rpl_tree = (struct mi_root*)data;
-	struct mi_node *node, *node1;
-	struct mi_attr* attr;
 	reg_record_t *rec = (reg_record_t*)e_data;
 	int len;
 	char* p;
+	char cbuf[26];
 	struct ip_addr addr;
+	mi_item_t *records_arr = (mi_item_t *)data;
+	mi_item_t *record_item;
 
-	node = add_mi_node_child(&rpl_tree->node, MI_DUP_VALUE, "AOR", 3,
-							rec->td.rem_uri.s, rec->td.rem_uri.len);
-	if(node == NULL) goto error;
-	p = int2str(rec->expires, &len);
-	attr = add_mi_attr(node, MI_DUP_VALUE, "expires", 7, p, len);
-	if(attr == NULL) goto error;
+	record_item = add_mi_object(records_arr, NULL, 0);
+	if (!record_item)
+		goto error;
 
-	node1 = add_mi_node_child(node, MI_DUP_VALUE, "state", 5,
-							uac_reg_state[rec->state].s, uac_reg_state[rec->state].len);
-	if(node1 == NULL) goto error;
+	if (add_mi_string(record_item, MI_SSTR("AOR"),
+		rec->td.rem_uri.s, rec->td.rem_uri.len) < 0)
+		goto error;
 
-	p = ctime(&rec->last_register_sent);
-	len = strlen(p)-1;
-	node1 = add_mi_node_child(node, MI_DUP_VALUE, "last_register_sent", 18, p, len);
-	if(node1 == NULL) goto error;
+	if (add_mi_number(record_item, MI_SSTR("expires"), rec->expires) < 0)
+		goto error;
 
-	p = ctime(&rec->registration_timeout);
-	len = strlen(p)-1;
-	node1 = add_mi_node_child(node, MI_DUP_VALUE, "registration_t_out", 18, p, len);
-	if(node1 == NULL) goto error;
+	if (add_mi_string(record_item, MI_SSTR("state"),
+		uac_reg_state[rec->state].s, uac_reg_state[rec->state].len) < 0)
+		goto error;
 
-	node1 = add_mi_node_child(node, MI_DUP_VALUE, "registrar", 9,
-							rec->td.rem_target.s, rec->td.rem_target.len);
-	if(node1 == NULL) goto error;
+	ctime_r(&rec->last_register_sent, cbuf);
+	if (add_mi_string(record_item, MI_SSTR("last_register_sent"),
+		cbuf, strlen(cbuf) - 1) < 0)
+		goto error;
 
-	node1 = add_mi_node_child(node, MI_DUP_VALUE, "binding", 7,
-							rec->contact_uri.s, rec->contact_uri.len);
-	if(node1 == NULL) goto error;
+	ctime_r(&rec->registration_timeout, cbuf);
+	if (add_mi_string(record_item, MI_SSTR("registration_t_out"),
+		cbuf, strlen(cbuf) - 1) < 0)
+		goto error;
 
-	if(rec->td.loc_uri.s != rec->td.rem_uri.s) {
-		node1 = add_mi_node_child(node, MI_DUP_VALUE,
-								"third_party_registrant", 12,
-								rec->td.loc_uri.s, rec->td.loc_uri.len);
-		if(node1 == NULL) goto error;
-	}
+	if (add_mi_string(record_item, MI_SSTR("registrar"),
+		rec->td.rem_target.s, rec->td.rem_target.len) < 0)
+		goto error;
 
-	if (rec->td.obp.s && rec->td.obp.len) {
-		node1 = add_mi_node_child(node, MI_DUP_VALUE,
-								"proxy", 5, rec->td.obp.s, rec->td.obp.len);
-		if(node1 == NULL) goto error;
-	}
+	if (add_mi_string(record_item, MI_SSTR("binding"),
+		rec->contact_uri.s, rec->contact_uri.len) < 0)
+		goto error;
+
+	if(rec->contact_params.s && rec->contact_params.len)
+		if (add_mi_string(record_item, MI_SSTR("binding_params"),
+			rec->contact_params.s, rec->contact_params.len) < 0)
+			goto error;
+
+	if(rec->td.loc_uri.s != rec->td.rem_uri.s)
+		if (add_mi_string(record_item, MI_SSTR("third_party_registrant"),
+			rec->td.loc_uri.s, rec->td.loc_uri.len) < 0)
+			goto error;
+
+	if (rec->td.obp.s && rec->td.obp.len)
+		if (add_mi_string(record_item, MI_SSTR("proxy"),
+			rec->td.obp.s, rec->td.obp.len) < 0)
+			goto error;
 
 	switch(rec->td.forced_to_su.s.sa_family) {
 	case AF_UNSPEC:
 		break;
 	case AF_INET:
 	case AF_INET6:
-		node1 = add_mi_node_child(node, MI_DUP_VALUE, "dst_IP", 6,
-			(rec->td.forced_to_su.s.sa_family==AF_INET)?"IPv4":"IPv6", 4);
+		if (add_mi_string(record_item, MI_SSTR("dst_IP"),
+			(rec->td.forced_to_su.s.sa_family==AF_INET)?"IPv4":"IPv6", 4) < 0)
+			goto error;
 		sockaddr2ip_addr(&addr, &rec->td.forced_to_su.s);
 		p = ip_addr2a(&addr);
 		if (p == NULL) goto error;
 		len = strlen(p);
-		attr = add_mi_attr(node1, MI_DUP_VALUE, "ip", 2, p, len);
-		if(attr == NULL) goto error;
+		if (add_mi_string(record_item, MI_SSTR("ip"), p, len) < 0)
+			goto error;
 		break;
 	default:
 		LM_ERR("unexpected sa_family [%d]\n", rec->td.forced_to_su.s.sa_family);
-		node1 = add_mi_node_child(node, MI_DUP_VALUE, "dst_IP", 6, "Error", 5);
-		p = int2str(rec->td.forced_to_su.s.sa_family, &len);
-		attr = add_mi_attr(node, MI_DUP_VALUE, "sa_family", 9, p, len);
-		if(attr == NULL) goto error;
+		if (add_mi_string(record_item, MI_SSTR("dst_IP"), "Error", 5) < 0)
+			goto error;
+
+		if (add_mi_number(record_item, MI_SSTR("sa_family"),
+			rec->td.forced_to_su.s.sa_family) < 0)
+			goto error;
 	}
+
+	if (rec->cluster_shtag.s && rec->cluster_shtag.len) {
+		if (add_mi_string(record_item, MI_SSTR("shtag"),
+			rec->cluster_shtag.s, rec->cluster_shtag.len) < 0)
+			goto error;
+		if (add_mi_number(record_item, MI_SSTR("cluster_id"), rec->cluster_id) < 0)
+			goto error;
+		}
 
 	/* action successfully completed on current list element */
 	return 0; /* continue list traversal */
+
 error:
 	LM_ERR("Unable to create reply\n");
 	return -1; /* exit list traversal */
 }
 
 
-static struct mi_root* mi_reg_list(struct mi_root* cmd, void* param)
+static mi_response_t *mi_reg_list(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root *rpl_tree;
 	int i, ret;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	mi_item_t *records_arr;
 
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==NULL) return NULL;
-	rpl_tree->node.flags |= MI_IS_ARRAY;
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return NULL;
+
+	records_arr = add_mi_array(resp_obj, MI_SSTR("Records"));
+	if (!records_arr)
+		goto error;
 
 	for(i=0; i<reg_hsize; i++) {
 		lock_get(&reg_htable[i].lock);
 		ret = slinkedl_traverse(reg_htable[i].p_list,
-						&run_mi_reg_list, (void*)rpl_tree, NULL);
+						&run_mi_reg_list, (void*)records_arr, NULL);
 		lock_release(&reg_htable[i].lock);
 		if (ret<0) {
 			LM_ERR("Unable to create reply\n");
-			free_mi_tree(rpl_tree);
-			return NULL;
+			goto error;
 		}
 	}
-	return rpl_tree;
+
+	return resp;
+
+error:
+	free_mi_response(resp);
+	return NULL;
 }
 
 int run_compare_rec(void *e_data, void *data, void *r_data)
@@ -863,14 +1081,11 @@ int run_find_same_rec(void *e_data, void *data, void *r_data)
 	return 0;
 }
 
-static struct mi_root* mi_reg_reload(struct mi_root* cmd, void* param)
+static mi_response_t *mi_reg_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root *rpl_tree;
 	int i;
 	int err = 0;
-
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==NULL) return NULL;
 
 	for(i=0; i<reg_hsize; i++) {
 		lock_get(&reg_htable[i].lock);
@@ -890,7 +1105,6 @@ static struct mi_root* mi_reg_reload(struct mi_root* cmd, void* param)
 	/* Load registrants into the secondary list */
 	if(load_reg_info_from_db(1) !=0){
 		LM_ERR("unable to reload the registrant data\n");
-		free_mi_tree(rpl_tree);
 		goto error;
 	}
 	/* Swap the lists: secondary will become primary */
@@ -905,7 +1119,7 @@ static struct mi_root* mi_reg_reload(struct mi_root* cmd, void* param)
 		lock_release(&reg_htable[i].lock);
 	}
 
-	return rpl_tree;
+	return init_mi_result_ok();
 
 error:
 	for(i=0; i<reg_hsize; i++) {

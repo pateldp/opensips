@@ -4,7 +4,7 @@
 
 	<title>&adminguide;</title>
 
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 	The WSS (Secure WebSocket) module provides the ability to communicate with
@@ -44,7 +44,7 @@ modparam("tls_mgm", "require_cert", "1")
 	</para>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -94,14 +94,14 @@ modparam("tls_mgm", "require_cert", "1")
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
 		<para>
 		All these parameters can be used from the opensips.cfg file,
 		to configure the behavior of &osips;-WSS.
 		</para>
 
-		<section>
+		<section id="param_listen" xreflabel="listen">
 			<title><varname>listen</varname>=interface</title>
 			<para>
 			This is a global parameter that specifies what interface/IP and
@@ -117,7 +117,7 @@ listen = wss:1.2.3.4:44344
 			</example>
 		</section>
 
-		<section>
+		<section id="param_wss_port" xreflabel="wss_port">
 			<title><varname>wss_port</varname> (integer)</title>
 			<para>
 			The default port to be used for all WSS related operation. Be 
@@ -142,7 +142,7 @@ modparam("proto_wss", "wss_port", 44344)
 			</example>
 		</section>
 
-	<section>
+	<section id="param_wss_max_msg_chunks" xreflabel="wss_max_msg_chunks">
 		<title><varname>wss_max_msg_chunks</varname> (integer)</title>
 		<para>
 			The maximum number of chunks in which a SIP message is expected to
@@ -167,7 +167,7 @@ modparam("proto_wss", "wss_max_msg_chunks", 8)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_wss_resource" xreflabel="wss_resource">
 		<title><varname>wss_resource</varname> (string)</title>
 		<para>
 			The resource queried for when a WebSocket handshake is initiated.
@@ -186,7 +186,7 @@ modparam("proto_wss", "wss_resource", "/wss")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_wss_handshake_timeout" xreflabel="wss_handshake_timeout">
 		<title><varname>wss_handshake_timeout</varname> (integer)</title>
 		<para>
 			This parameter specifies the time in milliseconds the proto_wss module
@@ -206,7 +206,39 @@ modparam("proto_wss", "wss_handshake_timeout", 300)
 </programlisting>
 		</example>
 	</section>
-	<section id="trace-destination">
+
+	<section id="param_tls_cert_check_on_conn_reusage" xreflabel="cert_check_on_conn_reusage">
+		<title><varname>cert_check_on_conn_reusage</varname> (integer)</title>
+		<para>
+		This parameter turns on or off the extra checking/matching of the
+		TLS domain (SSL certificate) when comes to reusing an existing TLS
+		connection. Without this extra check, only IP and port of the
+		connections will be check (in order to re-use an existing connection).
+		With this extra check, the connection to be reused must have the same
+		SSL certificate as the one set for the current signaling operation.
+		</para>
+		<para>
+		This checking is done only when comes to send SIP traffic via TLS and
+		it is applied only against connections that were created / initiated 
+		by OpenSIPS (as TLS client). Any accepte connection (as TLS server) will
+		automatically match (the extra test will be skipped).
+		</para>
+		<para>
+		<emphasis>
+			Default value is 0 (disabled).
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>cert_check_on_conn_reusage</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("proto_wss", "cert_check_on_conn_reusage", 1)
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="param_trace_destination" xreflabel="trace_destination">
 		<title><varname>trace_destination</varname> (string)</title>
 		<para>
 			Trace destination as defined in the tracing module. Currently
@@ -240,12 +272,12 @@ modparam("proto_wss", "trace_destination", "hep_dest")
 		</example>
 	</section>
 
-	<section id="trace-on">
+	<section id="param_trace_on" xreflabel="trace_on">
 		<title><varname>trace_on</varname> (int)</title>
 		<para>
 			This controls whether tracing for wss is on or not. You still need to define
-			<xref linkend="trace-destination"/>in order to work, but this value will be
-			controlled using mi function <xref linkend="wss-trace"/>.
+			<xref linkend="param_trace_destination"/>in order to work, but this value will be
+			controlled using mi function <xref linkend="mi_wss_trace"/>.
 		</para>
 		<emphasis>
 			Default value is 0(tracing inactive).
@@ -260,7 +292,7 @@ modparam("proto_wss", "trace_on", 1)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_trace_filter_route" xreflabel="trace_filter_route">
 		<title><varname>trace_filter_route</varname> (string)</title>
 		<para>
 			Define the name of a route in which you can filter which connections will
@@ -269,7 +301,7 @@ modparam("proto_wss", "trace_on", 1)
 			connection. To disable tracing for a specific connection the last call in
 			this route must be <emphasis role="bold">drop</emphasis>, any other exit
 			mode resulting in tracing the current connection ( of course you still
-			have to define a <xref linkend="trace-destination"/> and trace must be
+			have to define a <xref linkend="param_trace_destination"/> and trace must be
 			on at the time this connection is opened.
 		</para>
 		<para>
@@ -286,8 +318,8 @@ modparam("proto_wss", "trace_on", 1)
 		</para>
 
 		<para>
-			<emphasis role="bold">WARNING:</emphasis> IF <xref linkend="trace-on"/> is
-			set to 0 or tracing is deactived via the mi command <xref linkend="wss-trace"/>
+			<emphasis role="bold">WARNING:</emphasis> IF <xref linkend="param_trace_on"/> is
+			set to 0 or tracing is deactived via the mi command <xref linkend="mi_wss_trace"/>
 			this route won't be called.
 		</para>
 		<emphasis>
@@ -320,10 +352,10 @@ route[wss_filter] {
 	</section>
 
 
-	<section>
+	<section id="exported_mi_functions" xreflabel="Exported MI Functions">
 	<title>Exported MI Functions</title>
 
-		<section id="wss-trace">
+		<section id="mi_wss_trace" xreflabel="wss_trace">
 			<title>
 			<function moreinfo="none">wss_trace</function>
 			</title>
@@ -354,9 +386,7 @@ route[wss_filter] {
 			MI FIFO Command Format:
 			</para>
 			<programlisting  format="linespecific">
-			:wss_trace:_reply_fifo_file_
-			trace_mode
-			_empty_line_
+			opensips-cli -x mi wss_trace on
 			</programlisting>
 		</section>
 	</section>

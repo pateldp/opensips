@@ -1,22 +1,4 @@
 UAC Module
-
-Bogdan-Andrei Iancu
-
-   <bogdan@opensips.org>
-
-Ramona-Elena Modroiu
-
-Edited by
-
-Bogdan-Andrei Iancu
-
-   <bogdan@opensips.org>
-
-Ramona-Elena Modroiu
-
-   Copyright © 2005-2009 Voice Sistem
-   Revision History
-   Revision $Revision: 8806 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -39,14 +21,28 @@ Ramona-Elena Modroiu
 
         1.4. Exported Functions
 
-              1.4.1. uac_replace_from(display,uri)
-                      uac_replace_to(display,uri)
+              1.4.1. uac_replace_from([display],uri)
+                      uac_replace_to([display],uri)
 
-              1.4.2. uac_replace_from(uri) uac_replace_to(uri)
-              1.4.3. uac_restore_from() uac_restore_to()
-              1.4.4. uac_auth()
+              1.4.2. uac_restore_from() uac_restore_to()
+              1.4.3. uac_auth()
 
    2. Frequently Asked Questions
+   3. Contributors
+
+        3.1. By Commit Statistics
+        3.2. By Commit Activity
+
+   4. Documentation
+
+        4.1. Contributors
+
+   List of Tables
+
+   3.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   3.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -56,9 +52,8 @@ Ramona-Elena Modroiu
    1.4. Set rr_to_store_param parameter
    1.5. Set force_dialog parameter
    1.6. uac_replace_from/uac_replace_to usage
-   1.7. uac_replace_from/uac_replace_to usage
-   1.8. uac_restore_from/uac_restore_to usage
-   1.9. uac_auth usage
+   1.7. uac_restore_from/uac_restore_to usage
+   1.8. uac_auth usage
 
 Chapter 1. Admin Guide
 
@@ -168,11 +163,12 @@ modparam("uac", "force_dialog", yes)
 
 1.4. Exported Functions
 
-1.4.1.  uac_replace_from(display,uri) uac_replace_to(display,uri)
+1.4.1.  uac_replace_from([display],uri) uac_replace_to([display],uri)
 
-   Replace in FROM/TO header the display name and the URI part.
+   Replace in FROM/TO header the display name or/and the URI part.
 
-   display and URI parameters can include pseudo-variables.
+   Both parameters are string. The display is optional. If
+   missing, only the URI will be changed in the message.
 
    IMPORTANT: calling the function more than once per branch will
    lead to inconsistent changes over the request.Be sure you do
@@ -187,30 +183,18 @@ modparam("uac", "force_dialog", yes)
    Example 1.6. uac_replace_from/uac_replace_to usage
 ...
 # replace both display and uri
-uac_replace_from("$avp(display)","$avp(uri)");
+uac_replace_from($avp(display),$avp(uri));
 # replace only display and do not touch uri
 uac_replace_from("batman","");
 # remove display and replace uri
 uac_replace_from("","sip:robin@gotham.org");
 # remove display and do not touch uri
 uac_replace_from("","");
+# replace the URI without touching the display
+uac_replace_from( , "sip:batman@gotham.org");
 ...
 
-1.4.2.  uac_replace_from(uri) uac_replace_to(uri)
-
-   Replace in FROM/TO header the URI part without altering the
-   display name.
-
-   URI parameter can include pseudo-variables.
-
-   This function can be used from REQUEST_ROUTE.
-
-   Example 1.7. uac_replace_from/uac_replace_to usage
-...
-uac_replace_from("sip:batman@gotham.org");
-...
-
-1.4.3.  uac_restore_from() uac_restore_to()
+1.4.2.  uac_restore_from() uac_restore_to()
 
    This function will check if the FROM/TO URI was modified and
    will use the information stored in header parameter to restore
@@ -222,12 +206,12 @@ uac_replace_from("sip:batman@gotham.org");
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.8. uac_restore_from/uac_restore_to usage
+   Example 1.7. uac_restore_from/uac_restore_to usage
 ...
 uac_restore_from();
 ...
 
-1.4.4.  uac_auth()
+1.4.3.  uac_auth()
 
    This function can be called only from failure route and will
    build the authentication response header and insert it into the
@@ -238,7 +222,7 @@ uac_restore_from();
 
    This function can be used from FAILURE_ROUTE.
 
-   Example 1.9. uac_auth usage
+   Example 1.8. uac_auth usage
 ...
 uac_auth();
 ...
@@ -247,43 +231,120 @@ Chapter 2. Frequently Asked Questions
 
    2.1.
 
-   What happened with auth_username_avp, auth_realm_avp and
-   auth_password_avp parameters
+       What happened with auth_username_avp, auth_realm_avp and
+       auth_password_avp parameters
 
-   Due some restructuring of the UAC auth modules, these
-   parameters were moved into the "uac_auth" module. This module
-   is now responsible for handling all the credentials (static
-   defined or dynamically defined via AVPs). The UAC module will
-   still see the credentials defined via the AVPs.
-   $
+       Due some restructuring of the UAC auth modules, these
+       parameters were moved into the "uac_auth" module. This module
+       is now responsible for handling all the credentials (static
+       defined or dynamically defined via AVPs). The UAC module will
+       still see the credentials defined via the AVPs.
+       $
 
    2.2.
 
-   Where can I find more about OpenSIPS?
+       Where can I find more about OpenSIPS?
 
-   Take a look at http://www.opensips.org/.
+       Take a look at http://www.opensips.org/.
 
    2.3.
 
-   Where can I post a question about this module?
+       Where can I post a question about this module?
 
-   First at all check if your question was already answered on one
-   of our mailing lists:
-     * User Mailing List -
-       http://lists.opensips.org/cgi-bin/mailman/listinfo/users
-     * Developer Mailing List -
-       http://lists.opensips.org/cgi-bin/mailman/listinfo/devel
+       First at all check if your question was already answered on one
+       of our mailing lists:
+         * User Mailing List -
+           http://lists.opensips.org/cgi-bin/mailman/listinfo/users
+         * Developer Mailing List -
+           http://lists.opensips.org/cgi-bin/mailman/listinfo/devel
 
-   E-mails regarding any stable OpenSIPS release should be sent to
-   <users@lists.opensips.org> and e-mails regarding development
-   versions should be sent to <devel@lists.opensips.org>.
+       E-mails regarding any stable OpenSIPS release should be sent to
+       <users@lists.opensips.org> and e-mails regarding development
+       versions should be sent to <devel@lists.opensips.org>.
 
-   If you want to keep the mail private, send it to
-   <users@lists.opensips.org>.
+       If you want to keep the mail private, send it to
+       <users@lists.opensips.org>.
 
    2.4.
 
-   How can I report a bug?
+       How can I report a bug?
 
-   Please follow the guidelines provided at:
-   https://github.com/OpenSIPS/opensips/issues.
+       Please follow the guidelines provided at:
+       https://github.com/OpenSIPS/opensips/issues.
+
+Chapter 3. Contributors
+
+3.1. By Commit Statistics
+
+   Table 3.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Bogdan-Andrei Iancu (@bogdan-iancu) 120 69 4045 1035
+   2. Ovidiu Sas (@ovidiusas) 35 7 371 1346
+   3. Razvan Crainea (@razvancrainea) 27 20 477 144
+   4. Liviu Chircu (@liviuchircu) 17 10 161 239
+   5. Daniel-Constantin Mierla (@miconda) 15 11 138 88
+   6. Vlad Paiu (@vladpaiu) 8 5 243 18
+   7. Andreas Heise 7 3 105 129
+   8. Vlad Patrascu (@rvlad-patrascu) 7 3 72 133
+   9. Edson Gellert Schubert 5 1 0 201
+   10. Elena-Ramona Modroiu 4 2 95 42
+
+   All remaining contributors: Henning Westerholt (@henningw),
+   Bogdan Iancu, Konstantin Bokarius, Peter Lemenkov (@lemenkov),
+   Dan Pascu (@danpascu), Dusan Klinec, Jesus Rodrigues, Sergio
+   Gutierrez.
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+3.2. By Commit Activity
+
+   Table 3.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Razvan Crainea (@razvancrainea)     Aug 2010 - May 2019
+   2.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   3.  Bogdan-Andrei Iancu (@bogdan-iancu) Jun 2005 - Apr 2019
+   4.  Bogdan Iancu                        Apr 2019 - Apr 2019
+   5.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   6.  Liviu Chircu (@liviuchircu)         Mar 2014 - Jun 2018
+   7.  Dusan Klinec                        Dec 2015 - Dec 2015
+   8.  Vlad Paiu (@vladpaiu)               Aug 2011 - Sep 2015
+   9.  Ovidiu Sas (@ovidiusas)             Mar 2011 - Oct 2013
+   10. Sergio Gutierrez                    Nov 2008 - Nov 2008
+
+   All remaining contributors: Dan Pascu (@danpascu),
+   Daniel-Constantin Mierla (@miconda), Konstantin Bokarius, Edson
+   Gellert Schubert, Henning Westerholt (@henningw), Jesus
+   Rodrigues, Andreas Heise, Elena-Ramona Modroiu.
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 4. Documentation
+
+4.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Bogdan-Andrei
+   Iancu (@bogdan-iancu), Peter Lemenkov (@lemenkov), Liviu Chircu
+   (@liviuchircu), Razvan Crainea (@razvancrainea), Ovidiu Sas
+   (@ovidiusas), Daniel-Constantin Mierla (@miconda), Konstantin
+   Bokarius, Edson Gellert Schubert, Jesus Rodrigues, Elena-Ramona
+   Modroiu.
+
+   Documentation Copyrights:
+
+   Copyright © 2005-2009 Voice Sistem SRL

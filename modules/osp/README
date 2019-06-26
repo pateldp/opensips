@@ -1,22 +1,4 @@
 OSP Module for Secure, Multi-Lateral Peering
-
-Ulrich Abend
-
-   FhG FOKUS
-
-   <ullstar@iptel.org>
-
-Edited by
-
-Di-Shi Sun
-
-   TransNexus, Inc.
-
-   <support@transnexus.com>
-
-   Copyright © 2003 FhG FOKUS
-   Revision History
-   Revision $Revision: 5901 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -69,6 +51,10 @@ Di-Shi Sun
                       identity_information_avp, identity_type_avp,
                       identity_canon_avp
 
+              1.3.37. service_provider_avp
+              1.3.38. user_group_avp
+              1.3.39. user_id_avp
+
         1.4. Exported Functions
 
               1.4.1. checkospheader()
@@ -82,9 +68,24 @@ Di-Shi Sun
               1.4.9. prepareallosproutes()
               1.4.10. checkcallingtranslation()
               1.4.11. reportospusage()
-              1.4.12. processsubscribe()
+              1.4.12. processsubscribe([cachedcnamrecord])
 
    2. Developer Guide
+   3. Contributors
+
+        3.1. By Commit Statistics
+        3.2. By Commit Activity
+
+   4. Documentation
+
+        4.1. Contributors
+
+   List of Tables
+
+   3.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   3.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -126,18 +127,21 @@ Di-Shi Sun
    1.34. Setting the request date AVP
    1.35. Setting the SDP finger print AVP
    1.36. Setting the Identity related AVPs
-   1.37. checkospheader usage
-   1.38. validateospheader usage
-   1.39. getlocaladress usage
-   1.40. setrequestdate usage
-   1.41. requestosprouting usage
-   1.42. checkosproute usage
-   1.43. prepareosproute usage
-   1.44. prepareospresponse usage
-   1.45. prepareallosproutes usage
-   1.46. checkcallingtranslation usage
-   1.47. reportospusage usage
-   1.48. processsubscribe usage
+   1.37. Setting the source service provider AVP
+   1.38. Setting the source user group AVP
+   1.39. Setting the source user ID AVP
+   1.40. checkospheader usage
+   1.41. validateospheader usage
+   1.42. getlocaladress usage
+   1.43. setrequestdate usage
+   1.44. requestosprouting usage
+   1.45. checkosproute usage
+   1.46. prepareosproute usage
+   1.47. prepareospresponse usage
+   1.48. prepareallosproutes usage
+   1.49. checkcallingtranslation usage
+   1.50. reportospusage usage
+   1.51. processsubscribe usage
 
 Chapter 1. Admin Guide
 
@@ -172,12 +176,12 @@ Chapter 1. Admin Guide
      * uac_auth -- UAC Authentication functionality
      * usrloc -- User location implementation module
      * OSP Toolkit -- The OSP Toolkit, available from
-       http://sourceforge.net/projects/osp-toolkit, must be built
+       https://github.com/TransNexus/osptoolkit, must be built
        before building OpenSIPS with the OSP module. For
        instructions on building OpenSIPS with the OSP Toolkit, see
        http://www.http://transnexus.com/wp-content/uploads/OSP-Rou
        ting-and-CDR-Collection-Server-with-OpenSIPS-1.7.2.pdf. For
-       OpenSIPS 2.1.0, OSP Toolkit 4.5.0 or later versions should
+       OpenSIPS 2.4.0, OSP Toolkit 4.16.0 or later versions should
        be used.
 
 1.3. Exported Parameters
@@ -665,6 +669,36 @@ modparam("osp","identity_information_avp","$avp(idinfo)")
 modparam("osp","identity_type_avp","$avp(idtype)")
 modparam("osp","identity_canon_avp","$avp(idcanon)")
 
+1.3.37. service_provider_avp
+
+   These parameter is used to tell the OSP module which AVP is
+   used to store source service provider information. The default
+   value is "$avp(_osp_service_provider_)". All pseudo variables
+   are described in http://www.opensips.org/Resources/DocsCoreVar.
+
+   Example 1.37. Setting the source service provider AVP
+modparam("osp", "service_provider_avp", "$avp(sp)")
+
+1.3.38. user_group_avp
+
+   These parameter is used to tell the OSP module which AVP is
+   used to store source user group information. The default value
+   is "$avp(_osp_user_group_)". All pseudo variables are described
+   in http://www.opensips.org/Resources/DocsCoreVar.
+
+   Example 1.38. Setting the source user group AVP
+modparam("osp", "user_group_avp", "$avp(groupid)")
+
+1.3.39. user_id_avp
+
+   These parameter is used to tell the OSP module which AVP is
+   used to store source user ID information. The default value is
+   "$avp(_osp_user_id_)". All pseudo variables are described in
+   http://www.opensips.org/Resources/DocsCoreVar.
+
+   Example 1.39. Setting the source user ID AVP
+modparam("osp", "user_id_avp", "$avp(userid)")
+
 1.4. Exported Functions
 
 1.4.1. checkospheader()
@@ -674,7 +708,7 @@ modparam("osp","identity_canon_avp","$avp(idcanon)")
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.37. checkospheader usage
+   Example 1.40. checkospheader usage
 ...
 if (checkospheader()) {
   log(1,"OSP header field found.\n");
@@ -693,7 +727,7 @@ if (checkospheader()) {
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.38. validateospheader usage
+   Example 1.41. validateospheader usage
 ...
 if (validateospheader()) {
   log(1,"valid OSP header found\n");
@@ -709,7 +743,7 @@ if (validateospheader()) {
 
    This function can be used from ONREPLY_ROUTE.
 
-   Example 1.39. getlocaladress usage
+   Example 1.42. getlocaladress usage
 ...
 if (getlocaladdress()) {
   log(1,"Obtain proxy local egress address\n");
@@ -725,7 +759,7 @@ if (getlocaladdress()) {
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.40. setrequestdate usage
+   Example 1.43. setrequestdate usage
 ...
 if (setrequest()) {
   log(1,"Set request date\n");
@@ -754,7 +788,7 @@ if (setrequest()) {
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.41. requestosprouting usage
+   Example 1.44. requestosprouting usage
 ...
 if (requestosprouting()) {
   log(1,"successfully queried OSP server, now relaying call\n");
@@ -770,7 +804,7 @@ if (requestosprouting()) {
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.42. checkosproute usage
+   Example 1.45. checkosproute usage
 ...
 if (checkosproute()) {
   log(1,"There is at least one route for the call\n");
@@ -793,7 +827,7 @@ if (checkosproute()) {
 
    This function can be used from BRANCH_ROUTE.
 
-   Example 1.43. prepareosproute usage
+   Example 1.46. prepareosproute usage
 ...
 if (prepareosproute()) {
   log(1,"successfully prepared the route, now relaying call\n");
@@ -812,7 +846,7 @@ if (prepareosproute()) {
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.44. prepareospresponse usage
+   Example 1.47. prepareospresponse usage
 ...
 if (prepareospresponse()) {
   log(1,"Response is prepared.\n");
@@ -830,7 +864,7 @@ if (prepareospresponse()) {
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.45. prepareallosproutes usage
+   Example 1.48. prepareallosproutes usage
 ...
 if (prepareallosproutes()) {
   log(1,"Routes are prepared, now forking the call\n");
@@ -852,7 +886,7 @@ if (prepareallosproutes()) {
 
    This function can be used from BRANCH_ROUTE.
 
-   Example 1.46. checkcallingtranslation usage
+   Example 1.49. checkcallingtranslation usage
 ...
 if (checkcallingtranslation()) {
   # Remove the Remote_Party-ID from the received message
@@ -876,27 +910,27 @@ if (checkcallingtranslation()) {
    message.
 
    Meaning of the parameter is as follows:
-     * "0" - Source device releases the call.
-     * "1" - Destination device releases the call.
+     * 0 - Source device releases the call.
+     * 1 - Destination device releases the call.
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.47. reportospusage usage
+   Example 1.50. reportospusage usage
 ...
 if (is_direction("downstream")) {
   log(1,"This BYE message is from SOURCE\n");
-  if (!reportospusage("0")) {
+  if (!reportospusage(0)) {
     log(1,"This BYE message does not include OSP usage information\n");
   }
 } else {
   log(1,"This BYE message is from DESTINATION\n");
-  if (!reportospusage("1")) {
+  if (!reportospusage(1)) {
     log(1,"This BYE message does not include OSP usage information\n");
   }
 }
 ...
 
-1.4.12. processsubscribe()
+1.4.12. processsubscribe([cachedcnamrecord])
 
    This function should be called after receiving a SUBSCRIBE for
    CNAM message and there is a cached CNAM record for this
@@ -905,18 +939,18 @@ if (is_direction("downstream")) {
    sending the SUBSCRIBE message.
 
    Meaning of the parameter is as follows:
-     * cachedcnamrecord - Cached CNAM record.
+     * cachedcnamrecord (string) - Cached CNAM record.
 
    This function can be used from REQUEST_ROUTE.
 
-   Example 1.48. processsubscribe usage
+   Example 1.51. processsubscribe usage
 ...
-if (method == "SUBSCRIBE") {
+if (is_method("SUBSCRIBE")) {
     if (($var(sevent) == "calling-name") && (is_myself("$rd"))) {
         if ($var(cnamrecord) != NULL) {
-            processsubscribe("$(var(cnamrecord){s.b64decode})");
+            processsubscribe($(var(cnamrecord){s.b64decode}));
         } else {
-            t_relay("1.2.3.4", "0x02");
+            t_relay("1.2.3.4", 0x02);
         }
     } else {
         t_relay();
@@ -928,3 +962,81 @@ Chapter 2. Developer Guide
 
    The functions of the OSP modules are not used by other OpenSIPS
    modules.
+
+Chapter 3. Contributors
+
+3.1. By Commit Statistics
+
+   Table 3.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Di-Shi Sun (@di-shi) 280 101 10368 5372
+   2. Dmitry Isakbayev 41 5 4120 159
+   3. Bogdan-Andrei Iancu (@bogdan-iancu) 31 25 218 209
+   4. Di-Shi Sun 17 2 1006 386
+   5. Daniel-Constantin Mierla (@miconda) 15 13 81 48
+   6. Liviu Chircu (@liviuchircu) 15 12 83 92
+   7. Vlad Patrascu (@rvlad-patrascu) 9 6 68 65
+   8. Ancuta Onofrei 9 1 206 318
+   9. Razvan Crainea (@razvancrainea) 8 6 71 52
+   10. Henning Westerholt (@henningw) 4 2 3 3
+
+   All remaining contributors: Ovidiu Sas (@ovidiusas), Vlad Paiu
+   (@vladpaiu), Konstantin Bokarius, Dan Pascu (@danpascu),
+   fabriziopicconi, Andreas Granig, Ezequiel Lovelle, Julián
+   Moreno Patiño, Peter Lemenkov (@lemenkov), Ralf Zerres, Edson
+   Gellert Schubert.
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+3.2. By Commit Activity
+
+   Table 3.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Razvan Crainea (@razvancrainea)     Jun 2011 - May 2019
+   2.  Ralf Zerres                         May 2019 - May 2019
+   3.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   4.  Bogdan-Andrei Iancu (@bogdan-iancu) Jan 2006 - Apr 2019
+   5.  Di-Shi Sun                          Oct 2018 - Feb 2019
+   6.  Liviu Chircu (@liviuchircu)         Mar 2014 - Dec 2018
+   7.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   8.  Di-Shi Sun (@di-shi)                Mar 2006 - Sep 2016
+   9.  Julián Moreno Patiño                Feb 2016 - Feb 2016
+   10. Ezequiel Lovelle                    Oct 2014 - Oct 2014
+
+   All remaining contributors: fabriziopicconi, Ovidiu Sas
+   (@ovidiusas), Vlad Paiu (@vladpaiu), Dan Pascu (@danpascu),
+   Henning Westerholt (@henningw), Daniel-Constantin Mierla
+   (@miconda), Konstantin Bokarius, Edson Gellert Schubert, Ancuta
+   Onofrei, Dmitry Isakbayev, Andreas Granig.
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 4. Documentation
+
+4.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Di-Shi Sun,
+   Liviu Chircu (@liviuchircu), Peter Lemenkov (@lemenkov), Di-Shi
+   Sun (@di-shi), Bogdan-Andrei Iancu (@bogdan-iancu), Razvan
+   Crainea (@razvancrainea), Daniel-Constantin Mierla (@miconda),
+   Konstantin Bokarius, Edson Gellert Schubert, Dmitry Isakbayev.
+
+   Documentation Copyrights:
+
+   Copyright © 2003 FhG FOKUS

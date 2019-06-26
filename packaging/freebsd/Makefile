@@ -6,7 +6,7 @@
 #
 
 PORTNAME=	opensips
-PORTVERSION=	2.1.0
+PORTVERSION=	3.1.0
 CATEGORIES=	net
 MASTER_SITES=	http://opensips.org/pub/opensips/${PORTVERSION}/src/
 DISTNAME=	${PORTNAME}-${PORTVERSION}-tls_src
@@ -24,22 +24,17 @@ MAKE_ENV=	CC="${CC}" \
 		PTHREAD_CFLAGS="${PTHREAD_CFLAGS}" \
 		PTHREAD_LIBS="${PTHREAD_LIBS}"
 
-PLIST_FILES=	sbin/opensips sbin/opensipsctl sbin/opensipsdbctl sbin/opensipsunix \
-		lib/opensips/opensipsctl/opensipsctl.base lib/opensips/opensipsctl/opensipsctl.ctlbase \
-		lib/opensips/opensipsctl/opensipsctl.dbtext lib/opensips/opensipsctl/opensipsctl.fifo \
-		lib/opensips/opensipsctl/opensipsctl.sqlbase lib/opensips/opensipsctl/opensipsctl.unixsock \
-		lib/opensips/opensipsctl/opensipsdbctl.base lib/opensips/opensipsctl/opensipsdbctl.dbtext \
-		etc/opensips/opensipsctlrc
+PLIST_FILES=	sbin/opensips
 
-PLIST_DIRS=	lib/opensips/modules lib/opensips/opensipsctl lib/opensips
+PLIST_DIRS=	lib/opensips/modules lib/opensips
 
 MODULES=	acc alias_db auth auth_db auth_diameter avpops benchmark \
 		cfgutils dbtext dialog dispatcher diversion domain \
 		domainpolicy enum exec flatstore gflags group imc \
 		mangler maxfwd mediaproxy mi_datagram mi_fifo msilo nathelper \
-		options path permissions pike registrar rr seas \
-		siptrace sl sms speeddial sst statistics textops tm uac \
-		uac_redirect uri uri_db usrloc xlog
+		options path permissions pike registrar rr \
+		siptrace sl speeddial sst statistics textops tm uac \
+		uac_redirect uri_db usrloc xlog
 
 RC_FILES=	acc/radiusclient.conf \
 		acc/servers \
@@ -50,9 +45,7 @@ RC_DIRS=	acc
 ONLY_FOR_ARCHS=	i386
 
 MAN5=		opensips.cfg.5
-MAN8=		opensips.8 \
-		opensipsctl.8 \
-		opensipsunix.8
+MAN8=		opensips.8
 
 PORTDOCS=	*
 
@@ -71,7 +64,6 @@ OPTIONS=	MYSQL "MySQL support" on \
 .if defined(WITH_MYSQL)
 USE_MYSQL=	yes
 MODULES+=	mysql
-PLIST_FILES+=	lib/opensips/opensipsctl/opensipsdbctl.mysql lib/opensips/opensipsctl/opensipsctl.mysql
 .else
 MAKE_ENV+=	MYSQL=mysql
 .endif
@@ -79,7 +71,6 @@ MAKE_ENV+=	MYSQL=mysql
 .if defined(WITH_POSTGRESQL)
 USE_PGSQL=	yes
 MODULES+=	postgres
-PLIST_FILES+=	lib/opensips/opensipsctl/opensipsdbctl.pgsql lib/opensips/opensipsctl/opensipsctl.pgsql
 .else
 MAKE_ENV+=	POSTGRESQL=postgres
 .endif
@@ -143,10 +134,6 @@ post-patch:
 		${WRKSRC}/Makefile
 .endif
 	@${REINPLACE_CMD} -e 's|-g -O9 ||' -e 's|-O9 ||' ${WRKSRC}/Makefile.defs
-	@${REINPLACE_CMD} -e 's|/usr/local/etc/opensips|${PREFIX}/etc/opensips|' \
-		${WRKSRC}/scripts/opensipsdbctl.dbtext
-	@${REINPLACE_CMD} -e 's|/usr/local/share/opensips|${PREFIX}/share/opensips|' \
-		${WRKSRC}/scripts/opensipsdbctl.dbtext
 	@${REINPLACE_CMD} -e 's|/etc/opensips|${PREFIX}/etc/opensips|' \
 		${WRKSRC}/modules/mediaproxy/README \
 		${WRKSRC}/modules/cpl_c/README \
@@ -155,25 +142,12 @@ post-patch:
 		${WRKSRC}/INSTALL
 	@${REINPLACE_CMD} -e 's|/usr/local|${PREFIX}|' \
 		${WRKSRC}/etc/opensips.cfg \
-		${WRKSRC}/scripts/opensipsctl \
-		${WRKSRC}/scripts/opensipsctl.8 \
-		${WRKSRC}/scripts/opensipsctl.base \
-		${WRKSRC}/scripts/opensipsctl.db_berkeley \
-		${WRKSRC}/scripts/opensipsctl.dbtext \
-		${WRKSRC}/scripts/opensipsctlrc \
-		${WRKSRC}/scripts/opensipsdbctl \
-		${WRKSRC}/scripts/opensipsdbctl.base \
-		${WRKSRC}/scripts/opensipsdbctl.db_berkeley \
-		${WRKSRC}/scripts/opensipsdbctl.dbtext \
-		${WRKSRC}/scripts/opensipsdbctl.mysql \
-		${WRKSRC}/scripts/opensipsdbctl.pgsql \
 		${WRKSRC}/modules/acc/README \
 		${WRKSRC}/modules/avp_radius/README \
 		${WRKSRC}/modules/db_berkeley/README \
 		${WRKSRC}/modules/ldap/README \
 		${WRKSRC}/modules/osp/README \
 		${WRKSRC}/modules/perl/README \
-		${WRKSRC}/modules/seas/README \
 		${WRKSRC}/modules/snmpstats/README \
 		${WRKSRC}/modules/speeddial/README \
 		${WRKSRC}/modules/unixodbc/README

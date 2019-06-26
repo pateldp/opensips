@@ -32,10 +32,12 @@
 #include "../../db/db.h"
 #include "../../db/db_cap.h"
 #include "dbase.h"
+#include "db_postgres.h"
 
 int db_postgres_exec_query_threshold = 0;   /* Warning in case DB query
 											takes too long disabled by default*/
 int max_db_queries = 2;
+int pq_timeout = DEFAULT_PSQL_TIMEOUT;
 
 int db_postgres_bind_api(const str* mod, db_func_t *dbb);
 
@@ -44,10 +46,9 @@ static int mod_init(void);
 /*
  * PostgreSQL database module interface
  */
-
-static cmd_export_t cmds[]={
-	{"db_bind_api",     (cmd_function)db_postgres_bind_api,     0, 0, 0, 0},
-	{0,0,0,0,0,0}
+static cmd_export_t cmds[] = {
+	{"db_bind_api",     (cmd_function)db_postgres_bind_api, {{0,0,0}},0},
+	{0,0,{{0,0,0}},0}
 };
 
 /*
@@ -56,6 +57,7 @@ static cmd_export_t cmds[]={
 static param_export_t params[] = {
 	{"exec_query_threshold", INT_PARAM, &db_postgres_exec_query_threshold},
 	{"max_db_queries", INT_PARAM, &max_db_queries},
+	{"timeout", INT_PARAM, &pq_timeout},
 	{0, 0, 0}
 };
 
@@ -74,6 +76,7 @@ struct module_exports exports = {
 	MOD_TYPE_SQLDB,  /* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,            /*  module functions */
 	0,               /*  module async functions */
@@ -86,7 +89,8 @@ struct module_exports exports = {
 	mod_init,        /* module initialization function */
 	0,               /* response function*/
 	0,               /* destroy function */
-	0                /* per-child init function */
+	0,               /* per-child init function */
+	0                /* reload confirm function */
 };
 
 
@@ -119,6 +123,10 @@ int db_postgres_bind_api(const str* mod, db_func_t *dbb)
 	dbb->insert           = db_postgres_insert;
 	dbb->delete           = db_postgres_delete;
 	dbb->update           = db_postgres_update;
+
+	dbb->async_raw_query   = db_postgres_async_raw_query;
+	dbb->async_resume      = db_postgres_async_resume;
+	dbb->async_free_result = db_postgres_async_free_result;
 
 	dbb->cap |= DB_CAP_MULTIPLE_INSERT;
 	return 0;

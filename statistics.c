@@ -38,6 +38,7 @@
 #include <string.h>
 
 #include "mem/shm_mem.h"
+#include "mem/rpm_mem.h"
 #include "mi/mi.h"
 #include "ut.h"
 #include "dprint.h"
@@ -54,22 +55,36 @@
 static stats_collector *collector = NULL;
 static int stats_ready;
 
-static struct mi_root *mi_get_stats(struct mi_root *cmd, void *param);
-static struct mi_root *mi_list_stats(struct mi_root *cmd, void *param);
-static struct mi_root *mi_reset_stats(struct mi_root *cmd, void *param);
+static mi_response_t *mi_get_stats(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *w_mi_list_stats(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *w_mi_list_stats_1(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_reset_stats(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 
 static mi_export_t mi_stat_cmds[] = {
 	{ "get_statistics",
-		"prints the statistics (all, group or one) realtime values.",
-		mi_get_stats,    0  ,  0,  0 },
+		"prints the statistics (all, group or one) realtime values.", 0, 0, {
+		{mi_get_stats, {"statistics", 0}},
+		{EMPTY_MI_RECIPE}
+		}
+	},
 	{ "list_statistics",
-		"lists all the registered statistics and their types",
-		mi_list_stats,    0  ,  0,  0 },
-	{ "reset_statistics", "resets the value of a statistic variable",
-		mi_reset_stats,  0  ,  0,  0 },
-	{ 0, 0, 0, 0, 0, 0}
+		"lists all the registered statistics and their types", 0, 0, {
+		{w_mi_list_stats, {0}},
+		{w_mi_list_stats_1, {"statistics", 0}},
+		{EMPTY_MI_RECIPE}
+		}
+	},
+	{ "reset_statistics", "resets the value of a statistic variable", 0, 0, {
+		{mi_reset_stats, {"statistics", 0}},
+		{EMPTY_MI_RECIPE}
+		}
+	},
+	{EMPTY_MI_EXPORT}
 };
-
 
 
 #ifdef NO_ATOMIC_OPS
@@ -79,6 +94,8 @@ gen_lock_t *stat_lock = 0;
 #endif
 
 #define stat_hash(_s) core_hash( _s, 0, STATS_HASH_SIZE)
+
+#define stat_is_hidden(_s)  ((_s)->flags&STAT_HIDDEN)
 
 
 /*! \brief
@@ -131,72 +148,6 @@ char *build_stat_name( str* prefix, char *var_name)
 	p += strlen(var_name);
 	*(p++) = 0;
 	return s;
-}
-
-unsigned int calc_udp_load(void *val)
-{
-	return ( get_stat_val((stat_var*)val) * 100) / *((int*)(((stat_var*)val)+1));
-}
-
-unsigned int calc_tcp_load(void *val)
-{
-	return ( get_stat_val((stat_var*)val) * 100)/tcp_children_no;
-}
-
-int register_udp_load_stat(str *name, stat_var **s, int children)
-{
-	char *stat_name;
-
-	/* in a single mem chunk, we put both the stat variable and the
-	   number of children for this UDP interface */
-	*s = shm_malloc(sizeof(stat_var) + sizeof(int));
-	if (!*s) {
-		LM_ERR("no more shm\n");
-		return -1;
-	}
-	memset(*s,0,sizeof(stat_var));
-	*((int*)((*s)+1)) = children;
-
-	(*s)->u.val = shm_malloc(sizeof(stat_val));
-	if (!(*s)->u.val) {
-		LM_ERR("no more shm\n");
-		return -1;
-	}
-	memset((*s)->u.val,0,sizeof(stat_val));
-
-	if ( (stat_name = build_stat_name(name,"load")) == 0 ||
-	register_stat2("load",stat_name,(stat_var**)calc_udp_load,
-	STAT_IS_FUNC, *s, 0) != 0) {
-		LM_ERR("failed to add load stat\n");
-		return -1;
-	}
-
-	return 0;
-}
-
-int register_tcp_load_stat(stat_var **s)
-{
-	*s = shm_malloc(sizeof(stat_var));
-	if (!*s) {
-		LM_ERR("no more shm\n");
-		return -1;
-	}
-	memset(*s,0,sizeof(stat_var));
-
-	(*s)->u.val = shm_malloc(sizeof(stat_val));
-	if (!(*s)->u.val) {
-		LM_ERR("no more shm\n");
-		return -1;
-	}
-	memset((*s)->u.val,0,sizeof(stat_val));
-
-	if (register_stat2("load","tcp-load",(stat_var**)calc_tcp_load,
-	STAT_IS_FUNC, *s, 0) != 0) {
-		LM_ERR("failed to add load stat\n");
-		return -1;
-	}
-
-	return 0;
 }
 
 
@@ -303,6 +254,11 @@ int init_stats_collector(void)
 		goto error;
 	}
 
+	if (__register_module_stats( "rpmem", rpm_stats, 1) != 0) {
+		LM_ERR("failed to register rp_mem statistics\n");
+		goto error;
+	}
+
 #ifdef NO_ATOMIC_OPS
 	/* init BIG (really BIG) lock */
 	stat_lock = lock_alloc();
@@ -330,7 +286,7 @@ int init_stats_collector(void)
 		goto error;
 	}
 
-	/* register sh_mem statistics */
+	/* register network-level statistics */
 	if (register_module_stats( "net", net_stats)!=0 ) {
 		LM_ERR("failed to register network statistics\n");
 		goto error;
@@ -448,10 +404,10 @@ int register_stat2( char *module, char *name, stat_var **pvar,
 	}
 	stat = unsafe ?
 			(stat_var*)shm_malloc_unsafe(sizeof(stat_var) +
-			((flags&STAT_SHM_NAME)==0)*name_len)
+			(((flags&STAT_SHM_NAME)==0)?0:name_len))
 			:
 			(stat_var*)shm_malloc(sizeof(stat_var) +
-			((flags&STAT_SHM_NAME)==0)*name_len);
+			(((flags&STAT_SHM_NAME)==0)?0:name_len));
 
 	if (stat==0) {
 		LM_ERR("no more shm memory\n");
@@ -664,7 +620,7 @@ stat_var* __get_stat( str *name, int mod_idx )
 
 	/* and look for it , first in the hash for static stats */
 	for( stat=collector->hstats[hash] ; stat ; stat=stat->hnext ) {
-		if ( (stat->name.len==name->len) &&
+		if ( !stat_is_hidden(stat) && (stat->name.len==name->len) &&
 		(strncasecmp( stat->name.s, name->s, name->len)==0) &&
 		(mod_idx < 0 || stat->mod_idx == mod_idx))
 			return stat;
@@ -672,7 +628,7 @@ stat_var* __get_stat( str *name, int mod_idx )
 	/* and then in the hash for dynamic stats */
 	lock_start_read((rw_lock_t *)collector->rwl);
 	for( stat=collector->dy_hstats[hash] ; stat ; stat=stat->hnext ) {
-		if ( (stat->name.len==name->len) &&
+		if ( !stat_is_hidden(stat) && (stat->name.len==name->len) &&
 		(strncasecmp( stat->name.s, name->s, name->len)==0) &&
 		(mod_idx < 0 || stat->mod_idx == mod_idx)) {
 			lock_stop_read((rw_lock_t *)collector->rwl);
@@ -718,7 +674,7 @@ int mi_stat_name(str *mod, str *stat, str *out)
 	return 0;
 }
 
-int mi_print_stat(struct mi_node *rpl, str *mod, str *stat, unsigned long val)
+int mi_print_stat(mi_item_t *resp_obj, str *mod, str *stat, unsigned long val)
 {
 	str tmp_buf;
 
@@ -727,7 +683,7 @@ int mi_print_stat(struct mi_node *rpl, str *mod, str *stat, unsigned long val)
 		return -1;
 	}
 
-	if (!addf_mi_node_child(rpl, MI_DUP_NAME, tmp_buf.s, tmp_buf.len, "%lu", val)) {
+	if (add_mi_number(resp_obj, tmp_buf.s, tmp_buf.len, val) < 0) {
 		LM_ERR("cannot add stat\n");
 		return -1;
 	}
@@ -738,13 +694,13 @@ int mi_print_stat(struct mi_node *rpl, str *mod, str *stat, unsigned long val)
 
 /***************************** MI STUFF ********************************/
 
-inline static int mi_add_stat(struct mi_node *rpl, stat_var *stat)
+inline static int mi_add_stat(mi_item_t *resp_obj, stat_var *stat)
 {
-	return mi_print_stat(rpl, &collector->amodules[stat->mod_idx].name,
+	return mi_print_stat(resp_obj, &collector->amodules[stat->mod_idx].name,
 					&stat->name, get_stat_val(stat));
 }
 
-inline static int mi_list_stat(struct mi_node *rpl, str *mod, stat_var *stat)
+inline static int mi_list_stat(mi_item_t *resp_obj, str *mod, stat_var *stat)
 {
 	str tmp_buf;
 	char *buf;
@@ -759,15 +715,14 @@ inline static int mi_list_stat(struct mi_node *rpl, str *mod, stat_var *stat)
 	else
 		buf = "incremental";
 
-	if (!addf_mi_node_child(rpl, MI_DUP_NAME, tmp_buf.s, tmp_buf.len, "%s", buf)) {
+	if (add_mi_string_fmt(resp_obj, tmp_buf.s, tmp_buf.len, "%s", buf)<0) {
 		LM_ERR("cannot add stat\n");
 		return -1;
 	}
 	return 0;
 }
 
-inline static int mi_add_module_stats(struct mi_node *rpl,
-													module_stats *mods)
+inline static int mi_add_module_stats(mi_item_t *resp_obj, module_stats *mods)
 {
 	stat_var *stat;
 	int ret = 0;
@@ -776,7 +731,9 @@ inline static int mi_add_module_stats(struct mi_node *rpl,
 		lock_start_read((rw_lock_t *)collector->rwl);
 
 	for( stat=mods->head ; stat ; stat=stat->lnext) {
-		ret = mi_print_stat(rpl, &mods->name, &stat->name,
+		if (stat_is_hidden(stat))
+			continue;
+		ret = mi_print_stat(resp_obj, &mods->name, &stat->name,
 				get_stat_val(stat));
 		if (ret < 0)
 			break;
@@ -788,8 +745,7 @@ inline static int mi_add_module_stats(struct mi_node *rpl,
 	return ret;
 }
 
-inline static int mi_list_module_stats(struct mi_node *rpl,
-													module_stats *mods)
+inline static int mi_list_module_stats(mi_item_t *resp_obj, module_stats *mods)
 {
 	stat_var *stat;
 	int ret = 0;
@@ -798,7 +754,9 @@ inline static int mi_list_module_stats(struct mi_node *rpl,
 		lock_start_read((rw_lock_t *)collector->rwl);
 
 	for( stat=mods->head ; stat ; stat=stat->lnext) {
-		ret = mi_list_stat(rpl, &mods->name, stat);
+		if (stat_is_hidden(stat))
+			continue;
+		ret = mi_list_stat(resp_obj, &mods->name, stat);
 		if (ret < 0)
 			break;
 	}
@@ -810,143 +768,184 @@ inline static int mi_list_module_stats(struct mi_node *rpl,
 }
 
 
-static struct mi_root *mi_get_stats(struct mi_root *cmd, void *param)
+static mi_response_t *mi_get_stats(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root *rpl_tree;
-	struct mi_node *rpl;
-	struct mi_node *arg;
-	module_stats   *mods;
-	stat_var       *stat;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	mi_item_t *params_arr;
+	int i, no_params;
+	int found;
+	module_stats *mods;
+	stat_var *stat;
 	str val;
-	int i;
 
-	if (cmd->node.kids==NULL)
-		return init_mi_tree( 400, MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
-
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==0)
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
 		return 0;
-	rpl = &rpl_tree->node;
 
-	for( arg=cmd->node.kids ; arg ; arg=arg->next) {
-		if (arg->value.len==0)
-			continue;
+	if (get_mi_array_param(params, "statistics", &params_arr, &no_params) < 0) {
+		free_mi_response(resp);
+		return init_mi_param_error();
+	}
 
-		val = arg->value;
+	for (i = 0; i < no_params; i++) {
+		if (get_mi_arr_param_string(params_arr, i, &val.s, &val.len) < 0) {
+			free_mi_response(resp);
+			return init_mi_param_error();
+		}
 
 		if ( val.len==3 && memcmp(val.s,"all",3)==0) {
 			/* add all statistic variables */
 			for( i=0 ; i<collector->mod_no ;i++ ) {
-				if (mi_add_module_stats( rpl, &collector->amodules[i] )!=0)
+				if (mi_add_module_stats(resp_obj, &collector->amodules[i] )!=0)
 					goto error;
 			}
+
+			found = 1;
 		} else if ( val.len>1 && val.s[val.len-1]==':') {
 			/* add module statistics */
 			val.len--;
 			mods = get_stat_module( &val );
 			if (mods==0)
 				continue;
-			if (mi_add_module_stats( rpl, mods )!=0)
+			if (mi_add_module_stats(resp_obj, mods)!=0)
 				goto error;
+
+			found = 1;
 		} else {
 			/* add only one statistic */
 			stat = get_stat( &val );
 			if (stat==0)
 				continue;
-			if (mi_add_stat(rpl,stat)!=0)
+			if (mi_add_stat(resp_obj, stat)!=0)
 				goto error;
+
+			found = 1;
 		}
 	}
 
-	if (rpl->kids==0) {
-		free_mi_tree(rpl_tree);
-		return init_mi_tree( 404, "Statistics Not Found", 20);
+	if (!found) {
+		free_mi_response(resp);
+		return init_mi_error(404, MI_SSTR("Statistics Not Found"));
 	}
 
-	return rpl_tree;
+	return resp;
+
 error:
-	free_mi_tree(rpl_tree);
+	free_mi_response(resp);
 	return 0;
 }
 
-
-static struct mi_root *mi_list_stats(struct mi_root *cmd, void *param)
+static mi_response_t *w_mi_list_stats(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root *rpl_tree;
-	struct mi_node *rpl;
-	struct mi_node *arg;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	int i;
+
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return 0;
+
+	for( i=0 ; i<collector->mod_no ;i++ ) {
+		if (mi_list_module_stats(resp_obj, &collector->amodules[i] )!=0) {
+			free_mi_response(resp);
+			return 0;
+		}
+	}
+
+	return resp;
+}
+
+static mi_response_t *w_mi_list_stats_1(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	mi_item_t *params_arr;
+	int i, no_params;
+	int found;
 	module_stats   *mods;
 	stat_var       *stat;
 	str val;
-	int i;
 
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==0)
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
 		return 0;
-	rpl = &rpl_tree->node;
 
-	if (cmd->node.kids == NULL) {
-		for( i=0 ; i<collector->mod_no ;i++ ) {
-			if (mi_list_module_stats( rpl, &collector->amodules[i] )!=0)
-				goto error;
+	if (get_mi_array_param(params, "statistics", &params_arr, &no_params) < 0) {
+		free_mi_response(resp);
+		return init_mi_param_error();
+	}
+
+	for (i = 0; i < no_params; i++) {
+		if (get_mi_arr_param_string(params_arr, i, &val.s, &val.len) < 0) {
+			free_mi_response(resp);
+			return init_mi_param_error();
 		}
-	} else {
-		for( arg=cmd->node.kids ; arg ; arg=arg->next) {
-			if (arg->value.len==0)
+
+		if ( val.len>1 && val.s[val.len-1]==':') {
+			/* add module statistics */
+			val.len--;
+			mods = get_stat_module( &val );
+			if (mods==0)
 				continue;
-			val = arg->value;
-			if ( val.len>1 && val.s[val.len-1]==':') {
-				/* add module statistics */
-				val.len--;
-				mods = get_stat_module( &val );
-				if (mods==0)
-					continue;
-				if (mi_list_module_stats( rpl, mods )!=0)
-					goto error;
-			} else {
-				/* add only one statistic */
-				stat = get_stat( &val );
-				if (stat==0)
-					continue;
-				if (mi_list_stat(rpl,NULL, stat)!=0)
-					goto error;
-			}
+			if (mi_list_module_stats(resp_obj, mods)!=0)
+				goto error;
+
+			found = 1;
+		} else {
+			/* add only one statistic */
+			stat = get_stat( &val );
+			if (stat==0)
+				continue;
+			if (mi_list_stat(resp_obj,NULL, stat)!=0)
+				goto error;
+
+			found = 1;
 		}
 	}
 
-	if (rpl->kids==0) {
-		free_mi_tree(rpl_tree);
-		return init_mi_tree( 404, "Statistics Not Found", 20);
+	if (!found) {
+		free_mi_response(resp);
+		return init_mi_error(404, MI_SSTR("Statistics Not Found"));
 	}
 
-	return rpl_tree;
+	return resp;
+
 error:
-	free_mi_tree(rpl_tree);
+	free_mi_response(resp);
 	return 0;
 }
 
-
-
-static struct mi_root *mi_reset_stats(struct mi_root *cmd, void *param)
+static mi_response_t *mi_reset_stats(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root *rpl_tree;
-	struct mi_node *arg;
-	stat_var       *stat;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	mi_item_t *params_arr;
+	int i, no_params;
+	str val;
+	stat_var *stat;
 	int found;
 
-	if (cmd->node.kids==NULL)
-		return init_mi_tree( 400, MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
-
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==0)
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
 		return 0;
-	found = 0;
 
-	for( arg=cmd->node.kids ; arg ; arg=arg->next) {
-		if (arg->value.len==0)
-			continue;
+	if (get_mi_array_param(params, "statistics", &params_arr, &no_params) < 0) {
+		free_mi_response(resp);
+		return init_mi_param_error();
+	}
 
-		stat = get_stat( &arg->value );
+	for (i = 0; i < no_params; i++) {
+		if (get_mi_arr_param_string(params_arr, i, &val.s, &val.len) < 0) {
+			free_mi_response(resp);
+			return init_mi_param_error();
+		}
+
+		stat = get_stat(&val);
 		if (stat==0)
 			continue;
 
@@ -955,11 +954,11 @@ static struct mi_root *mi_reset_stats(struct mi_root *cmd, void *param)
 	}
 
 	if (!found) {
-		free_mi_tree(rpl_tree);
-		return init_mi_tree( 404, "Statistics Not Found", 20);
+		free_mi_response(resp);
+		return init_mi_error(404, MI_SSTR("Statistics Not Found"));
 	}
 
-	return rpl_tree;
+	return resp_obj;
 }
 
 

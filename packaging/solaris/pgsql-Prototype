@@ -7,8 +7,6 @@ d none /opt/opensips/lib64 0755 root root
 d none /opt/opensips/lib64/opensips 0755 root root
 d none /opt/opensips/lib64/opensips/modules 0755 root root
 f none /opt/opensips/lib64/opensips/modules/db_postgres.so 0755 root root
-f none /opt/opensips/lib64/opensips/opensipsctl/opensipsctl.pgsql 0644 root root
-f none /opt/opensips/lib64/opensips/opensipsctl/opensipsdbctl.pgsql 0644 root root
 d none /opt/opensips/postgres 0755 root root
 f none /opt/opensips/postgres/acc-create.sql 0644 root root
 f none /opt/opensips/postgres/alias_db-create.sql 0644 root root
@@ -31,7 +29,7 @@ f none /opt/opensips/postgres/permissions-create.sql 0644 root root
 f none /opt/opensips/postgres/presence-create.sql 0644 root root
 f none /opt/opensips/postgres/registrar-create.sql 0644 root root
 f none /opt/opensips/postgres/rls-create.sql 0644 root root
-f none /opt/opensips/postgres/siptrace-create.sql 0644 root root
+f none /opt/opensips/postgres/tracer-create.sql 0644 root root
 f none /opt/opensips/postgres/speeddial-create.sql 0644 root root
 f none /opt/opensips/postgres/standard-create.sql 0644 root root
 f none /opt/opensips/postgres/uri_db-create.sql 0644 root root

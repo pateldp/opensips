@@ -4,7 +4,7 @@
     
     <title>&adminguide;</title>
 
-    <section>
+    <section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>Useful extensions for the server configuration.</para>
 	<para>
@@ -45,7 +45,7 @@
 	<quote>check_config_hash</quote> and <quote>get_config_hash</quote>.
 	</para>
 	</section>
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<para>
 	    The module depends on the following modules (in the other words the
@@ -57,9 +57,9 @@
 	    </itemizedlist>
 	</para>
     </section>
-    <section>
+    <section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_initial_probability" xreflabel="initial_probability">
 		<title><varname>initial_probability</varname> (string)</title>
 		<para>
 		The initial value of the probability.
@@ -167,7 +167,7 @@ modparam("cfgutils", "varset", "gw=s:sip:11.11.11.11;transport=tcp")
 </programlisting>
 	    </example>
 	</section>
-	<section>
+	<section id="param_lock_pool_size" xreflabel="lock_pool_size">
 		<title><varname>lock_pool_size</varname> (integer)</title>
 		<para>
 		The number of dynamic script locks to be allocated at &osips; startup. This
@@ -185,58 +185,69 @@ modparam("cfgutils", "varset", "gw=s:sip:11.11.11.11;transport=tcp")
 		<example>
 		<title>Setting lock_pool_size module parameter</title>
 		<programlisting format="linespecific">
-modparam("cfgutils", "lock_pool_size", "64")
+modparam("cfgutils", "lock_pool_size", 64)
 </programlisting>
 		</example>
 	</section>
 </section>
 
-    <section>
+    <section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_rand_event" xreflabel="rand_event()">
 		<title><function moreinfo="none">rand_event([probability])</function></title>
 		<para>
-			Return true or false, depending on a random value and a
-			probability value. If probability parameter is given, it will
-			override the global parameter set by rand_set_prob() function.
+			Generates a random floating point value between 0 - 100 and returns
+			true if the value is less or equal to the currently set probability.
+			If "probability" parameter is given, it will
+			override the global parameter set by <xref linkend="func_rand_set_prob"/>.
 		</para>
+		<para>Parameters:</para>
+		<itemizedlist>
+		<listitem>
+		<para>probability (int, optional) - probability override</para>
+		</listitem>
+		</itemizedlist>
 		<example>
 			<title><function moreinfo="none">rand_event()</function> usage</title>
 			<programlisting format="linespecific">
 ...
 if (rand_event()) {
   append_to_reply("Retry-After: 120\n");
-  sl_send_reply("503", "Try later");
+  sl_send_reply(503, "Try later");
   exit;
-};
+}
 # normal message processing follows
 ...
 </programlisting>
 		</example>
 	</section>
-	
-	<section>
-	    <title><function moreinfo="none">rand_set_prob(probabiltiy)</function></title>
+
+	<section id="func_rand_set_prob" xreflabel="rand_set_prob()">
+	    <title><function moreinfo="none">rand_set_prob(probability)</function></title>
 	    <para>
 		Set the <quote>probability</quote> of the decision.
 	    </para>
-	    <para>
-		<quote>probability</quote> can have a value from the range 0..99.
-	    </para>
+		<para>Parameters:</para>
+		<itemizedlist>
+		<listitem>
+		<para>probability (int) - number ranging from 0 - 99, inclusively</para>
+		</listitem>
+		</itemizedlist>
 	    <example>
 		<title><function moreinfo="none">rand_set_prob()</function> usage</title>
 		<programlisting format="linespecific">
 ...
-rand_set_prob("4");
+rand_set_prob(4);
 ...
 </programlisting>
 	    </example>
 	</section>
 
-	<section>
+	<section id="func_rand_reset_prob" xreflabel="rand_reset_prob()">
 	    <title><function moreinfo="none">rand_reset_prob()</function></title>
 	    <para>
-		Reset the probability back to the inital value.
+			Reset the probability back to the
+			<xref linkend="param_initial_probability"/> value.
 	    </para>
 	    <example>
 		<title><function moreinfo="none">rand_reset_prob()</function> usage</title>
@@ -248,7 +259,7 @@ rand_reset_prob();
 	    </example>
 	</section>
 
-	<section>
+	<section id="func_rand_get_prob" xreflabel="rand_get_prob()">
 	    <title><function moreinfo="none">rand_get_prob()</function></title>
 	    <para>
 		Return the current probability setting, e.g. for logging purposes.
@@ -262,7 +273,7 @@ rand_get_prob();
 </programlisting>
 	    </example>
 	</section>
-	<section id="sleep_sync">
+	<section id="func_sleep" xreflabel="sleep()">
 		<title>
 			<function moreinfo="none">sleep(time)</function>
 		</title>
@@ -272,10 +283,8 @@ rand_get_prob();
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 			<listitem>
-				<para><emphasis>time</emphasis> - Time to wait in seconds.
-				String may be a pseudovariable. In case that variable does 
-				not contain a numerical value, it is evaluated to zero seconds.
-				</para>
+			<para><emphasis>time (int)</emphasis> - time to wait in seconds
+			</para>
 			</listitem>
 		</itemizedlist>
 		<para>
@@ -286,16 +295,16 @@ rand_get_prob();
 			<title><function>sleep</function> usage</title>
 			<programlisting format="linespecific">
 ...
-sleep("1");
+sleep(1);
 ...
-$avp(secs)="10";
-sleep("$avp(secs)");
+$var(secs) = 10;
+sleep($var(secs));
 ...
 			</programlisting>
 		</example>
 	</section>
 	
-	<section id="usleep_sync">
+	<section id="func_usleep" xreflabel="usleep()">
 		<title>
 			<function moreinfo="none">usleep(time)</function>
 		</title>
@@ -305,9 +314,7 @@ sleep("$avp(secs)");
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 			<listitem>
-				<para><emphasis>time</emphasis> - Time to wait in micro-seconds.
-				The string may contain a pseudovariable. In case that pseudovar
-				does not contain a numerical value, it is evaluated to zero seconds.
+				<para><emphasis>time (int)</emphasis> - time to wait in micro-seconds
 				</para>
 			</listitem>
 		</itemizedlist>
@@ -319,13 +326,13 @@ sleep("$avp(secs)");
 			<title><function>usleep</function> usage</title>
 			<programlisting format="linespecific">
 ...
-usleep("500000"); # sleep half of sec
+usleep(500000); # sleep half a sec
 ...
 			</programlisting>
 		</example>
 	</section>
 	
-	<section>
+	<section id="func_abort" xreflabel="abort()">
 		<title>
 			<function moreinfo="none">abort()</function>
 		</title>
@@ -347,7 +354,7 @@ abort();
 		</example>
 	</section>
 	
-	<section>
+	<section id="func_pkg_status" xreflabel="pkg_status()">
 		<title>
 			<function moreinfo="none">pkg_status()</function>
 		</title>
@@ -371,7 +378,7 @@ pkg_status();
 		</example>
 	</section>
 	
-	<section>
+	<section id="func_shm_status" xreflabel="shm_status()">
 		<title>
 			<function moreinfo="none">shm_status()</function>
 		</title>
@@ -394,14 +401,14 @@ shm_status();
 			</programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_set_count" xreflabel="set_count()">
 		<title>
-			<function moreinfo="none">set_count(pvar name, result pvar name)</function>
+			<function moreinfo="none">set_count(var_to_count, ret_var)</function>
 		</title>
 		<para>
-			Function that counts the values of a pseudovariable. It makes sense to 
-			call this function only for pseudovariables that can take more values
-			(avp, headers).
+			Counts the number of values of a given variable.
+			It makes sense to call this function only for variables that can
+			take more values (AVPs, headers).
 		</para>
 		<para>
 			The result is returned in the second parameter.
@@ -414,21 +421,21 @@ shm_status();
 			<title><function>set_count</function> usage</title>
 			<programlisting format="linespecific">
 ...
-set_count("$avp(10)", "$avp(result)");
+set_count($avp(dids), $var(num_dids));
 ...
 			</programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_set_select_weight" xreflabel="set_select_weight()">
 		<title>
-			<function moreinfo="none">set_select_weight(pseudovarible_name)</function>
+			<function moreinfo="none">set_select_weight(int_list_var)</function>
 		</title>
 		<para>
-			This function selects an element from a set formed by the values of the
-			pseudovariable name given as parameter. It applies the genetic algorithm
-			- roulette-wheel selection to choose an element from a set. The probability
-			of selecting a certain element is proportionate with its weight. It will
-			return the index of that selected element.
+			This function selects an element from a set formed by the integer
+			values of the given "int_list_var" variable. It applies the genetic
+			algorithm - roulette-wheel selection to choose an element from a set.
+			The probability of selecting a certain element is proportionate with
+			its weight. It will return the index of that selected element.
 		</para>
 		<para>
 			This function can be used from REQUEST_ROUTE, ONREPLY_ROUTE, 
@@ -438,12 +445,12 @@ set_count("$avp(10)", "$avp(result)");
 			<title><function>set_select_weight</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$avp(21) = set_select_weight("$avp(10)");
+$var(next_gw_idx) = set_select_weight($avp(gw_success_rates));
 ...
 			</programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_ts_usec_delta" xreflabel="ts_usec_delta()">
 		<title>
 			<function moreinfo="none">ts_usec_delta(t1_sec, t1_usec, t2_sec, t2_usec, delta)</function>
 		</title>
@@ -460,12 +467,12 @@ $avp(21) = set_select_weight("$avp(10)");
 			<title><function>ts_usec_delta</function> usage</title>
 			<programlisting format="linespecific">
 ...
-ts_usec_delta("$avp(10)", "$avp(20)", "10", "300", "$avp(result)");
+ts_usec_delta($var(t1s), 300, 10, $var(t2ms), $var(result));
 ...
 			</programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_check_time_rec" xreflabel="check_time_rec()">
 		<title>
 			<function moreinfo="none">check_time_rec(time_string)</function>
 		</title>
@@ -485,27 +492,13 @@ ts_usec_delta("$avp(10)", "$avp(20)", "10", "300", "$avp(result)");
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>time_string</emphasis> - Time recurrence string which
+			<para><emphasis>time_string (string)</emphasis> - Time recurrence string which
 			will be matched against the current time. Its fields are separated by "|" and
 			the order in which they are given is: "dtstart | dtend | duration | freq
 			| until | interval | byday | bymday | byyday | byweekno | bymonth". None
 			of the fields following "freq" is used unless "freq" is defined. If the
 			string ends in multiple null fields, they can all be ommited.
 			</para>
-			<para>
-			The <emphasis>time_string</emphasis> parameter can have the following types:
-			</para>
-			<itemizedlist>
-				<listitem>
-				<para><emphasis>string</emphasis> - the time recurrence string is
-				statically assigned</para>
-				</listitem>
-				<listitem>
-				<para><emphasis>pvar</emphasis> - the string is the value of an
-				existing pseudo-variable (as string value)
-				</para>
-				</listitem>
-			</itemizedlist>
 		</listitem>
 		</itemizedlist>
 		<example>
@@ -525,16 +518,15 @@ if (check_time_rec("20121101T000000||p30d")) {
 			</programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_get_static_lock" xreflabel="get_static_lock()">
 		<title>
-		<function moreinfo="none">get_static_lock(string)</function>
+		<function moreinfo="none">get_static_lock(key)</function>
 		</title>
 		<para>
-		The function obtains the index of a specific lock (predetermined in the fixup
-		phase of the OpenSIPS script) and attempts to acquire it. In case the
-		lock is taken by another process, script execution will halt until the lock is
-		released. Attempting to acquire the lock a second time by the same process,
-		without releasing it first, will result in a deadlock.
+		Acquire the static lock which corresponds to "key".  In case the
+		lock is taken by another process, script execution will halt until the
+		lock is released.  Attempting to acquire the lock a second time by the
+		same process, without releasing it first, will result in a deadlock.
 		</para>
 		<para>
 		The static lock functions guarantee that two different strings will never
@@ -546,16 +538,9 @@ if (check_time_rec("20121101T000000||p30d")) {
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>string</emphasis> - String to be used in order to
-			obtain the index of a static lock. The
-			<emphasis>string</emphasis> parameter can have the following types:
+			<para><emphasis>key (static string)</emphasis> - key to be hashed in
+				order to obtain the index of a static lock
 			</para>
-			<itemizedlist>
-				<listitem>
-				<para><emphasis>string</emphasis> - the string is statically
-				assigned</para>
-				</listitem>
-			</itemizedlist>
 		</listitem>
 		</itemizedlist>
 		<para>
@@ -574,28 +559,20 @@ release_static_lock("Zone_1");
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_release_static_lock" xreflabel="release_static_lock()">
 		<title>
-		<function moreinfo="none">release_static_lock(string)</function>
+		<function moreinfo="none">release_static_lock(key)</function>
 		</title>
 		<para>
-		The function obtains the index of a specific lock (predetermined in the fixup
-		phase of the OpenSIPS script) and releases it. Nothing will happen if the lock
-		is not acquired. 
+		Release the static lock corresponding to "key". Nothing will happen if
+		the lock is not acquired. 
 		</para>
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>string</emphasis> - String to be used in order to
-			obtain the index of a static lock. The
-			<emphasis>string</emphasis> parameter can have the following types:
+			<para><emphasis>key (static string)</emphasis> - key to be hashed in
+				order to obtain the index of a static lock.
 			</para>
-			<itemizedlist>
-				<listitem>
-				<para><emphasis>string</emphasis> - the string is statically
-				assigned</para>
-				</listitem>
-			</itemizedlist>
 		</listitem>
 		</itemizedlist>
 		<para>
@@ -614,41 +591,33 @@ release_static_lock("Zone_1");
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_get_dynamic_lock" xreflabel="get_dynamic_lock()">
 		<title>
-		<function moreinfo="none">get_dynamic_lock(string)</function>
+		<function moreinfo="none">get_dynamic_lock(key)</function>
 		</title>
 		<para>
-		The function obtains the index of a lock from the pool by performing a hash
-		function on the given variable string and attempts to acquire it.
-		In case the lock is taken by another process, script execution will halt
-		until the lock is released. Attempting to acquire the lock a second time by
+		Acquire the dynamic lock corresponding to "key".  In case the lock is
+		taken by another process, script execution will halt until the lock is
+		released.  Attempting to acquire the lock a second time by
 		the same process, without releasing it first, will result in a deadlock.
 		</para>
 		<para>
 		The dynamic lock functions have the advantage of allowing string
-		pseudo-variables to be given as parameters, but the drawback to this is that
+		variables to be given as parameters, but the drawback to this is that
 		two strings may have the same hashed value, thus pointing to the same lock.
 		As a consequence, either two totally separate regions of the script will be
 		synchronized (they will not execute in parallel), or a process could end up
 		in a deadlock by acquiring two locks in a row on two different (but equally
-		hashed) strings. To address the latter issue, use the strings_share_lock()
-		function to test if two strings generate equal hash values.
+		hashed) strings. To address the latter issue, use the
+		<xref linkend="func_strings_share_lock"/> function to test if two
+		strings hash into the same dynamic lock.
 		</para>
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>string</emphasis> - String to be hashed in order to
-			obtain the index of a lock from the pool. The
-			<emphasis>string</emphasis> parameter can have the following types:
+			<para><emphasis>key (var)</emphasis> - key to be hashed in order to
+			obtain the index of a dynamic lock from the pool
 			</para>
-			<itemizedlist>
-				<listitem>
-				<para><emphasis>pvar</emphasis> - the string is the value of an
-				existing pseudo-variable (as string value)
-				</para>
-				</listitem>
-			</itemizedlist>
 		</listitem>
 		</itemizedlist>
 		<para>
@@ -659,41 +628,32 @@ release_static_lock("Zone_1");
 		<title><function moreinfo="none">get_dynamic_lock</function> usage</title>
 		<programlisting format="linespecific">
 ...
-# acquire and release a dynamic lock on the "Call-ID" Header of a SIP message
-if (!get_dynamic_lock("$ci")) {
+# acquire and release a dynamic lock on the "Call-ID" header field value
+if (!get_dynamic_lock($ci)) {
 	xlog("Error while getting dynamic lock!\n");
 }
 ...
-if (!release_dynamic_lock("$ci") {
+if (!release_dynamic_lock($ci) {
 	xlog("Error while releasing dynamic lock!\n");
 }
 ...
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_release_dynamic_lock" xreflabel="release_dynamic_lock()">
 		<title>
-		<function moreinfo="none">release_dynamic_lock(string)</function>
+		<function moreinfo="none">release_dynamic_lock(key)</function>
 		</title>
 		<para>
-		The function obtains the index of a lock from the pool by performing a hash
-		function on the given variable string and releases it. Nothing will happen
-		if the lock is not acquired. 
+		Release the dynamic lock corresponding to "key".  Nothing will happen
+		if the lock is not acquired.
 		</para>
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>string</emphasis> - String to be hashed in order to
-			obtain the index of a lock from the pool. The
-			<emphasis>string</emphasis> parameter can have the following types:
+			<para><emphasis>key (var)</emphasis> - key to be hashed in order to
+			obtain the index of a dynamic lock from the pool
 			</para>
-			<itemizedlist>
-				<listitem>
-				<para><emphasis>pvar</emphasis> - the string is the value of an
-				existing pseudo-variable (as string value)
-				</para>
-				</listitem>
-			</itemizedlist>
 		</listitem>
 		</itemizedlist>
 		<para>
@@ -704,21 +664,21 @@ if (!release_dynamic_lock("$ci") {
 		<title><function moreinfo="none">release_dynamic_lock</function> usage</title>
 		<programlisting format="linespecific">
 ...
-# acquire and release a dynamic lock on the "Call-ID" Header of a SIP message
-if (!get_dynamic_lock("$ci")) {
+# acquire and release a dynamic lock on the "Call-ID" header field value
+if (!get_dynamic_lock($ci)) {
 	xlog("Error while getting dynamic lock!\n");
 }
 ...
-if (!release_dynamic_lock("$ci") {
+if (!release_dynamic_lock($ci) {
 	xlog("Error while releasing dynamic lock!\n");
 }
 ...
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_strings_share_lock" xreflabel="strings_share_lock()">
 		<title>
-		<function moreinfo="none">strings_share_lock(string1, string2)</function>
+		<function moreinfo="none">strings_share_lock(key1, key2)</function>
 		</title>
 		<para>
 		A function used to test if two strings will generate the same hash value.
@@ -728,7 +688,8 @@ if (!release_dynamic_lock("$ci") {
 		</para>
 		<para>
 		Theoretically, the chance of two strings generating the same hash value 
-		decreases proportionally to the increase of the lock_pool_size parameter. In
+		decreases proportionally to the increase of the
+		<xref linkend="param_lock_pool_size"/> parameter. In
 		other words, the more dynamic locks you configure the module with, the higher
 		the chance that all individual protected regions of your script will run in
 		parallel, without waiting for each other.
@@ -736,21 +697,9 @@ if (!release_dynamic_lock("$ci") {
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>string1, string2</emphasis> - Strings which will have
-			their hash values compared. The
-			<emphasis>string</emphasis> parameters can have the following types:
+			<para><emphasis>key1, key2 (string)</emphasis> - strings which will have
+			their hash values compared
 			</para>
-			<itemizedlist>
-				<listitem>
-				<para><emphasis>string</emphasis> - statically assigned</para>
-				</listitem>
-
-				<listitem>
-				<para><emphasis>pvar</emphasis> - values of existing pseudo-variables
-				(as string values)
-				</para>
-				</listitem>
-			</itemizedlist>
 		</listitem>
 		</itemizedlist>
 		<para>
@@ -762,23 +711,23 @@ if (!release_dynamic_lock("$ci") {
 		<programlisting format="linespecific">
 ...
 # Proper way of acquiring two dynamic locks successively
-if (!get_dynamic_lock("$avp(1)")) {
+if (!get_dynamic_lock($avp(foo))) {
 	xlog("Error while getting dynamic lock!\n");
 }
 
-if (!strings_share_lock("$avp(1)", "$avp(2)") {
-	if (!get_dynamic_lock("$avp(2)")) {
+if (!strings_share_lock($avp(foo), $avp(bar)) {
+	if (!get_dynamic_lock($avp(bar))) {
 		xlog("Error while getting dynamic lock!\n");
 	}
 }
 ...
-if (!strings_share_lock("$avp(1)", "$avp(2)") {
-	if (!release_dynamic_lock("$avp(2)") {
+if (!strings_share_lock($avp(foo), $avp(bar)) {
+	if (!release_dynamic_lock($avp(bar)) {
 		xlog("Error while releasing dynamic lock!\n");
 	}
 }
 
-if (!release_dynamic_lock("$avp(1)") {
+if (!release_dynamic_lock($avp(foo)) {
 	xlog("Error while releasing dynamic lock!\n");
 }
 ...
@@ -789,13 +738,13 @@ if (!release_dynamic_lock("$avp(1)") {
 
 	<section>
 	<title>Exported Asyncronous Functions</title>
-	<section>
+	<section id="afunc_sleep" xreflabel="sleep()">
 		<title>
 		<function moreinfo="none">sleep(seconds)</function>
 		</title>
 		<para>
 		Waits a number of seconds. This function does exactly the same as
-		<xref linkend="sleep_sync"/>,
+		<xref linkend="func_sleep"/>,
 		but in an asynchronous way. The script execution is suspended until
 		the waiting is done; then OpenSIPS resumes the script execution via 
 		the resume route.
@@ -820,13 +769,13 @@ route[after_sleep] {
 		</example>
 	</section>
 
-	<section>
+	<section id="afunc_usleep" xreflabel="usleep()">
 		<title>
 		<function moreinfo="none">usleep(seconds)</function>
 		</title>
 		<para>
 		Waits a number of micro-seconds. This function does exactly the same as
-		<xref linkend="usleep_sync"/>,
+		<xref linkend="func_usleep"/>,
 		but in an asynchronous way. The script execution is suspended until
 		the waiting is done; then OpenSIPS resumes the script execution via 
 		the resume route.
@@ -853,31 +802,31 @@ route[after_usleep] {
 
 	</section>
 
-
-
-
-	<section>
-		<title><acronym>MI</acronym> Commands</title>
-		<section>
+<section id="exported_mi_functions" xreflabel="Exported MI Functions">
+		<title>Exported MI Functions</title>
+		<section id="mi_rand_set_prop" xreflabel="rand_set_prop">
 			<title><function moreinfo="none">rand_set_prop</function></title>
 			<para>
 				Set the probability value to the given parameter.
-				The parameter should be a percent value.
 			</para>
-			<para>
-				The parameter value must be a number from 0 to 99.
-			</para>
+			<para>Parameters:</para>
+			<itemizedlist>
+				<listitem><para>
+					<emphasis>prob_proc</emphasis> - the parameter should be
+					a percent value (number from 0 to 99).
+				</para></listitem>
+			</itemizedlist>
 			<example>
 				<title><function moreinfo="none">rand_set_prob</function> usage</title>
 				<programlisting format="linespecific">
 ...
-$ opensipsctl fifo rand_set_prob 10
+$ opensips-cli -x mi rand_set_prob 10
 ...
 </programlisting>
 			</example>
 			
 		</section>
-		<section>
+		<section id="mi_rand_reset_prob" xreflabel="rand_reset_prob">
 			<title><function moreinfo="none">rand_reset_prob</function></title>
 			<para>
 				Reset the probability value to the inital start value.
@@ -890,12 +839,12 @@ $ opensipsctl fifo rand_set_prob 10
 					<function moreinfo="none">rand_reset_prob</function> usage</title>
 				<programlisting format="linespecific">
 ...
-$ opensipsctl fifo rand_reset_prob
+$ opensips-cli -x mi rand_reset_prob
 ...
 </programlisting>
 			</example>
 		</section>
-		<section>
+		<section id="mi_rand_get_prob" xreflabel="rand_get_prob">
 			<title><function moreinfo="none">rand_get_prob</function></title>
 			<para>
 				Return the actual probability setting.
@@ -907,13 +856,13 @@ $ opensipsctl fifo rand_reset_prob
 				<title><function moreinfo="none">rand_get_prob</function> usage</title>
 				<programlisting format="linespecific">
 ...
-$ opensipsctl fifo get_prob
+$ opensips-cli -x mi get_prob
 The actual probability is 50 percent.
 ...
 </programlisting>
 			</example>
 		</section>
-		<section>
+		<section id="mi_check_config_hash" xreflabel="check_config_hash">
 			<title><function moreinfo="none">check_config_hash</function></title>
 			<para>
 				Check if the actual config file hash is identical to the stored one.
@@ -927,13 +876,13 @@ The actual probability is 50 percent.
 				<title><function moreinfo="none">check_config_hash</function> usage</title>
 				<programlisting format="linespecific">
 ...
-$ opensipsctl fifo check_config_hash
+$ opensips-cli -x mi check_config_hash
 The actual config file hash is identical to the stored one.
 ...
 </programlisting>
 			</example>
 		</section>
-		<section>
+		<section id="mi_get_config_hash" xreflabel="get_config_hash">
 			<title><function moreinfo="none">get_config_hash</function></title>
 			<para>
 				Return the stored config file hash.
@@ -946,82 +895,64 @@ The actual config file hash is identical to the stored one.
 				<title><function moreinfo="none">get_config_hash</function> usage</title>
 				<programlisting format="linespecific">
 ...
-$ opensipsctl fifo get_config_hash
+$ opensips-cli -x mi get_config_hash
 1580a37104eb4de69ab9f31ce8d6e3e0
 ...
 </programlisting>
 			</example>
 		</section>
-		<section>
+		<section id="mi_shv_set" xreflabel="shv_set">
 			<title><function moreinfo="none">shv_set</function></title>
 			<para>
 				Set the value of a shared variable ($shv(name)).
 			</para>
 		<para>Parameters:</para>
 		<itemizedlist>
-			<listitem><para>_name_: shared variable name</para></listitem>
+			<listitem><para><emphasis>name</emphasis> : shared variable name</para></listitem>
 			
-			<listitem><para>_type_: type of the value</para>
+			<listitem><para><emphasis>type</emphasis> : type of the value</para>
 			      <itemizedlist>
 	                 <listitem><para> <quote>int</quote>: integer value </para></listitem> 
 			         <listitem><para> <quote>str</quote>: string value </para></listitem>	
 				  </itemizedlist>
 			</listitem>	  
 
-			<listitem><para>_value_: value to be set</para></listitem>
+			<listitem><para><emphasis>value</emphasis> : value to be set</para></listitem>
 		</itemizedlist>
-		<para>
-		MI FIFO Command Format:
-		</para>
-        <programlisting  format="linespecific">
-		:shv_set:_reply_fifo_file_
-		_name_
-		_type_
-		_value_
-		_empty_line_
-		</programlisting>
-			<example>
-			<title><function moreinfo="none">shv_set</function> usage</title>
-			<programlisting format="linespecific">
+		<example>
+		<title><function moreinfo="none">shv_set</function> usage</title>
+		<programlisting format="linespecific">
 ...
-$ opensipsctl fifo shv_set debug int 0
+$ opensips-cli -x mi shv_set debug int 0
 ...
 </programlisting>
 			</example>
 		</section>
-		<section>
+		<section id="mi_shv_get" xreflabel="shv_get">
 			<title><function moreinfo="none">shv_get</function></title>
 			<para>
 				Get the value of a shared variable ($shv(name)).
 			</para>
 		<para>Parameters:</para>
 		<itemizedlist>
-			<listitem><para>_name_: shared variable name. If this parameter
+			<listitem><para><emphasis>name</emphasis> : shared variable name. If this parameter
 			is missing, all shared variables are returned.</para></listitem>
 		</itemizedlist>
-		<para>
-		MI FIFO Command Format:
-		</para>
-        <programlisting  format="linespecific">
-		:shv_get:_reply_fifo_file_
-		_name_
-		_empty_line_
-		</programlisting>
-			<example>
-			<title><function moreinfo="none">shv_get</function> usage</title>
-			<programlisting format="linespecific">
+		<example>
+		<title><function moreinfo="none">shv_get</function> usage</title>
+		<programlisting format="linespecific">
 ...
-$ opensipsctl fifo shv_get debug
-$ opensipsctl fifo shv_get
+$ opensips-cli -x mi shv_get debug
+$ opensips-cli -x mi shv_get
 ...
 </programlisting>
 			</example>
 		</section>
 </section>
 	
-<section>
-	<title>Exported pseudo-variables</title>
-		<section>
+<section id="exported_pseudo_variables">
+	<title>Exported Pseudo-Variables</title>
+		<section id="pv_env" xreflabel="$env">
 			<title><varname>$env(name)</varname></title>
 			<para>
 				This PV provides access to the environment variable 'name'.
@@ -1035,7 +966,7 @@ xlog("PATH environment variable is $env(PATH)\n");
 				 </programlisting>
 			</example>
 	</section>
-	<section>
+	<section id="pv_RANDOM" xreflabel="$RANDOM">
 			<title><varname>$RANDOM</varname></title>
 			<para>
 				Returns a random value from the [0 - 2^31) range.
@@ -1049,14 +980,14 @@ if ($avp(10) &lt; 10) {
    $avp(10) = 10;
 }
 append_to_reply("Retry-After: $avp(10)\n");
-sl_send_reply("503", "Try later");
+sl_send_reply(503, "Try later");
 exit;
 # normal message processing follows
    
 				 </programlisting>
 			</example>
 	</section>
-	<section>
+	<section id="pv_ctime" xreflabel="$ctime">
 			<title><varname>$ctime(name)</varname></title>
 			<para>
 			The PV provides access to broken-down time attributes.
@@ -1104,7 +1035,7 @@ if ($ctime(year) == 2008) {
 				 </programlisting>
 			</example>
 	</section>
-	<section>
+	<section id="pv_shv" xreflabel="$shv">
 			<title><varname>$shv(name)</varname></title>
 			<para>
 				It is a class of pseudo-variables stored in shared memory. The

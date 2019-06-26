@@ -4,13 +4,13 @@
 
 	<title>&adminguide;</title>
 
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		This modules implements a dispatcher for destination addresses. It
 		computes hashes over various parts of the request and selects an
-		address from a destination set. The selected address is then used as outbound
-		proxy.
+		address from a destination set. The selected address may then either
+		overwrite the R-URI of a SIP request or be used as an outbound proxy.
 	</para>
 	<para>
 		The module can be used as a stateless load balancer, having no
@@ -22,31 +22,32 @@
 		ratio of traffic between destinations.
 	</para>
 	<para>
-		Since version 2.1 the dispatcher module keeps its destination sets 
+		Starting with version 2.1, the dispatcher module keeps its destination sets 
 		into different partitions. Each partition is described by its own
-		db_url, table_name, dst_avp, grp_avp, cnt_avp, sock_avp, attr_avp and 
-		blacklists. Setting any of this parameters using modparam will alter 
-		the default partition's properties. In order to create a new partition 
-		the "partition" parameter should be used (see below for more details).
-		If none of the 8 partition specific parameters are defined for the 
-		default partition, then this partition will not be created. If the 
-		default partition is created each undefined parameter from all other 
-		partitions will take the value of the corresponding one from the 
-		default partition. If there is no default partition, the default value
-		specified in the parameter's description will be used. Functions taking
-		set arguments will now take a set number preceded by a partition 
-		name and colon(i.e "part_name: 5").
-		If a set is not preceded by any partition name the default partition 
-		will be used. Thus, the following arguments are equivalent: 
-		"default : 4" vs "4". Remember that in order to be able to use a 
-		table from a partition, its name must be found in the "version" table 
-		belonging to the database defined in the partition's db_url.
-		Also, in version 2.1 the "flags" parameter has been moved to 
+		"db_url", "table_name", "dst_avp", "grp_avp", "cnt_avp", "sock_avp",
+		"attr_avp" and "blacklists" set of attributes.  Setting any of these
+		module parameters will only alter the "default" partition's properties.
+	</para>
+	<para>
+		In order to create a new partition, the <xref linkend="param_partition"/>
+		parameter can be used.  If none of the 8 partition specific parameters
+		are defined for the "default" partition, then this partition will not
+		be created.  Once the "default" partition is created, any undefined
+		parameter from other partitions will inherit the value of the
+		corresponding parameter of the "default" partition.  If there is no
+		"default" partition, the default value specified in the parameter's
+		description will be used.  Finally, note that each dispatcher table
+		specified using the "table_name" partition attribute requires a
+		corresponding "version" table record within the partition's database,
+		specified through "db_url".
+	</para>
+	<para>
+		Since version 2.1, the "flags" parameter has been moved to 
 		ds_select_dst() and ds_select_domain() along with "force_dst" and
 		"use_default" flags.
 	</para>
 	</section>
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; modules</title>
@@ -57,6 +58,19 @@
 			<para>
 				<emphasis>TM - only if active recovery of failed hosts is required</emphasis>.
 			</para>
+			</listitem>
+			<listitem>
+			<para>
+				<emphasis>clusterer</emphasis> - only if "cluster_id"
+				option is enabled.
+			</para>
+			</listitem>
+			<listitem>
+			<para>
+				<emphasis>database</emphasis> - one of the DB SQL modules
+			</para>
+			</listitem>
+			<listitem>
 			<para>
 				<emphasis>freeswitch - only if "fetch_freeswitch_stats" is enabled.</emphasis>.
 			</para>
@@ -80,9 +94,9 @@
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_db_url" xreflabel="db_url">
 		<title><varname>db_url</varname> (string)</title>
 		<para>
 		Database where to load the destinations from.
@@ -111,7 +125,7 @@ modparam("dispatcher", "db_url", "mysql://user:passwb@localhost/database")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_attrs_avp" xreflabel="attrs_avp">
 		<title><varname>attrs_avp</varname> (str)</title>
 		<para>
 		The name of the avp to contain the attributes string of the current
@@ -141,7 +155,7 @@ modparam("dispatcher", "attrs_avp", "$avp(272)")
 	</section>
 
 
-	<section>
+	<section id="param_hash_pvar" xreflabel="hash_pvar">
 		<title><varname>hash_pvar</varname> (str)</title>
 		<para>
 		String with PVs used for the hashing algorithm 7.
@@ -175,7 +189,7 @@ modparam("dispatcher", "hash_pvar", "hash the $fU@$ci")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_setid_pvar" xreflabel="setid_pvar">
 		<title><varname>setid_pvar</varname> (str)</title>
 		<para>
 		The name of the PV where to store the set ID (group ID) when calling
@@ -196,7 +210,7 @@ modparam("dispatcher", "setid_pvar", "$var(setid)")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_ds_ping_method" xreflabel="ds_ping_method">
 		<title><varname>ds_ping_method</varname> (string)</title>
 		<para>
 		With this Method you can define, with which method you want to probe
@@ -218,7 +232,7 @@ modparam("dispatcher", "ds_ping_method", "INFO")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_ds_ping_from" xreflabel="ds_ping_from">
 		<title><varname>ds_ping_from</varname> (string)</title>
 		<para>
 		With this Method you can define the "From:"-Line for the request,
@@ -240,7 +254,7 @@ modparam("dispatcher", "ds_ping_from", "sip:proxy@sip.somehost.com")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_ds_ping_interval" xreflabel="ds_ping_interval">
 		<title><varname>ds_ping_interval</varname> (int)</title>
 		<para>
 		With this Method you can define the interval for sending a request to
@@ -263,7 +277,7 @@ modparam("dispatcher", "ds_ping_interval", 30)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_ds_ping_maxfwd" xreflabel="ds_ping_maxfwd">
 		<title><varname>ds_ping_maxfwd</varname> (int)</title>
 		<para>
 		This parameter allows you to enforce a specific Max-Forward value
@@ -286,7 +300,7 @@ modparam("dispatcher", "ds_ping_maxfwd", 2)
 	</section>
 
 
-	<section>
+	<section id="param_ds_probing_sock" xreflabel="ds_probing_sock">
 		<title><varname>ds_probing_sock</varname> (str)</title>
 		<para>
 		A socket description [proto:]host[:port] of the local socket (which
@@ -308,8 +322,8 @@ modparam("dispatcher", "ds_probing_sock", "udp:192.168.1.100:5077")
 		</example>
 	</section>
 
-	<section>
-		<title><varname>ds_probing_threshhold</varname> (int)</title>
+	<section id="param_ds_probing_threshold" xreflabel="ds_probing_threshold">
+		<title><varname>ds_probing_threshold</varname> (int)</title>
 		<para>
 		If you want to set a gateway into probing mode, you will need a
 		specific number of requests until it will change from "active" to
@@ -321,16 +335,16 @@ modparam("dispatcher", "ds_probing_sock", "udp:192.168.1.100:5077")
 		</emphasis>
 		</para>
 		<example>
-		<title>Set the <quote>ds_probing_threshhold</quote> parameter</title>
+		<title>Set the <quote>ds_probing_threshold</quote> parameter</title>
 <programlisting format="linespecific">
 ...
-modparam("dispatcher", "ds_probing_threshhold", 10)
+modparam("dispatcher", "ds_probing_threshold", 10)
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section>
+	<section id="param_ds_probing_mode" xreflabel="ds_probing_mode">
 		<title><varname>ds_probing_mode</varname> (int)</title>
 		<para>
 		Controls what gateways are tested to see if they are reachable. If set
@@ -353,7 +367,7 @@ modparam("dispatcher", "ds_probing_mode", 1)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_ds_probing_list" xreflabel="ds_probing_list">
 		<title><varname>ds_probing_list</varname> (str)</title>
 		<para>
                 Defines a list of one or more setids that limits which
@@ -377,7 +391,7 @@ modparam("dispatcher", "ds_probing_list", "1,2,3")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_ds_define_blacklist" xreflabel="ds_define_blacklist">
 		<title><varname>ds_define_blacklist</varname> (str)</title>
 		<para>
 		Defines a blacklist based on a dispatching setid from the 'default'
@@ -407,7 +421,7 @@ modparam("dispatcher", "ds_define_blacklist", "blist2= 2,10,6")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_options_reply_codes" xreflabel="options_reply_codes">
 		<title><varname>options_reply_codes</varname> (str)</title>
 		<para>
 		This parameter must contain a list of SIP reply codes separated by
@@ -429,7 +443,7 @@ modparam("dispatcher", "options_reply_codes", "501, 403")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_dst_avp" xreflabel="dst_avp">
 		<title><varname>dst_avp</varname> (str)</title>
 		<para>
 		This is mainly for internal usage and represents the name of the avp
@@ -460,7 +474,7 @@ modparam("dispatcher", "dst_avp", "$avp(271)")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_grp_avp" xreflabel="grp_avp">
 		<title><varname>grp_avp</varname> (str)</title>
 		<para>
 		This is mainly for internal usage and represents the name of the avp
@@ -487,7 +501,7 @@ modparam("dispatcher", "grp_avp", "$avp(273)")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_cnt_avp" xreflabel="cnt_avp">
 		<title><varname>cnt_avp</varname> (str)</title>
 		<para>
 		This is mainly for internal usage and represents the name of the avp
@@ -513,7 +527,7 @@ modparam("dispatcher", "cnt_avp", "$avp(274)")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_sock_avp" xreflabel="sock_avp">
 		<title><varname>sock_avp</varname> (str)</title>
 		<para>
 		This is mainly for internal usage and represents the name of the avp
@@ -540,7 +554,7 @@ modparam("dispatcher", "sock_avp", "$avp(275)")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_pvar_algo_pattern" xreflabel="pvar_algo_pattern">
 		<title><varname>pvar_algo_pattern</varname> (str)</title>
 		<para>
 		This parameter is used by the PVAR(9) algorithm to specify the
@@ -566,7 +580,7 @@ modparam("dispatcher", "pvar_algo_pattern", "$stat(load_%u)")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_persistent_state" xreflabel="persistent_state">
 		<title><varname>persistent_state</varname> (int)</title>
 		<para>
 		Specifies whether the <emphasis>state</emphasis> column
@@ -587,32 +601,84 @@ modparam("dispatcher", "persistent_state", 0)
 		</example>
 	</section>
 
-	<section>
-		<title><varname>table_name</varname> (string)</title>
+	<section id="param_cluster_id" xreflabel="cluster_id">
+		<title><varname>cluster_id</varname> (integer)</title>
 		<para>
-		If you want to load the sets of gateways from the database you must set
-		this parameter as the database name.
-		Setting this parameter will only change the default partition's
-		table_name. Use the partition parameter to create and alter
-		other partitions.
+		The ID of the cluster the module is part of. The clustering support is 
+		used in dispatcher module for two purposes: for sharing the status 
+		of the destinations and for controlling the pinging to destinations.
+		</para>
+		<para>
+		If clustering enbled, the module will automatically share changes
+		over the status of the destinations with the other 
+		OpenSIPS instances that are part of a cluster. Whenever such a status 
+		changes (following an MI command, a probing result, a script command),
+		the module will replicate this status change to all the nodes in this 
+		given cluster.
+		</para>
+		<para>
+		The clustering with sharing tag support may be used to control which 
+		node in the cluster will perform the pinging/probing to 
+		destinations. See the
+		<xref linkend="param_cluster_sharing_tag"/> option.
+		</para>
+		<para>
+		For more info on how to define and populate a cluster (with OpenSIPS 
+		nodes) see the "clusterer" module.
 		</para>
 		<para>
 		<emphasis>
-			For every partition the default value is <quote>dispatcher</quote>.
+			Default value is <quote>0 (none)</quote>.
 		</emphasis>
 		</para>
 		<example>
-		<title>Set the 'default' partition's <quote>table_name</quote> parameter</title>
-<programlisting format="linespecific">
+		<title>Set <varname>cluster_id</varname> parameter</title>
+		<programlisting format="linespecific">
 ...
-modparam("dispatcher", "table_name", "my_dispatcher")
+# replicate destination status with all OpenSIPS in cluster ID 9
+modparam("dispatcher", "cluster_id", 9)
 ...
 </programlisting>
 		</example>
 	</section>
 
+	<section id="param_cluster_sharing_tag" xreflabel="cluster_sharing_tag">
+		<title><varname>cluster_sharing_tag</varname> (string)</title>
+		<para>
+		The name of the sharing tag (as defined per clusterer modules) to 
+		control which node is responsible for perform the self-triggered
+		actions in the module. Such actions may be the destination probing or 
+		sharing the changes in the destination status.
+		If defined, only the node with active status of this tag will 
+		perform the actions (pinging and sharing status).
+		</para>
+		<para>
+		The <xref linkend="param_cluster_id"/> must be defined for this option
+		to work.
+		</para>
+		<para>
+		This is an optional parameter. If not set, all the nodes in the cluster
+		will individually do the probing and share the status changes.
+		</para>
+		<para>
+		<emphasis>
+			Default value is <quote>empty (none)</quote>.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>cluster_sharing_tag</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+# only the node with the active "vip" sharing tag will perform pinging
+# and broadcast the status changes
+modparam("dispatcher", "cluster_id", 9)
+modparam("dispatcher", "cluster_sharing_tag", "vip")
+...
+</programlisting>
+		</example>
+	</section>
 
-	<section>
+	<section id="param_partition" xreflabel="partition">
 		<title><varname>partition</varname> (string)</title>
 		<para>
 		Using this parameter the partition specific parameters (db_url, table_name, dst_avp,
@@ -641,8 +707,31 @@ modparam("dispatcher", "partition",
 		</example>
 	</section>
 
+	<section id="param_table_name" xreflabel="table_name">
+		<title><varname>table_name</varname> (string)</title>
+		<para>
+		If you want to load the sets of gateways from the database you must set
+		this parameter as the database name.
+		Setting this parameter will only change the default partition's
+		table_name. Use the partition parameter to create and alter
+		other partitions.
+		</para>
+		<para>
+		<emphasis>
+			For every partition the default value is <quote>dispatcher</quote>.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set the 'default' partition's <quote>table_name</quote> parameter</title>
+<programlisting format="linespecific">
+...
+modparam("dispatcher", "table_name", "my_dispatcher")
+...
+</programlisting>
+		</example>
+	</section>
 
-	<section>
+	<section id="param_setid_col" xreflabel="setid_col">
 		<title><varname>setid_col</varname> (string)</title>
 		<para>
 			The column's name in the database storing the gateway's group id.
@@ -662,7 +751,7 @@ modparam("dispatcher", "setid_col", "groupid")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_destination_col" xreflabel="destination_col">
 		<title><varname>destination_col</varname> (string)</title>
 		<para>
 			The column's name in the database storing the destination's
@@ -683,7 +772,7 @@ modparam("dispatcher", "destination_col", "uri")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_state_col" xreflabel="state_col">
 		<title><varname>state_col</varname> (string)</title>
 		<para>
 			The column's name in the database storing the state of the
@@ -704,7 +793,7 @@ modparam("dispatcher", "state_col", "dststate")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_weight_col" xreflabel="weight_col">
 		<title><varname>weight_col</varname> (string)</title>
 		<para>
 			The column's name in the database storing the weight for
@@ -725,7 +814,7 @@ modparam("dispatcher", "weight_col", "dstweight")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_priority_col" xreflabel="priority_col">
 		<title><varname>priority_col</varname> (string)</title>
 		<para>
 			The column's name in the database storing the priority for
@@ -746,7 +835,7 @@ modparam("dispatcher", "priority_col", "dstprio")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_attrs_col" xreflabel="attrs_col">
 		<title><varname>attrs_col</varname> (string)</title>
 		<para>
 			The column's name in the database storing the attributes (opaque
@@ -767,7 +856,7 @@ modparam("dispatcher", "attrs_col", "dstattrs")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_socket_col" xreflabel="socket_col">
 		<title><varname>socket_col</varname> (string)</title>
 		<para>
 			The column's name in the database storing the socket (as
@@ -788,7 +877,7 @@ modparam("dispatcher", "socket_col", "my_sock")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_fetch_freeswitch_stats" xreflabel="fetch_freeswitch_stats">
 		<title><varname>fetch_freeswitch_stats</varname> (integer)</title>
 		<para>
 		If enabled, FreeSWITCH destinations may have dynamic dispatching weights,
@@ -811,9 +900,11 @@ modparam("dispatcher", "socket_col", "my_sock")
 		FreeSWITCH ones.
 		</para>
 		<para>
-		The dynamic weights are recalculated every 20 seconds, as the stats
-		arrive from FreeSWITCH. The update formula is shown below (FreeSWITCH stats
-		are highlighted in bold):
+		The dynamic weights are recalculated every
+		<emphasis>event_heartbeat_interval</emphasis> seconds (see the
+		"freeswitch" OpenSIPS module for more details regarding this setting),
+		as the stats from FreeSWITCH are expected to arrive.  The update formula
+		is shown below (FreeSWITCH stats are highlighted in bold):
 	</para>
 	<para>
 		<emphasis>weight = 100 * (<emphasis role='bold'>Idle-CPU</emphasis> / 100) * (1 - <emphasis role='bold'>Session-Count</emphasis> / <emphasis role='bold'>Max-Sessions</emphasis>)</emphasis>
@@ -833,7 +924,7 @@ modparam("dispatcher", "fetch_freeswitch_stats", 1)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_max_freeswitch_weight" xreflabel="max_freeswitch_weight">
 		<title><varname>max_freeswitch_weight</varname> (integer)</title>
 		<para>
 		The maximum weight of a FreeSWITCH ESL-enabled destination. This value
@@ -871,31 +962,27 @@ modparam("dispatcher", "max_freeswitch_weight", 1000)
 	</section>
 
 
-
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_ds_select_dst" xreflabel="ds_select_dst()">
 		<title>
-		<function moreinfo="none">ds_select_dst(set, alg [, (flags M max_results)*])</function>
+		<function moreinfo="none">ds_select_dst(set, alg, [flags], [partition], [max_res])</function>
 		</title>
 		<para>
 		The method selects a destination from the given set of addresses. It will
-		overwrite the "destination URI" of a SIP request (<emphasis>$du</emphasis>).
+		overwrite the destination URI (<emphasis>$du</emphasis>) of a SIP request.
 		</para>
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
 			<para>
-			<emphasis>set</emphasis> - a partition name followed by colon and an
-			id of the set or a list of sets
-			from where to pick up destination address (variables are accepted).
-			If the partition name is missing, the default partition will be used.
+			<emphasis>set (int)</emphasis> - a set identifier from which to select destinations
 			</para>
 		</listitem>
 		<listitem>
 			<para>
-			<emphasis>alg</emphasis> - the algorithm(s) used to select the
-			destination address (variables are accepted).
+			<emphasis>alg (int)</emphasis> - the algorithm used to select the
+			destination address
 			</para>
 			<itemizedlist>
 			<listitem>
@@ -967,172 +1054,183 @@ modparam("dispatcher", "max_freeswitch_weight", 1000)
 		</listitem>
 		<listitem>
 			<para>
-			<emphasis>flags M max_results</emphasis> - If specified, this will be the flags which
-			in previous versions were specified at startup. The flags are:
+			<emphasis>flags (string, optional)</emphasis> - a string of flag-settings
+				which tweak the function's behavior:
 			</para>
 			<itemizedlist>
 			<listitem>
-				<para>'f'/'F' - the failover support flag,</para>
+				<para>'f' (failover support): causes the remaining
+				addresses from the destination set to be stored within an
+				internally managed AVP.  You may then use
+				<xref linkend="func_ds_next_dst"/> to switch to the next
+				address, thus achieving serial forking to all possible destinations
+				</para>
 			</listitem>
 
 			<listitem>
-				<para>'u'/'U' - the user only flag - will specify that only the
-				uri user part will be used for hashing,</para>
+				<para>'u' (user only): will specify that only the URI user part
+					will be used for hashing</para>
+			</listitem>
+
+
+			<listitem>
+				<para>'d' (use default): use the last address in destination
+					set as last option to send the message</para>
 			</listitem>
 
 			<listitem>
-				<para> 'S'/'s' -  the force destination flag - which will skip
-				overwriting the destination address if it is already set,</para>
-			</listitem>
-
-			<listitem>
-				<para>'D'/'d' - the use default flag('D','d') - which will use the
-				last address in destination set as last option to send the message.</para>
+				<para>'a' (append destinations): append any new destinations to
+					the current destination list, rather than rewriting the list</para>
 			</listitem>
 			</itemizedlist>
 			<para>
-			You can also specify these flags using PVs. The flags are being kept per partition.
+			The flags are being kept per partition.
 			</para>
+		</listitem>
+		<listitem>
 			<para>
-			The second parameter,
-			max_results represents that only a maximum of max_results will be put into the
-			specified avp for failover. This allows having many destinations but limit the
-			useless traffic in case of a number that is bound to fail everywhere. Since version
-			2.1, the last parameter cand be represented by a list of flags and max_results,
-			separated by comma. You can specify either only the flags, either only the max_results
-			parameter, but if you want to specify them together you have to use the 'M' character
-			like this: flags M max_results.
+			<emphasis>partition (string, optional)</emphasis> - name of a DB partition
+			</para>
+		</listitem>
+		<listitem>
+			<para>
+			<emphasis>max_res (int, optional)</emphasis> - signifies that only a maximum
+			number of destinations shall be included in the specified failover
+			AVP for failover.  This allows having multiple destinations while
+			also preventing excessive failover attempts in case a number is
+			bound to fail globally.
 			</para>
 		</listitem>
 		</itemizedlist>
 		<para>
-		If the character 'f' in 'flags' is set, the rest of the addresses from the
-		destination set is stored in AVP list. You can use 'ds_next_dst()' to
-		use next address to achieve serial forking to all possible
-		destinations.  If multiple dispatching groups are used, the AVP list
-		is constructed based on the position of each dispatching id in the list:
-		first one has the higher priority, followed by the second one and so on.
-		</para>
-		<para>
-		This function can be used from REQUEST_ROUTE and FAILURE_ROUTE.
+		This function can be used from REQUEST_ROUTE, BRANCH_ROUTE and FAILURE_ROUTE.
 		</para>
 		<example>
 		<title><function>ds_select_dst</function> usage</title>
 <programlisting format="linespecific">
 ...
-ds_select_dst("1", "0");
+if (!ds_select_dst(1, 0)) {
+	xlog("ERROR: no active destinations found!\n");
+	send_reply(503, "Service Unavailable");
+	exit;
+}
 ...
-ds_select_dst("part2 : 1", "0", "5");
+ds_select_dst(1, 0, , "fs_boxes", 5);
 ...
-ds_select_dst("part3 : 1", "0", "fUsD");
+ds_select_dst(1, 0, "fUsD", "ask_boxes");
 ...
-ds_select_dst("part4 : 2,3", "0,1", "fuD M 5, fuS M 2");
+ds_select_dst(2, 0, "fud", "pstn_gws", 5);
+ds_select_dst(3, 1, "fua", "pstn_gws", 2);
 ...
-# dispatch over multiple dispatching groups
-$var(part_name) = "p4"
-$var(setid) = "1, 2";
-$var(alg) = "4, 2";
-$var(flags) = " sFDU M 2, fuS M 3";
-ds_select_dst("$var(part_name):$var(setid)","$var(alg)","$var(flags)");
+# using variables
+$var(part) = "pstn_gws"
+$var(setid) = 1;
+$var(alg) = 4;
+$var(flags) = "fdu";
+$var(max_res) = 2;
+ds_select_dst($var(setid), $var(alg), $var(flags), $var(part), $var(max_res));
 ...
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_ds_select_domain" xreflabel="ds_select_domain()">
 		<title>
-		<function moreinfo="none">ds_select_domain(set, alg [, "[flags] [M max_results]"])</function>
+		<function moreinfo="none">ds_select_domain(set, alg, [flags], [partition], [max_res])</function>
 		</title>
 		<para>
-		The method selects a destination from addresses set  and rewrites the
-		host and port from R-URI. The parameters have same meaning as for
-		ds_select_dst().
+		The method selects a destination from addresses set and rewrites the
+		hostname and port parts of the Request-URI (<emphasis>$ru</emphasis>).
+		Its parameters have same meaning as in <xref linkend="func_ds_select_dst"/>.
 		</para>
 		<para>
-		If the character 'f' in 'flags' is set, the rest of the addresses from the
-		destination set is stored in AVP list. You can use 'ds_next_domain()'
-		to use next address to achieve serial forking to all possible
-		destinations.
+		If the "f" (failover support) flag is present, the rest of the
+		addresses from the destination set will be stored in an internally
+		managed AVP. You may then use <xref linkend="func_ds_next_domain"/> to
+		switch to the next address in the list, thus achieving serial forking
+		to all possible destinations.
 		</para>
 		<para>
-		This function can be used from REQUEST_ROUTE and FAILURE_ROUTE.
+		This function can be used from REQUEST_ROUTE, BRANCH_ROUTE and FAILURE_ROUTE.
 		</para>
 	</section>
-	<section>
+	<section id="func_ds_next_dst" xreflabel="ds_next_dst()">
 		<title>
-		<function moreinfo="none">ds_next_dst([partition_name])</function>
+		<function moreinfo="none">ds_next_dst([partition])</function>
 		</title>
 		<para>
 		Takes the next destination address from the AVPs with id
 		partition.'dst_avp_id' and sets the dst_uri (outbound proxy address).
-		If partition_name is omitted, the default partition will be used.This
+		If "partition" is omitted, the default partition will be used.This
 		function is using the flags set in ds_select_dst or ds_select_domain.
 		</para>
 		<para>
 		This function can be used from REQUEST_ROUTE and FAILURE_ROUTE.
 		</para>
 	</section>
-	<section>
+	<section id="func_ds_next_domain" xreflabel="ds_next_domain()">
 		<title>
-		<function moreinfo="none">ds_next_domain([partition_name])</function>
+		<function moreinfo="none">ds_next_domain([partition])</function>
 		</title>
 		<para>
 		Takes the next destination address from the AVPs with id
 		partition.'dst_avp_id' and sets the domain part of the request uri.
-		If partition_name is omitted, the default partition will be used.This
+		If "partition" is omitted, the default partition will be used.This
 		function is using the flags set in ds_select_dst or ds_select_domain.
 		</para>
 		<para>
 		This function can be used from REQUEST_ROUTE and FAILURE_ROUTE.
 		</para>
 	</section>
-	<section>
+	<section id="func_ds_mark_dst" xreflabel="ds_mark_dst()">
 		<title>
-		<function moreinfo="none">ds_mark_dst()</function>
-		</title>
-		<para>
-		Mark the last used address from the 'default' partition's destination
-		set as inactive, in order to be ignored in the future. In this way it
-		can be implemented an automatic detection of failed gateways.
-		When an address is marked as inactive, it will be ignored by
-		'ds_select_dst' and 'ds_select_domain'. This function is using the flags
-		set in ds_select_dst or ds_select_domain.
-		</para>
-		<para>
-		This function can be used from REQUEST_ROUTE and FAILURE_ROUTE.
-		</para>
-	</section>
-	<section>
-		<title>
-		<function moreinfo="none">ds_mark_dst([partition_name], "s")</function>
+		<function moreinfo="none">ds_mark_dst([state], [partition])</function>
 		</title>
 		<para>
 		Mark the last used address from partition's destination set as
 		inactive ("i"/"I"/"0"), active ("a"/"A"/"1") or probing ("p"/"P"/"2").
 		With this function, an automatic detection of failed gateways can be implemented.
 		When an address is marked as inactive or probing, it will be ignored by
-		'ds_select_dst' and 'ds_select_domain'.
-		If partition_name is omitted, the default partition will be used. This function
-		is using the flags set in ds_select_dst or ds_select_domain.
+		<xref linkend="func_ds_select_dst"/> and <xref linkend="func_ds_select_domain"/>.
+		If "partition" is omitted, the default partition will be used. This function
+		is using the flags set in <xref linkend="func_ds_select_dst"/> or
+		<xref linkend="func_ds_select_domain"/>.
 		</para>
-		<para>possible parameters:</para>
+		<para>Possible parameters:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>"i", "I" or "0"</emphasis> - the last destination should be set to inactive and will be ignored in future requests.</para>
+			<para>state (string, optional) - new state for the last attempted
+				destination.  Possible values:</para>
+			<itemizedlist>
+			<listitem>
+				<para><emphasis>"i", "I" or "0" (default)</emphasis> - the last
+					destination should be set to inactive and will be ignored
+					in future requests.</para>
+			</listitem>
+			<listitem>
+				<para><emphasis>"a", "A" or "1"</emphasis> - the last
+					destination should be set to active.</para>
+			</listitem>
+			<listitem>
+				<para><emphasis>"p", "P" or "2"</emphasis> - the last
+					destination will be set to probing. Note: You will need to
+					call this function "threshold"-times, before it will be
+					actually set to probing.</para>
+			</listitem>
+			</itemizedlist>
 		</listitem>
 		<listitem>
-			<para><emphasis>"a", "A" or "1"</emphasis> - the last destination should be set to active.</para>
-		</listitem>
-		<listitem>
-			<para><emphasis>"p", "P" or "2"</emphasis> - the last destination will be set to probing. Note: You will need to call this function "threshold"-times, before it will be actually set to probing.</para>
+			<para>partition (string, optional) - name of a DB partition,
+			otherwise the default one will be used</para>
 		</listitem>
 		</itemizedlist>
+
 		<para>
 		This function can be used from REQUEST_ROUTE and FAILURE_ROUTE.
 		</para>
 	</section>
-	<section>
+	<section id="func_ds_count" xreflabel="ds_count()">
 		<title>
-		<function moreinfo="none">ds_count(set, filter, result)</function>
+		<function moreinfo="none">ds_count(set, state_filter, res_var, [partition])</function>
 		</title>
 		<para>
 		Returns the number of active, inactive or probing destinations in a
@@ -1142,30 +1240,27 @@ ds_select_dst("$var(part_name):$var(setid)","$var(alg)","$var(flags)");
 		<itemizedlist>
 		<listitem>
 			<para>
-			<emphasis>set</emphasis> - a partition name followed by colon and an
-			id of a set of dispatching destinations (variables are accepted).
-			If the partition name is missing, the default partition will be used.
+			<emphasis>set (int)</emphasis> - a set of dispatching destinations
 			</para>
 		</listitem>
 
 		<listitem>
-			<para><emphasis>filter</emphasis> - which destinations should be
-			counted. Either active destinations("a", "A" or "1"), inactive
-			destinations("i", "I" or "0") or probing ones("p", "P" or "2") or
+			<para><emphasis>state_filter (string)</emphasis> - which destinations should be
+			counted. Either active ("a", "A" or "1"), inactive
+			("i", "I" or "0"), probing ("p", "P" or "2") destinations or
 			different combinations between these flags, such as
-			"pI", "1i", "ipA"... The <emphasis>filter</emphasis> parameter can have
-			the following types:</para>
-			<itemizedlist>
-				<listitem>
-				<para><emphasis>string</emphasis> - the filtering flags are
-				statically assigned</para>
-				</listitem>
-			</itemizedlist>
+			"pI", "1i", "ipA"... </para>
 		</listitem>
 
 		<listitem>
-			<para><emphasis>result</emphasis> - A pseudovariable for storing
-			the result. </para>
+			<para><emphasis>res_var (variable)</emphasis> - a variable
+				which will hold the integer result</para>
+		</listitem>
+
+		<listitem>
+			<para><emphasis>partition (string, optional)</emphasis> - name of a
+				DB partition.  If omitted, the "default" partition
+				will be used.</para>
 		</listitem>
 		</itemizedlist>
 		<para>
@@ -1176,11 +1271,11 @@ ds_select_dst("$var(part_name):$var(setid)","$var(alg)","$var(flags)");
 		<title><function>ds_count</function> usage</title>
 <programlisting format="linespecific">
 ...
-if (ds_count("1", "a", "$avp(result)")) {
+if (ds_count(1, "a", $avp(result))) {
 	...
 }
 ...
-if (ds_count("$avp(partition) : $avp(set)", "ip", "$avp(result)")) {
+if (ds_count($avp(set), "ip", $avp(result), $avp(partition))) {
 	...
 }
 ...
@@ -1188,43 +1283,42 @@ if (ds_count("$avp(partition) : $avp(set)", "ip", "$avp(result)")) {
 		</example>
 	</section>
 
-	<section>
+	<section id="func_ds_is_in_list" xreflabel="ds_is_in_list()">
 		<title>
-		<function moreinfo="none">ds_is_in_list(ip, port [,set [,active_only]])</function>
+		<function moreinfo="none">ds_is_in_list(ip, port, [set], [partition], [active_only])</function>
 		</title>
 		<para>
-		This function returns true, if the parameters ip and port point to a
-		host from the dispatcher-list; otherwise false.
+		This function returns <emphasis>true</emphasis> only if "ip" and "port" point to a
+		host from the given dispatcher "set".
 		</para>
 		<para>
 		Meaning of the parameters:
 		</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>ip</emphasis> - string / pseudo-variable (as string)
-			containing the IP to test against the dispatcher list. This cannot
-			be empty.</para>
+			<para><emphasis>ip (string)</emphasis> - an IPv4 or IPv6 address to
+				test against the dispatcher "set"</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>port</emphasis> - int / pseudo-variable (as int)
-			containing the PORT to test against the dispatcher list. This
-			can be empty - in this case the port will excluded from the
-			matching of IP against the dispatcher list.</para>
+			<para><emphasis>port (int)</emphasis> - a port to test against the
+			dispatcher list.  Use a <emphasis>0</emphasis> value in order to
+			match any port</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>set</emphasis> (optional) - a partition name followed
-			by colon and the set ID of a dispatcher list to test against.
-			If the partition name is omitted the default partition will be used.
-			If the set id is missing, all the dispatching
-			sets will the checked. If a partition name is specified then it must
-			be followed by colon regardless of the set id being specified or not.
-			<quote>-1</quote> can be used as a wildcard to check in all sets.
+			<para><emphasis>set (int, optional)</emphasis> - a dispatcher set
+			identifier to test against.  If missing, all sets will be checked.
+			The <emphasis>-1</emphasis> set is a special value, acting as a
+			"check all sets" wildcard.
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>active_only</emphasis> (optional) - search only
-			through the active destinations (ignore the ones in probing
-			and inactive mode).</para>
+			<para><emphasis>partition (string, optional)</emphasis> - name of
+				a DB partition</para>
+		</listitem>
+		<listitem>
+			<para><emphasis>active_only (int, optional)</emphasis> - specify
+			a non-zero value in order to only search through the active
+			destinations (ignore the ones in probing and inactive states)</para>
 		</listitem>
 		</itemizedlist>
 		<para>
@@ -1235,16 +1329,16 @@ if (ds_count("$avp(partition) : $avp(set)", "ip", "$avp(result)")) {
 		<title><function>ds_is_in_list</function> usage</title>
 <programlisting format="linespecific">
 ...
-if (ds_is_in_list("$si", "$sp")) {
+if (ds_is_in_list($si, $sp)) {
 	# source IP:PORT is in a dispatcher list
 }
 ...
-if (ds_is_in_list("$rd", "$rp", "2")) {
-	# source RURI (ip and port) is in the dispatcher list id "2" of the default partition
+if (ds_is_in_list($rd, $rp, 2)) {
+	# the R-URI (IP and port) is in the dispatcher set 2 of the "default" partition
 }
 ...
-if (ds_is_in_list("$rd", "$rp", "part2:2")) {
-	# source RURI (ip and port) is in the dispatcher list id "2" of the partition called 'part2'
+if (ds_is_in_list($rd, $rp, 2, "part2")) {
+	# the R-URI (IP and port) is in the dispatcher set 2 of the "part2" partition
 }
 ...
 </programlisting>
@@ -1253,9 +1347,9 @@ if (ds_is_in_list("$rd", "$rp", "part2:2")) {
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_mi_functions" xreflabel="Exported MI Functions">
 	<title>Exported MI Functions</title>
-	<section>
+	<section id="mi_ds_set_state" xreflabel="ds_set_state">
 		<title>
 		<function moreinfo="none">ds_set_state</function>
 		</title>
@@ -1268,7 +1362,7 @@ if (ds_is_in_list("$rd", "$rp", "part2:2")) {
 		</para>
 		<para>Parameters:</para>
 		<itemizedlist>
-			<listitem><para>_state_ : state of the destination address</para>
+			<listitem><para><emphasis>state</emphasis> : state of the destination address</para>
 				<itemizedlist>
 					<listitem><para> <quote>a</quote>: active </para></listitem>
 					<listitem><para> <quote>i</quote>: inactive </para></listitem>
@@ -1276,24 +1370,20 @@ if (ds_is_in_list("$rd", "$rp", "part2:2")) {
 				</itemizedlist>
 			</listitem>
 
-			<listitem><para>_group_: partition name followed by colon
+			<listitem><para><emphasis>group</emphasis>: partition name followed by colon
 			and destination group id. If the partition name is omitted,
 			the default partition will be used</para></listitem>
 
-			<listitem><para>_address_: address of the destination in the _group_</para></listitem>
+			<listitem><para><emphasis>address</emphasis>: address of the destination in the group</para></listitem>
 		</itemizedlist>
 		<para>
 		MI FIFO Command Format:
 		</para>
 <programlisting  format="linespecific">
-:ds_set_state:_reply_fifo_file_
-_state_
-_group_
-_address_
-_empty_line_
+opensips-cli -x mi ds_set_state a 2 sip:10.0.0.202
 </programlisting>
 	</section>
-	<section>
+	<section id="mi_ds_list" xreflabel="ds_list">
 		<title>
 		<function moreinfo="none">ds_list</function>
 		</title>
@@ -1314,11 +1404,10 @@ _empty_line_
 		MI FIFO Command Format:
 		</para>
 <programlisting  format="linespecific">
-:ds_list:_reply_fifo_file_
-_empty_line_
+opensips-cli -x mi ds_list
 </programlisting>
 	</section>
-	<section>
+	<section id="mi_ds_reload" xreflabel="ds_reload">
 		<title>
 		<function moreinfo="none">ds_reload</function>
 		</title>
@@ -1337,18 +1426,18 @@ _empty_line_
 			</para></listitem>
 		</itemizedlist>
 		<para>
-		MI DATAGRAM Command Format:
+		MI FIFO Command Format:
 		</para>
 <programlisting  format="linespecific">
-":ds_reload:\n."
+opensips-cli -x mi ds_reload
 </programlisting>
 	</section>
 
 	</section>
 
-	<section>
+	<section id="exported_events" xreflabel="Exported Events">
 	<title>Exported Events</title>
-	<section>
+	<section id="event_E_DISPATCHER_STATUS" xreflabel="E_DISPATCHER_STATUS">
 		<title>
 		<function moreinfo="none">E_DISPATCHER_STATUS</function>
 		</title>

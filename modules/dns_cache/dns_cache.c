@@ -76,6 +76,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,			/* dlopen flags */
+	0,							/* load function */
 	&deps,              /* OpenSIPS module dependencies */
 	0,					/* exported functions */
 	0,					/* exported async functions */
@@ -88,7 +89,8 @@ struct module_exports exports= {
 	mod_init,				/* module initialization function */
 	(response_function) 0,      		/* response handling function */
 	(destroy_function)destroy,		/* destroy function */
-	child_init			        /* per-child init function */
+	child_init,			        /* per-child init function */
+	0                           /* reload confirm function */
 };
 
 /**
@@ -179,7 +181,7 @@ static char* serialize_he_rdata(struct hostent *he,int *buf_len,int do_encoding)
 		}
 
 	if (do_encoding) {
-		/* backend does not support binary values - allocate continous buffer
+		/* backend does not support binary values - allocate continuous buffer
 		for encoding */
 		base64_len = calc_base64_encode_len(len);
 		needed_len=len+base64_len;
@@ -818,7 +820,7 @@ void* get_dnscache_value(char *name,int r_type,int name_len)
  *	ttl - seconds the key should be kept in cache
  *
  * Returns:
- *	0  - sucess
+ *	0  - success
  *	1  - cache not initialized yet
  *	-1 - internal failure
  */
@@ -830,6 +832,14 @@ int put_dnscache_value(char *name,int r_type,void *record,int rdata_len,
 
 	if (cdbc == NULL) {
 		/* assume dns request before forking - cache is not ready yet */
+		return 1;
+	}
+
+	/* avoid caching records with TTL=0 */
+	if (!failure && ttl==0) {
+		/* RFC1035 states : "Zero TTL values are interpreted to mean that
+		   the RR can only be used for the transaction in progress, and
+		   should not be cached." */
 		return 1;
 	}
 
@@ -868,7 +878,8 @@ int put_dnscache_value(char *name,int r_type,void *record,int rdata_len,
 		key_ttl = ttl;
 	}
 
-	LM_DBG("putting value [%.*s] with ttl = %d\n",key.len,key.s,key_ttl);
+	LM_INFO("putting key [%.*s] with value [%.*s] ttl = %d\n",
+		key.len,key.s,value.len,value.s,key_ttl);
 	if (cdbf.set(cdbc,&key,&value,key_ttl) < 0) {
 		LM_ERR("failed to set dns key\n");
 		return -1;

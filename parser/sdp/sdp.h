@@ -32,6 +32,11 @@
 #define SDP_H
 
 #include "../msg_parser.h"
+#include "../../mem/mem.h"
+
+#define      NO_HOLD 0
+#define RFC2543_HOLD 1
+#define RFC3264_HOLD 2
 
 typedef struct sdp_attr {
 	struct sdp_attr *next;
@@ -171,11 +176,18 @@ sdp_payload_attr_t* get_sdp_payload4index(sdp_stream_cell_t *stream, int index);
 
 /**
  * Free all memory associated with parsed structure.
- *
- * Note: this will free up the parsed sdp structure (form PKG_MEM).
  */
-void free_sdp(sdp_info_t* sdp);
-
+void free_sdp_content(sdp_info_t* sdp);
+/**
+ * Free all memory associated with parsed structure.
+ *
+ * Note: this will also pkg_free() the given pointer
+ */
+static inline void free_sdp(sdp_info_t* sdp)
+{
+	free_sdp_content(sdp);
+	pkg_free(sdp);
+}
 
 /**
  * Print the content of the given sdp_info structure.

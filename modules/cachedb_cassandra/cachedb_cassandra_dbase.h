@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 OpenSIPS Solutions
+ * Copyright (C) 2018 OpenSIPS Solutions
  *
  * This file is part of opensips, a free SIP server.
  *
@@ -17,52 +17,56 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
- *
- * history:
- * ---------
- *  2011-12-xx  created (vlad-paiu)
  */
 
 #ifndef CACHEDBCASSANDRA_DBASE_H
 #define CACHEDBCASSANDRA_DBASE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-/* give up on ut.h, don't need it anyway. Also give up on inline stuff */
-#define ut_h
-#ifdef __cplusplus
-#define inline
-#endif
-#include "../../str.h"
-#include "../../dprint.h"
-#include "../../mem/mem.h"
+#include <cassandra.h>
 #include "../../cachedb/cachedb.h"
-#include "../../cachedb/cachedb_cap.h"
-#ifdef __cplusplus
-#undef inline
-#endif
+
+#define CASS_OSS_KEY_COL_S    "opensipskey"
+#define CASS_OSS_KEY_COL_LEN  11
+#define CASS_OSS_VAL_COL_S    "opensipsval"
+#define CASS_OSS_VAL_COL_LEN  11
+
+#define CASS_COLL_APROX_COUNT 32
+
+#define MAP_VAL_TYPE_NULL   '0'
+#define MAP_VAL_TYPE_STR    '1'
+#define MAP_VAL_TYPE_INT32  '2'
+#define MAP_VAL_TYPE_INT64  '3'
 
 typedef struct {
 	struct cachedb_id *id;
 	unsigned int ref;
 	struct cachedb_pool_con_t *next;
 
-	void *cass_con;
+	str keyspace;
+	str table;
+	str cnt_table;
+	CassCluster *cluster;
+	CassSession *session;
+	const CassSchemaMeta *schema_meta;
+	const CassTableMeta *table_meta;
 } cassandra_con;
+
+extern CassConsistency rd_consistency;
+extern CassConsistency wr_consistency;
 
 cachedb_con* cassandra_init(str *url);
 void cassandra_destroy(cachedb_con *con);
-int cassandra_get(cachedb_con *con,str *attr,str *val);
-int cassandra_get_counter(cachedb_con *con,str *attr,int *val);
-int cassandra_set(cachedb_con *con,str *attr,str *val,int expires);
-int cassandra_remove(cachedb_con *con,str *attr);
-int cassandra_add(cachedb_con *connection,str *attr,int val,int expires,int *new_val);
-int cassandra_sub(cachedb_con *connection,str *attr,int val,int expires,int *new_val);
+int cassandra_set(cachedb_con *con, str *attr, str *val, int expires);
+int cassandra_get(cachedb_con *con, str *attr, str *val);
+int cassandra_get_counter(cachedb_con *con, str *attr, int *val);
+int cassandra_remove(cachedb_con *con, str *attr);
+int cassandra_add(cachedb_con *con, str *attr, int val, int expires, int *new_val);
+int cassandra_sub(cachedb_con *con, str *attr, int val, int expires, int *new_val);
+int cassandra_col_update(cachedb_con *con, const cdb_filter_t *row_filter,
+						const cdb_dict_t *pairs);
+int cassandra_col_query(cachedb_con *con, const cdb_filter_t *filter,
+						cdb_res_t *res);
+int cassandra_truncate(cachedb_con *con);
 
-#ifdef __cplusplus
-}
+
 #endif
-
-#endif /* CACHEDBREDIS_DBASE_H */
-

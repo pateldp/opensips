@@ -83,12 +83,6 @@ void free_udomain(udomain_t* _d);
 
 
 /*! \brief
- * Just for debugging
- */
-void print_udomain(FILE* _f, udomain_t* _d);
-
-
-/*! \brief
  * Load data from a database
  */
 int preload_udomain(db_con_t* _c, udomain_t* _d);
@@ -151,6 +145,13 @@ void lock_ulslot(udomain_t* _d, int slot);
  */
 typedef void (*unlock_ulslot_t)(udomain_t* _d, int slot);
 void unlock_ulslot(udomain_t* _d, int slot);
+#define _unlock_ulslot(domain, contact_id) \
+	do { \
+		unsigned int _rlab; \
+		unsigned short _aorh, _clab; \
+		unpack_indexes(contact_id, &_aorh, &_rlab, &_clab); \
+		unlock_ulslot(domain, _aorh & ((domain)->size - 1)); \
+	} while (0)
 
 /* ===== module interface ======= */
 
@@ -168,6 +169,16 @@ int insert_urecord(udomain_t* _d, str* _aor, struct urecord** _r,
  */
 typedef int  (*get_urecord_t)(udomain_t* _d, str* _a, struct urecord** _r);
 int get_urecord(udomain_t* _d, str* _aor, struct urecord** _r);
+
+/*! \brief
+ * Only relevant in a federation @cluster_mode.
+ * Obtain urecord pointer if AoR exists in at least one location.
+ */
+typedef int
+(*get_global_urecord_t)(udomain_t* _d, str* _a, struct urecord** _r);
+int get_global_urecord(udomain_t* _d, str* _aor, struct urecord** _r);
+
+int cdb_update_urecord_metadata(const str *_aor, int unpublish);
 
 
 /*! \brief

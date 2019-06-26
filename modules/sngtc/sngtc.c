@@ -106,9 +106,6 @@ int *sip_workers_pipes;
 /* pipe for the sangoma worker */
 int sangoma_pipe[2];
 
-static int *proc_counter;
-gen_lock_t *index_lock;
-
 /* generic module functions */
 static int mod_init(void);
 static int child_init(int rank);
@@ -121,7 +118,7 @@ static struct dlg_binds dlg_binds;
 /* module specific functions */
 static int sngtc_offer(struct sip_msg *msg);
 static int w_sngtc_callee_answer(struct sip_msg *msg,
-                                 char *gp_ip_a, char *gp_ip_b);
+                                 str *gp_ip_a, str *gp_ip_b);
 static int sngtc_callee_answer(struct sip_msg *msg);
 static int sngtc_caller_answer(struct sip_msg *msg);
 
@@ -137,17 +134,15 @@ static param_export_t params[] = {
 };
 
 static cmd_export_t cmds[] = {
-	{ "sngtc_offer",         (cmd_function)sngtc_offer, 0, 0, 0,
-		REQUEST_ROUTE|ONREPLY_ROUTE },
-	{ "sngtc_callee_answer", (cmd_function)w_sngtc_callee_answer, 0, 0, 0,
-		REQUEST_ROUTE|ONREPLY_ROUTE },
-	{ "sngtc_callee_answer", (cmd_function)w_sngtc_callee_answer, 1,
-	    fixup_sgp_null, 0, REQUEST_ROUTE|ONREPLY_ROUTE },
-	{ "sngtc_callee_answer", (cmd_function)w_sngtc_callee_answer, 2,
-	    fixup_sgp_sgp, 0, REQUEST_ROUTE|ONREPLY_ROUTE },
-	{ "sngtc_caller_answer", (cmd_function)sngtc_caller_answer, 0, 0, 0,
-		REQUEST_ROUTE|ONREPLY_ROUTE },
-	{ 0, 0, 0, 0, 0, 0 }
+	{"sngtc_offer", (cmd_function)sngtc_offer, {{0,0,0}},
+		REQUEST_ROUTE|ONREPLY_ROUTE},
+	{"sngtc_caller_answer", (cmd_function)sngtc_caller_answer, {{0,0,0}},
+		REQUEST_ROUTE|ONREPLY_ROUTE},
+	{"sngtc_callee_answer", (cmd_function)w_sngtc_callee_answer, {
+		{CMD_PARAM_STR,0,0},
+		{CMD_PARAM_STR,0,0}, {0,0,0}},
+		REQUEST_ROUTE|ONREPLY_ROUTE},
+	{0,0,{{0,0,0}},0}
 };
 
 static dep_export_t deps = {
@@ -165,6 +160,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,
+	0,
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,
 	0,
@@ -177,7 +173,8 @@ struct module_exports exports= {
 	mod_init,
 	(response_function) 0,
 	(destroy_function)mod_destroy,
-	child_init
+	child_init,
+	0               /* reload confirm function */
 };
 
 int sng_create_rtp(void * usr_priv, sngtc_codec_request_leg_t *codec_reg_leg,
@@ -266,13 +263,17 @@ void sngtc_dlg_terminated(struct dlg_cell *dlg, int type,
 {
 	str info_ptr;
 	struct sngtc_info *info;
+	int rc;
 
-	LM_DBG("freeing the sdp buffer\n");
+	rc = dlg_binds.fetch_dlg_value(dlg, &dlg_key_sngtc_info, &info_ptr, 0);
 
-	if (dlg_binds.fetch_dlg_value(dlg, &dlg_key_sngtc_info, &info_ptr, 0) != 0) {
+	if (rc == -1) {
 		LM_ERR("failed to fetch caller sdp\n");
 		return;
-	}
+	} else  if (rc == -2)
+		return;
+
+	LM_DBG("freeing the sdp buffer\n");
 
 	info = *(struct sngtc_info **)info_ptr.s;
 	LM_DBG("Info ptr: %p\n", info);
@@ -285,11 +286,14 @@ void sngtc_dlg_terminated(struct dlg_cell *dlg, int type,
 		shm_free(info->modified_caller_sdp.s);
 
 	shm_free(info);
+
+	if (dlg_binds.store_dlg_value(dlg, &dlg_key_sngtc_info, NULL) < 0)
+		LM_ERR("failed to clear dlg val with caller sdp\n");
 }
 
 static int mod_init(void)
 {
-	int i, sip_workers_no;
+	int i;
 
 	LM_INFO("initializing module\n");
 
@@ -305,35 +309,14 @@ static int mod_init(void)
 		return -1;
 	}
 
-	sip_workers_no = udp_count_processes() + tcp_count_processes();
+	LM_DBG("Children: %d\n", counted_max_processes);
 
-	LM_DBG("Children: %d\n", sip_workers_no);
-
-    sip_workers_pipes = pkg_malloc(2 * sip_workers_no *
+    sip_workers_pipes = pkg_malloc(2 * counted_max_processes *
 	                                sizeof(*sip_workers_pipes));
     if (!sip_workers_pipes) {
         LM_ERR("Not enough pkg mem\n");
         return -1;
     }
-
-	index_lock = shm_malloc(sizeof(*index_lock));
-	if (!index_lock) {
-		LM_ERR("No more shm mem\n");
-		return -1;
-	}
-
-	if (!lock_init(index_lock)) {
-		LM_ERR("Failed to init lock\n");
-		return -1;
-	}
-
-	proc_counter = shm_malloc(sizeof(*proc_counter));
-	if (!proc_counter) {
-		LM_ERR("Not enough shm mem\n");
-		return -1;
-	}
-
-	*proc_counter = 0;
 
 	if (pipe(sangoma_pipe) != 0) {
 		LM_ERR("Failed to create sangoma worker pipe\n");
@@ -342,7 +325,7 @@ static int mod_init(void)
 
 	LM_DBG("Sangoma pipe: [%d %d]\n", sangoma_pipe[0], sangoma_pipe[1]);
 
-	for (i = 0; i < sip_workers_no; i++) {
+	for (i = 0; i < counted_max_processes; i++) {
 		if (pipe(sip_workers_pipes + 2 * i) != 0) {
 			LM_ERR("Failed to create pipe for UDP receiver %d\n", i);
 			return -1;
@@ -383,13 +366,9 @@ static int child_init(int rank)
 	if (rank <= PROC_MAIN)
 		return 0;
 
-	lock_get(index_lock);
-
-	pipe_index = 2 * (*proc_counter)++;
+	pipe_index = 2 * (process_no);
 
 	close(sip_workers_pipes[pipe_index + WRITE_END]);
-
-	lock_release(index_lock);
 
 	LM_DBG("proc index: %d\n", pipe_index / 2);
 
@@ -404,40 +383,32 @@ static void mod_destroy(void)
 static int sng_logger(int level, char *fmt, ...)
 {
 	va_list args;
-	static char buffer[256];
+	char buffer[256];
 
 	va_start(args, fmt);
 
 	vsnprintf(buffer, 256, fmt, args);
 
 	switch (level) {
-	case SNGTC_LOGLEVEL_DEBUG:
-		LM_GEN1(L_DBG, fmt, args);
 		LM_DBG("%s\n", buffer);
 		break;
-	case SNGTC_LOGLEVEL_WARN:
-		LM_GEN1(L_WARN, fmt, args);
-		LM_WARN("%s\n", buffer);
-		break;
+
 	case SNGTC_LOGLEVEL_INFO:
-		LM_GEN1(L_INFO, fmt, args);
-		LM_INFO("%s\n", buffer);
-		break;
 	case SNGTC_LOGLEVEL_STATS:
-		LM_GEN1(L_INFO, fmt, args);
 		LM_INFO("%s\n", buffer);
-		break;
-	case SNGTC_LOGLEVEL_ERROR:
-		LM_GEN1(L_ERR, fmt, args);
-		LM_ERR("%s\n", buffer);
-		break;
-	case SNGTC_LOGLEVEL_CRIT:
-		LM_GEN1(L_CRIT, fmt, args);
-		LM_CRIT("%s\n", buffer);
 		break;
 
+	case SNGTC_LOGLEVEL_WARN:
+		LM_WARN("%s\n", buffer);
+		break;
+
+	case SNGTC_LOGLEVEL_ERROR:
+		LM_ERR("%s\n", buffer);
+		break;
+
+	case SNGTC_LOGLEVEL_CRIT:
 	default:
-		LM_GEN1(L_WARN, fmt, args);
+		LM_CRIT("%s\n", buffer);
 	}
 
 	va_end(args);
@@ -538,7 +509,7 @@ static int sngtc_offer(struct sip_msg *msg)
 
 		/* register a callback to free the above */
 		if (dlg_binds.register_dlgcb(dlg,
-			                         DLGCB_EXPIRED|DLGCB_FAILED|DLGCB_TERMINATED,
+			DLGCB_EXPIRED|DLGCB_FAILED|DLGCB_TERMINATED|DLGCB_DESTROY,
 		    sngtc_dlg_terminated, NULL, NULL) != 0) {
 
 			LM_ERR("failed to register dialog callback\n");
@@ -1231,27 +1202,21 @@ out:
 }
 
 static int w_sngtc_callee_answer(struct sip_msg *msg,
-                                 char *gp_ip_a, char *gp_ip_b)
+                                 str *gp_ip_a, str *gp_ip_b)
 {
 	if (!gp_ip_a) {
 		card_ip_a.s = card_ip_b.s = NULL;
 		goto out;
 	}
 
-	if (fixup_get_svalue(msg, (gparam_p)gp_ip_a, &card_ip_a) != 0) {
-		LM_ERR("failed to get fixup value for caller: bad pvar\n");
-		return SNGTC_ERR;
-	}
+	card_ip_a = *gp_ip_a;
 
 	if (!gp_ip_b) {
 		card_ip_b.s = NULL;
 		goto out;
 	}
 
-	if (fixup_get_svalue(msg, (gparam_p)gp_ip_b, &card_ip_b) != 0) {
-		LM_ERR("failed to get fixup value for callee: bad pvar\n");
-		return SNGTC_ERR;
-	}
+	card_ip_b = *gp_ip_b;
 
 out:
 	return sngtc_callee_answer(msg);
@@ -1317,7 +1282,7 @@ static int sngtc_callee_answer(struct sip_msg *msg)
 
 	/* perform all 200 OK SDP changes and pre-compute the ACK SDP body */
 	rc = process_session(msg, info, &caller_sdp, &dst, sdp.sessions,
-	                     msg->sdp->sessions);
+	                     get_sdp(msg)->sessions);
 	if (rc != 0) {
 		LM_ERR("failed to rewrite SDP bodies of the endpoints\n");
 		goto out_free;
@@ -1342,7 +1307,7 @@ static int sngtc_callee_answer(struct sip_msg *msg)
 	lock_release(&info->lock);
 
 	if (sdp.sessions)
-		__free_sdp(&sdp);
+		free_sdp_content(&sdp);
 
 	return 1;
 
@@ -1351,7 +1316,7 @@ out_free:
 	lock_release(&info->lock);
 
 	if (sdp.sessions)
-		__free_sdp(&sdp);
+		free_sdp_content(&sdp);
 
 	return rc;
 }

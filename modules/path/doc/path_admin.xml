@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 		<title>Overview</title>
 		<para>
 		This module is designed to be used at intermediate sip proxies like loadbalancers in front of
@@ -65,7 +65,7 @@
 		</section>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -97,9 +97,9 @@
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_use_received" xreflabel="use_received">
 		<title><varname>use_received</varname> (int)</title>
 		<para>
 		If set to 1, the <quote>received</quote> parameter of the first Route &uri; is evaluated and
@@ -119,7 +119,7 @@ modparam("path", "use_received", 1)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_enable_double_path" xreflabel="enable_double_path">
 		<title><varname>enable_double_path</varname> (integer)</title>
 		<para>
 		There are some situations when the server needs to insert two 
@@ -145,36 +145,11 @@ modparam("path", "enable_double_path", 0)
 
 	</section>
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_add_path" xreflabel="add_path()">
 		<title>
-		<function moreinfo="none">add_path()</function>
-		</title>
-		<para>
-		This function is used to insert a Path header in the form 
-		<quote>Path: &lt;sip:1.2.3.4;lr&gt;</quote>, where <quote>1.2.3.4</quote> is the address
-		of the outgoing interface.
-		</para>
-		<para>
-		This function can be used from REQUEST_ROUTE.
-		</para>
-		<example>
-		<title><function>add_path</function> usage</title>
-		<programlisting format="linespecific">
-...
-if (!add_path()) {
-	sl_send_reply("503", "Internal Path Error");
-	...
-};
-...
-</programlisting>
-		</example>
-	</section>
-
-	<section>
-		<title>
-		<function moreinfo="none">add_path(user)</function>
+		<function moreinfo="none">add_path([user])</function>
 		</title>
 		<para>
 		This function adds a Path header in the form 
@@ -184,7 +159,8 @@ if (!add_path()) {
 		<itemizedlist>
 		<listitem>
 			<para>
-			<emphasis>user</emphasis> - The username to be inserted as user part.
+			<emphasis>user</emphasis> (string, optional) -
+			The username to be inserted as user part.
 			</para>
 		</listitem>
 		</itemizedlist>
@@ -196,7 +172,7 @@ if (!add_path()) {
 		<programlisting format="linespecific">
 ...
 if (!add_path("loadbalancer")) {
-	sl_send_reply("503", "Internal Path Error");
+	sl_send_reply(503, "Internal Path Error");
 	...
 };
 ...
@@ -204,35 +180,9 @@ if (!add_path("loadbalancer")) {
 		</example>
 	</section>
 
-	<section>
+	<section id="func_add_path_received" xreflabel="add_path_received()">
 		<title>
-		<function moreinfo="none">add_path_received()</function>
-		</title>
-		<para>
-		This function adds a Path header in the form 
-		<quote>Path: &lt;sip:1.2.3.4;received=sip:2.3.4.5:1234;lr&gt;</quote>, setting it's own 
-		outgoing address as domain-part, and the address the request has been received from as
-		received-parameter.
-		</para>
-		<para>
-		This function can be used from REQUEST_ROUTE.
-		</para>
-		<example>
-		<title><function>add_path_received()</function> usage</title>
-		<programlisting format="linespecific">
-...
-if (!add_path_received()) {
-	sl_send_reply("503", "Internal Path Error");
-	...
-};
-...
-</programlisting>
-		</example>
-	</section>
-
-	<section>
-		<title>
-		<function moreinfo="none">add_path_received(user)</function>
+		<function moreinfo="none">add_path_received([user])</function>
 		</title>
 		<para>
 		This function adds a Path header in the form 
@@ -241,6 +191,15 @@ if (!add_path_received()) {
 		outgoing address as domain-part, and the address the request has been received from as
 		received-parameter.
 		</para>
+		<para>Meaning of the parameters is as follows:</para>
+		<itemizedlist>
+		<listitem>
+			<para>
+			<emphasis>user</emphasis> (string, optional) -
+			The username to be inserted as user part.
+			</para>
+		</listitem>
+		</itemizedlist>
 		<para>
 		This function can be used from REQUEST_ROUTE.
 		</para>
@@ -249,7 +208,7 @@ if (!add_path_received()) {
 		<programlisting format="linespecific">
 ...
 if (!add_path_received("inbound")) {
-	sl_send_reply("503", "Internal Path Error");
+	sl_send_reply(503, "Internal Path Error");
 	...
 };
 ...

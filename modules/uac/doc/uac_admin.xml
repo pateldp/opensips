@@ -5,7 +5,7 @@
 	<title>&adminguide;</title>
 
 
-	<section>
+	<section id="overview" xreflabel="Overview">
 		<title>Overview</title>
 		<para>
 		UAC (User Agent Client) module provides some basic UAC
@@ -34,7 +34,7 @@
 		</itemizedlist>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 		<title>Dependencies</title>
 		<section>
 			<title>&osips; Modules</title>
@@ -83,10 +83,10 @@
 		</section>
 	</section>
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 		<title>Exported Parameters</title>
 	
-		<section>
+		<section id="param_restore_mode" xreflabel="restore_mode">
 			<title><varname>restore_mode</varname> (string)</title>
 			<para>
 			There are 3 mode of restoring the original headers (FROM/TO) URI:
@@ -129,7 +129,7 @@ modparam("uac","restore_mode","auto")
 			</example>
 		</section>
 
-		<section>
+		<section id="param_restore_passwd" xreflabel="restore_passwd">
 			<title><varname>restore_passwd</varname> (string)</title>
 			<para>
 			String password to be used to encrypt the RR storing parameter
@@ -151,7 +151,7 @@ modparam("uac","restore_passwd","my_secret_passwd")
 			</example>
 		</section>
 
-		<section>
+		<section id="param_rr_from_store_param" xreflabel="rr_from_store_param">
 			<title><varname>rr_from_store_param</varname> (string)</title>
 			<para>
 			Name of Record-Route header parameter that will be used to store 
@@ -173,7 +173,7 @@ modparam("uac","rr_from_store_param","my_Fparam")
 				</example>
 		</section>
 
-		<section>
+		<section id="param_rr_to_store_param" xreflabel="rr_to_store_param">
 			<title><varname>rr_to_store_param</varname> (string)</title>
 			<para>
 			Name of Record-Route header parameter that will be used to store 
@@ -195,7 +195,7 @@ modparam("uac","rr_to_store_param","my_Tparam")
 			</example>
 		</section>
 
-		<section id="force_dialog">
+		<section id="param_force_dialog" xreflabel="force_dialog">
 			<title><varname>force_dialog</varname> (int)</title>
 			<para>
 				Force create dialog if it is not created from the configuration script.
@@ -215,21 +215,21 @@ modparam("uac", "force_dialog", yes)
 	</section>
 
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 		<title>Exported Functions</title>
 
-		<section>
+		<section id="func_uac_replace_from" xreflabel="uac_replace_from()">
 			<title>
-				<function moreinfo="none">uac_replace_from(display,uri)</function>
-				<function moreinfo="none">uac_replace_to(display,uri)</function>
+				<function moreinfo="none">uac_replace_from([display],uri)</function>
+				<function moreinfo="none">uac_replace_to([display],uri)</function>
 			</title>
 			<para>
-			Replace in FROM/TO header the <emphasis>display</emphasis> name and
+			Replace in FROM/TO header the <emphasis>display</emphasis> name or/and
 			the <emphasis>URI</emphasis> part.
 			</para>
 			<para>
-			<emphasis>display</emphasis> and <emphasis>URI</emphasis> 
-			parameters can include pseudo-variables.
+			Both parameters are string. The <emphasis>display</emphasis> is optional.
+			If missing, only the URI will be changed in the message.
 			</para>
 			<para>
 			IMPORTANT: calling the function more than once per branch will lead
@@ -248,44 +248,21 @@ modparam("uac", "force_dialog", yes)
 				<programlisting format="linespecific">
 ...
 # replace both display and uri
-uac_replace_from("$avp(display)","$avp(uri)");
+uac_replace_from($avp(display),$avp(uri));
 # replace only display and do not touch uri
 uac_replace_from("batman","");
 # remove display and replace uri
 uac_replace_from("","sip:robin@gotham.org");
 # remove display and do not touch uri
 uac_replace_from("","");
+# replace the URI without touching the display
+uac_replace_from( , "sip:batman@gotham.org");
 ...
 				</programlisting>
 			</example>
 		</section>
 
-		<section>
-			<title>
-				<function moreinfo="none">uac_replace_from(uri)</function>
-				<function moreinfo="none">uac_replace_to(uri)</function>
-			</title>
-			<para>
-				Replace in FROM/TO header the <emphasis>URI</emphasis> part
-				without altering the display name.
-			</para>
-			<para>
-			<emphasis>URI</emphasis> parameter can include pseudo-variables.
-			</para>
-			<para>
-			This function can be used from REQUEST_ROUTE.
-			</para>
-			<example>
-				<title><function>uac_replace_from</function>/<function>uac_replace_to</function> usage</title>
-				<programlisting format="linespecific">
-...
-uac_replace_from("sip:batman@gotham.org");
-...
-				</programlisting>
-			</example>
-		</section>
-
-		<section>
+		<section id="func_uac_restore_from" xreflabel="uac_restore_from()">
 			<title>
 				<function moreinfo="none">uac_restore_from()</function>
 				<function moreinfo="none">uac_restore_to()</function>
@@ -313,7 +290,7 @@ uac_restore_from();
 			</example>
 		</section>
 
-		<section>
+		<section id="func_uac_auth" xreflabel="uac_auth()">
 			<title>
 				<function moreinfo="none">uac_auth()</function>
 			</title>

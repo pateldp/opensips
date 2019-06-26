@@ -17,11 +17,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  *
- * History:
- * --------
- *  2009-02-01 initial version (bogdan)
  */
 
 #include "../../sr_module.h"
@@ -30,7 +27,6 @@
 #include "../../error.h"
 #include "../../timer.h"
 #include "../../ut.h"
-#include "../../mod_fix.h"
 #include "../../rw_locking.h"
 #include "../../usr_avp.h"
 #include "../dialog/dlg_load.h"
@@ -40,7 +36,7 @@
 #include "lb_parser.h"
 #include "lb_db.h"
 #include "lb_data.h"
-#include "lb_replication.h"
+#include "lb_clustering.h"
 #include "lb_prober.h"
 #include "lb_bl.h"
 
@@ -88,73 +84,76 @@ int mask_avp_name;
 int id_avp_name;
 int res_avp_name;
 
+mi_response_t *mi_lb_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *mi_lb_resize(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *mi_lb_list(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *mi_lb_status(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *mi_lb_status_1(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 
+static int fixup_resources(void** param);
+static int fixup_free_resources(void** param);
 
-static struct mi_root* mi_lb_reload(struct mi_root *cmd_tree, void *param);
-static struct mi_root* mi_lb_resize(struct mi_root *cmd_tree, void *param);
-static struct mi_root* mi_lb_list(struct mi_root *cmd_tree, void *param);
-static struct mi_root* mi_lb_status(struct mi_root *cmd_tree, void *param);
-
-static int fixup_resources(void** param, int param_no);
-static int fixup_is_dst(void** param, int param_no);
-static int fixup_cnt_call(void** param, int param_no);
-
-static int w_lb_start(struct sip_msg *req, char *grp, char *rl, char *fl);
+static int w_lb_start(struct sip_msg *req, int *grp_no,
+				struct lb_res_str_list *lb_rl, str *flstr);
 static int w_lb_next(struct sip_msg *req);
-static int w_lb_start_or_next(struct sip_msg *req,char *grp,char *rl,char *fl);
+static int w_lb_start_or_next(struct sip_msg *req,void *grp,void *rl,void *fl);
 static int w_lb_reset(struct sip_msg *req);
 static int w_lb_is_started(struct sip_msg *req);
 static int w_lb_disable_dst(struct sip_msg *req);
-static int w_lb_is_dst2(struct sip_msg *msg, char *ip, char *port);
-static int w_lb_is_dst3(struct sip_msg *msg, char *ip, char *port, char *grp);
-static int w_lb_is_dst4(struct sip_msg *msg, char *ip, char *port, char *grp,
-		char *active);
-static int w_lb_count_call(struct sip_msg *req, char *ip, char *port, char *grp,
-		char *rl, char *dir);
+static int w_lb_is_dst(struct sip_msg *msg,str *ip,int *port,int *group,
+					int *active);
+static int w_lb_count_call(struct sip_msg *req, str *ip_str, int *port, char *grp,
+					struct lb_res_str_list *lb_rl, int *dir);
 
 
 static void lb_prob_handler(unsigned int ticks, void* param);
 
 static void lb_update_max_loads(unsigned int ticks, void *param);
 
-void receive_lb_binary_packet(enum clusterer_event ev, bin_packet_t *packet, int packet_type,
-				struct receive_info *ri, int cluster_id, int src_id, int dest_id);
-
-
 static cmd_export_t cmds[]={
-	{"lb_start",         (cmd_function)w_lb_start,         2, fixup_resources,
-		0, REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
-	{"lb_start",         (cmd_function)w_lb_start,         3, fixup_resources,
-		0, REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
-	{"load_balance",    (cmd_function)w_lb_start_or_next,  2, fixup_resources,
-		0, REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
-	{"load_balance",    (cmd_function)w_lb_start_or_next,  3, fixup_resources,
-		0, REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
-	{"lb_start_or_next",(cmd_function)w_lb_start_or_next,  2, fixup_resources,
-		0, REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
-	{"lb_start_or_next",(cmd_function)w_lb_start_or_next,  3, fixup_resources,
-		0, REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
-	{"lb_next",          (cmd_function)w_lb_next,          0,               0,
-		0, REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
-	{"lb_reset",         (cmd_function)w_lb_reset,         0,               0,
-		0, REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
-	{"lb_is_started",    (cmd_function)w_lb_is_started,    0,               0,
-		0, REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
-	{"lb_disable_dst",   (cmd_function)w_lb_disable_dst,   0,               0,
-		0, REQUEST_ROUTE|FAILURE_ROUTE},
-	{"lb_is_destination",(cmd_function)w_lb_is_dst2,       2,    fixup_is_dst,
-		0, REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"lb_is_destination",(cmd_function)w_lb_is_dst3,       3,    fixup_is_dst,
-		0, REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"lb_is_destination",(cmd_function)w_lb_is_dst4,       4,    fixup_is_dst,
-		0, REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"lb_count_call",    (cmd_function)w_lb_count_call,    4,  fixup_cnt_call,
-		0, REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
-	{"lb_count_call",    (cmd_function)w_lb_count_call,    5,  fixup_cnt_call,
-		0, REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
-	{0,0,0,0,0,0}
-	};
-
+	{"lb_start", (cmd_function)w_lb_start, {
+		{CMD_PARAM_INT,0,0},
+		{CMD_PARAM_STR, fixup_resources, fixup_free_resources},
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
+	{"load_balance", (cmd_function)w_lb_start_or_next, {
+		{CMD_PARAM_INT,0,0},
+		{CMD_PARAM_STR, fixup_resources, fixup_free_resources},
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
+	{"lb_start_or_next", (cmd_function)w_lb_start_or_next, {
+		{CMD_PARAM_INT,0,0},
+		{CMD_PARAM_STR, fixup_resources, fixup_free_resources},
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
+	{"lb_next", (cmd_function)w_lb_next, {{0,0,0}},
+		REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
+	{"lb_reset", (cmd_function)w_lb_reset, {{0,0,0}},
+		REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
+	{"lb_is_started", (cmd_function)w_lb_is_started, {{0,0,0}},
+		REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
+	{"lb_disable_dst", (cmd_function)w_lb_disable_dst, {{0,0,0}},
+		REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
+	{"lb_is_destination",(cmd_function)w_lb_is_dst, {
+		{CMD_PARAM_STR,0,0},
+		{CMD_PARAM_INT,0,0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
+	{"lb_count_call",    (cmd_function)w_lb_count_call, {
+		{CMD_PARAM_STR,0,0},
+		{CMD_PARAM_INT,0,0},
+		{CMD_PARAM_INT,0,0},
+		{CMD_PARAM_STR, fixup_resources, fixup_free_resources},
+		{CMD_PARAM_INT|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
+	{0,0,{{0,0,0}},0}
+};
 
 static param_export_t mod_params[]={
 	{ "db_url",                STR_PARAM, &db_url.s                 },
@@ -165,29 +164,34 @@ static param_export_t mod_params[]={
 	{ "probing_from",          STR_PARAM, &lb_probe_from.s          },
 	{ "probing_reply_codes",   STR_PARAM, &lb_probe_replies.s       },
 	{ "lb_define_blacklist",   STR_PARAM|USE_FUNC_PARAM, (void*)set_lb_bl},
-	{ "accept_replicated_status",INT_PARAM, &accept_replicated_status },
-	{ "replicate_status_to",     INT_PARAM, &replicated_status_cluster },
-	{ "fetch_freeswitch_stats",  INT_PARAM, &fetch_freeswitch_stats},
-	{ "initial_freeswitch_load", INT_PARAM, &initial_fs_load},
+	{ "cluster_id",            INT_PARAM, &lb_cluster_id            },
+	{ "cluster_sharing_tag",   STR_PARAM, &lb_cluster_shtag         },
+	{ "fetch_freeswitch_stats",  INT_PARAM, &fetch_freeswitch_stats },
+	{ "initial_freeswitch_load", INT_PARAM, &initial_fs_load        },
 	{ 0,0,0 }
 };
 
 
 static mi_export_t mi_cmds[] = {
-	{ "lb_reload",   0, mi_lb_reload,   MI_NO_INPUT_FLAG,   0,  mi_child_init},
-	{ "lb_resize",   0, mi_lb_resize,   0,                  0,  0},
-	{ "lb_list",     0, mi_lb_list,     MI_NO_INPUT_FLAG,   0,  0},
-	{ "lb_status",   0, mi_lb_status,   0,                  0,  0},
-	{ 0, 0, 0, 0, 0, 0}
+	{ "lb_reload", 0, 0, mi_child_init, {
+		{mi_lb_reload, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ "lb_resize", 0, 0, 0, {
+		{mi_lb_resize, {"destination_id", "res_name", "new_capacity", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ "lb_list", 0, 0, 0, {
+		{mi_lb_list, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ "lb_status", 0, 0, 0, {
+		{mi_lb_status, {"destination_id", 0}},
+		{mi_lb_status_1, {"destination_id", "new_status", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
-
-static module_dependency_t *get_deps_clusterer(param_export_t *param)
-{
-	int cluster_id = *(int *)param->param_pointer;
-	if (cluster_id <= 0)
-		return NULL;
-	return alloc_module_dep(MOD_TYPE_DEFAULT, "clusterer", DEP_ABORT);
-}
 
 static module_dependency_t *get_deps_probing_interval(param_export_t *param)
 {
@@ -214,8 +218,7 @@ static dep_export_t deps = {
 	{ /* modparam dependencies */
 		{ "probing_interval", get_deps_probing_interval },
 		{ "fetch_freeswitch_stats", get_deps_fetch_fs_load },
-		{ "accept_replicated_status", get_deps_clusterer},
-		{ "replicate_status_to", get_deps_clusterer},
+		{ "cluster_id", get_deps_clusterer},
 		{ NULL, NULL },
 	},
 };
@@ -225,6 +228,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,            /* exported functions */
 	0,               /* exported async functions */
@@ -237,7 +241,8 @@ struct module_exports exports= {
 	mod_init,        /* module initialization function */
 	0,               /* reply processing function */
 	mod_destroy,
-	child_init       /* per-child init function */
+	child_init,      /* per-child init function */
+	0                /* reload confirm function */
 };
 
 
@@ -247,138 +252,32 @@ struct lb_grp_param {
 };
 
 
-static int fixup_resources(void** param, int param_no)
+static int fixup_resources(void** param)
 {
 	struct lb_res_str_list *lb_rl;
-	struct lb_grp_param *lbgp;
-	struct lb_res_parse *lbp;
-	pv_elem_t *model=NULL;
 	str s;
 
-	if (param_no==1) {
+	if (pkg_nt_str_dup(&s, (str*)*param) < 0)
+		return E_OUT_OF_MEM;
 
-		lbgp = (struct lb_grp_param *)pkg_malloc(sizeof(struct lb_grp_param));
-		if (lbgp==NULL) {
-			LM_ERR("no more pkg mem\n");
-			return E_OUT_OF_MEM;
-		}
-		/* try first as number */
-		s.s = (char*)*param;
-		s.len = strlen(s.s);
-		if (str2int(&s, (unsigned int*)&lbgp->grp_no)==0) {
-			lbgp->grp_pv = NULL;
-			pkg_free(*param);
-		} else {
-			lbgp->grp_pv = (pv_spec_t*)pkg_malloc(sizeof(pv_spec_t));
-			if (lbgp->grp_pv==NULL) {
-				LM_ERR("no pkg memory left\n");
-				return E_OUT_OF_MEM;
-			}
-			if (pv_parse_spec(&s, lbgp->grp_pv)==0 ||
-			lbgp->grp_pv->type==PVT_NULL) {
-				LM_ERR("%s is not integer nor PV !\n", (char*)*param);
-				return E_UNSPEC;
-			}
-		}
-		*param=(void *)(unsigned long)lbgp;
-		return 0;
-
-	} else if (param_no==2) {
-
-		/* parameter is string (semi-colon separated list)
-		 * of needed resources */
-		lbp = (struct lb_res_parse *)pkg_malloc(sizeof(struct lb_res_parse));
-		if (!lbp) {
-			LM_ERR("no more pkg mem\n");
-			return E_OUT_OF_MEM;
-		}
-		s.s = (char*)*param;
-		s.len = strlen(s.s);
-
-		if(pv_parse_format(&s ,&model) || model==NULL) {
-			LM_ERR("wrong format [%s] in resource list!\n", s.s);
-			return E_CFG;
-		}
-		/* check if there is any pv in string */
-		if (!model->spec.getf && !model->next)
-			lbp->type = RES_TEXT;
-		else
-			lbp->type = RES_ELEM;
-
-		if (lbp->type & RES_TEXT) {
-			lb_rl = parse_resources_list( (char *)(*param), 0);
-			if (lb_rl==NULL) {
-				LM_ERR("invalid parameter %s\n",(char *)(*param));
-				return E_CFG;
-			}
-			pkg_free(*param);
-			lbp->param = (void*)(unsigned long)lb_rl;
-		} else {
-			lbp->param = (void*)(unsigned long)model;
-		}
-		*param = (void *)(unsigned long)lbp;
-		return 0;
-
-	} else if (param_no==3) {
-		/* string with flags */
-		return fixup_sgp(param);
-
+	lb_rl = parse_resources_list(s.s, 0);
+	if (lb_rl==NULL) {
+		LM_ERR("invalid parameter %s\n", s.s);
+		return E_CFG;
 	}
 
-	LM_CRIT("error - wrong params count (%d)\n",param_no);
-	return -1;
+	pkg_free(s.s);
+
+	*param = lb_rl;
+	return 0;
 }
 
-
-static int fixup_is_dst(void** param, int param_no)
+static int fixup_free_resources(void** param)
 {
-	if (param_no==1) {
-		/* the ip to test */
-		return fixup_pvar(param);
-	} else if (param_no==2) {
-		/* the port to test */
-		if (*param==NULL) {
-			return 0;
-		} else if ( *((char*)*param)==0 ) {
-			pkg_free(*param);
-			*param = NULL;
-			return 0;
-		}
-		return fixup_igp(param);
-	} else if (param_no==3) {
-		/* the group to check in */
-		return fixup_igp(param);
-	} else if (param_no==4) {
-		/*  active only check ? */
-		return fixup_uint(param);
-	} else {
-		LM_CRIT("bug - too many params (%d) in lb_is_dst()\n",param_no);
-		return -1;
-	}
+	pkg_free(*param);
+	return 0;
 }
 
-
-static int fixup_cnt_call(void** param, int param_no)
-{
-	if (param_no==1)
-		/* IP */
-		return fixup_is_dst(param, 1);
-	if (param_no==2)
-		/* port */
-		return fixup_is_dst(param, 2);
-	if (param_no==3)
-		/* group id */
-		return fixup_resources(param, 1);
-	if (param_no==4)
-		/* resources */
-		return fixup_resources(param, 2);
-	if (param_no==5)
-		/* count or un-count */
-		return fixup_uint(param);
-
-	LM_CRIT("error - wrong params count (%d)\n",param_no);
-	return -1;
-}
 
 static void lb_inherit_state(struct lb_data *old_data,struct lb_data *new_data)
 {
@@ -519,7 +418,7 @@ static int mod_init(void)
 		/* Register the max load recalculation timer */
 		if (fetch_freeswitch_stats &&
 		    register_timer("lb-update-max-load", lb_update_max_loads, NULL,
-		                   FS_HEARTBEAT_ITV, TIMER_FLAG_SKIP_ON_DELAY)<0) {
+		           fs_api.stats_update_interval, TIMER_FLAG_SKIP_ON_DELAY)<0) {
 			LM_ERR("failed to register timer for max load recalc!\n");
 			return -1;
 		}
@@ -562,22 +461,8 @@ static int mod_init(void)
 		return -1;
 	}
 
-	if (replicated_status_cluster < 0) {
-		LM_ERR("Invalid replicated_status_cluster, must be 0 or "
-			"a positive cluster id\n");
-		return -1;
-	}
-
-	if( (replicated_status_cluster > 0 || accept_replicated_status > 0)
-		&& load_clusterer_api(&clusterer_api)!=0) {
-		LM_DBG("failed to find clusterer API - is clusterer module loaded?\n");
-		return -1;
-	}
-
-	/* register handler for processing load_balancer replication packets to the clusterer module */
-	if (accept_replicated_status > 0 && clusterer_api.register_module(repl_lb_module_name.s,
-		receive_lb_binary_packet, 1, &accept_replicated_status, 1) < 0) {
-		LM_ERR("cannot register binary packet callback to clusterer module!\n");
+	if (lb_cluster_id>0 && lb_init_cluster()<0) {
+		LM_ERR("failed to initialized the clustering support\n");
 		return -1;
 	}
 
@@ -640,58 +525,15 @@ static int w_lb_next(struct sip_msg *req)
 }
 
 
-static int w_lb_start(struct sip_msg *req, char *grp, char *rl, char *fl)
+static int w_lb_start(struct sip_msg *req, int *grp_no,
+				struct lb_res_str_list *lb_rl, str *flstr)
 {
 	int ret;
-
-	int grp_no;
-	struct lb_grp_param *lbgp = (struct lb_grp_param *)grp;
-	pv_value_t val;
-
-	struct lb_res_str_list *lb_rl;
-	struct lb_res_parse *lbp;
-	pv_elem_t *model;
-	str dest;
-
-	str flstr = {0,0};
 	int flags=LB_FLAGS_DEFAULT;
 	char *f;
 
-	if (lbgp->grp_pv) {
-		if (pv_get_spec_value( req, (pv_spec_p)lbgp->grp_pv, &val)!=0) {
-			LM_ERR("failed to get PV value\n");
-			return -1;
-		}
-		if ( (val.flags&PV_VAL_INT)==0 ) {
-			LM_ERR("PV vals is not integer\n");
-			return -1;
-		}
-		grp_no = val.ri;
-	} else {
-		grp_no = lbgp->grp_no;
-	}
-
-	lbp = (struct lb_res_parse *)rl;
-	if (lbp->type & RES_ELEM) {
-		model = (pv_elem_p)lbp->param;
-		if (pv_printf_s(req, model, &dest) || dest.len <= 0) {
-			LM_ERR("cannot create resource string\n");
-			return -1;
-		}
-		lb_rl = parse_resources_list(dest.s, 0);
-		if (!lb_rl) {
-			LM_ERR("cannot create resource list\n");
-			return -1;
-		}
-	} else
-		lb_rl = (struct lb_res_str_list *)lbp->param;
-
-	if( fl ) {
-		if( fixup_get_svalue(req, (gparam_p)fl, &flstr) != 0 ) {
-			LM_ERR("failed to extract flags\n");
-			return -1;
-		}
-		for( f=flstr.s ; f<flstr.s+flstr.len ; f++ ) {
+	if( flstr ) {
+		for( f=flstr->s ; f<flstr->s+flstr->len ; f++ ) {
 			switch( *f ) {
 				case 'r':
 					flags |= LB_FLAGS_RELATIVE;
@@ -714,12 +556,9 @@ static int w_lb_start(struct sip_msg *req, char *grp, char *rl, char *fl)
 	lock_start_read( ref_lock );
 
 	/* do lb */
-	ret = do_lb_start(req, grp_no, lb_rl, flags, *curr_data);
+	ret = do_lb_start(req, *grp_no, lb_rl, flags, *curr_data);
 
 	lock_stop_read( ref_lock );
-
-	if (lbp->type & RES_ELEM)
-		pkg_free(lb_rl);
 
 	if (ret<0)
 		return ret;
@@ -727,7 +566,7 @@ static int w_lb_start(struct sip_msg *req, char *grp, char *rl, char *fl)
 }
 
 
-static int w_lb_start_or_next(struct sip_msg *req,char *grp,char *rl,char *fl)
+static int w_lb_start_or_next(struct sip_msg *req,void *grp,void *rl,void *fl)
 {
 	return (do_lb_is_started(req) > 0) ?
 		w_lb_next(req) :
@@ -783,13 +622,15 @@ static int w_lb_disable_dst(struct sip_msg *req)
 }
 
 
-static int w_lb_is_dst2(struct sip_msg *msg, char *ip, char *port)
+static int w_lb_is_dst(struct sip_msg *msg,str *ip,int *port,int *group,
+															int *active)
 {
 	int ret;
 
 	lock_start_read( ref_lock );
 
-	ret = lb_is_dst(*curr_data, msg, (pv_spec_t*)ip, (gparam_t*)port, -1, 0);
+	ret = lb_is_dst(*curr_data, msg, ip, *port,
+	                group ? *group : -1, active ? *active : 0);
 
 	lock_stop_read( ref_lock );
 
@@ -799,113 +640,23 @@ static int w_lb_is_dst2(struct sip_msg *msg, char *ip, char *port)
 }
 
 
-static int w_lb_is_dst3(struct sip_msg *msg,char *ip,char *port,char *grp)
+static int w_lb_count_call(struct sip_msg *req, str *ip_str, int *port, char *grp,
+					struct lb_res_str_list *lb_rl, int *dir)
 {
-	return w_lb_is_dst4(msg, ip, port, grp, 0);
-}
-
-
-static int w_lb_is_dst4(struct sip_msg *msg,char *ip,char *port,char *grp,
-															char *active)
-{
-	int ret, group;
-
-	if (fixup_get_ivalue(msg, (gparam_p)grp, &group) != 0) {
-		LM_ERR("Invalid lb group pseudo variable!\n");
-		return -1;
-	}
-
-	lock_start_read( ref_lock );
-
-	ret = lb_is_dst(*curr_data, msg, (pv_spec_t*)ip, (gparam_t*)port,
-	                group, active ? (int)*(unsigned int *)active : 0);
-
-	lock_stop_read( ref_lock );
-
-	if (ret<0)
-		return ret;
-	return 1;
-}
-
-
-static int w_lb_count_call(struct sip_msg *req, char *ip, char *port, char *grp,
-			char *rl, char *dir)
-{
-	struct lb_grp_param *lbgp = (struct lb_grp_param *)grp;
-	struct lb_res_str_list *lb_rl;
-	struct lb_res_parse *lbp;
 	struct ip_addr *ipa;
-	pv_value_t val;
-	pv_elem_t *model;
-	int grp_no;
-	int port_no;
-	str dest;
 	int ret;
 
-	/* get the ip address */
-	if (pv_get_spec_value( req, (pv_spec_t*)ip, &val)!=0) {
-		LM_ERR("failed to get IP value from PV\n");
+	if ( (ipa=str2ip(ip_str))==NULL && (ipa=str2ip6(ip_str))==NULL) {
+		LM_ERR("IP val is not IP <%.*s>\n",ip_str->len,ip_str->s);
 		return -1;
 	}
-	if ( (val.flags&PV_VAL_STR)==0 ) {
-		LM_ERR("IP PV val is not string\n");
-		return -1;
-	}
-	if ( (ipa=str2ip( &val.rs ))==NULL ) {
-		LM_ERR("IP val is not IP <%.*s>\n",val.rs.len,val.rs.s);
-		return -1;
-	}
-
-	/* get the port */
-	if (port) {
-		if (fixup_get_ivalue( req, (gparam_p)port, &port_no)!=0) {
-			LM_ERR("failed to get PORT value from PV\n");
-			return -1;
-		}
-	} else {
-		port_no = 0;
-	}
-
-	/* get the group */
-	if (lbgp->grp_pv) {
-		if (pv_get_spec_value( req, (pv_spec_p)lbgp->grp_pv, &val)!=0) {
-			LM_ERR("failed to get PV value\n");
-			return -1;
-		}
-		if ( (val.flags&PV_VAL_INT)==0 ) {
-			LM_ERR("PV vals is not integer\n");
-			return -1;
-		}
-		grp_no = val.ri;
-	} else {
-		grp_no = lbgp->grp_no;
-	}
-
-	/* get the resources list */
-	lbp = (struct lb_res_parse *)rl;
-	if (lbp->type & RES_ELEM) {
-		model = (pv_elem_p)lbp->param;
-		if (pv_printf_s(req, model, &dest) || dest.len <= 0) {
-			LM_ERR("cannot create resource string\n");
-			return -1;
-		}
-		lb_rl = parse_resources_list(dest.s, 0);
-		if (!lb_rl) {
-			LM_ERR("cannot create resource list\n");
-			return -1;
-		}
-	} else
-		lb_rl = (struct lb_res_str_list *)lbp->param;
 
 	lock_start_read( ref_lock );
 
-	ret = lb_count_call( *curr_data, req, ipa, port_no, grp_no, lb_rl,
-			dir ? (int)*(unsigned int *)dir : 0);
+	ret = lb_count_call( *curr_data, req, ipa, *port, *grp, lb_rl,
+			dir ? *dir : 0);
 
 	lock_stop_read( ref_lock );
-
-	if (lbp->type & RES_ELEM)
-		pkg_free(lb_rl);
 
 	if (ret<0)
 		return ret;
@@ -1000,7 +751,7 @@ static void lb_update_max_loads(unsigned int ticks, void *param)
 		if (!dst->fs_sock)
 			continue;
 
-		lock_start_read(dst->fs_sock->hb_data_lk);
+		lock_start_read(dst->fs_sock->stats_lk);
 		for (ri = 0; ri < dst->rmap_no; ri++) {
 			if (dst->rmap[ri].fs_enabled) {
 				psz = lb_dlg_binds.get_profile_size(
@@ -1012,32 +763,32 @@ static void lb_update_max_loads(unsigned int ticks, void *param)
 				 * of sessions as FreeSWITCH does. Any differences must be
 				 * subtracted from the remote "max sessions" value
 				 */
-				if (psz < dst->fs_sock->hb_data.max_sess) {
+				if (psz < dst->fs_sock->stats.max_sess) {
 					dst->rmap[ri].max_load =
-					(dst->fs_sock->hb_data.id_cpu / (float)100) *
-						(dst->fs_sock->hb_data.max_sess -
-						 (dst->fs_sock->hb_data.sess - psz));
+					(dst->fs_sock->stats.id_cpu / (float)100) *
+						(dst->fs_sock->stats.max_sess -
+						 (dst->fs_sock->stats.sess - psz));
 				} else {
 					dst->rmap[ri].max_load =
-					(dst->fs_sock->hb_data.id_cpu / (float)100) *
-						dst->fs_sock->hb_data.max_sess;
+					(dst->fs_sock->stats.id_cpu / (float)100) *
+						dst->fs_sock->stats.max_sess;
 				}
 				LM_DBG("load update on FS (%p) %s:%d: "
 				       "%d -> %d (%d %d %.3f), prof=%d\n",
 				       dst->fs_sock, dst->fs_sock->host.s, dst->fs_sock->port,
-				       old, dst->rmap[ri].max_load, dst->fs_sock->hb_data.sess,
-				       dst->fs_sock->hb_data.max_sess,
-				       dst->fs_sock->hb_data.id_cpu, psz);
+				       old, dst->rmap[ri].max_load, dst->fs_sock->stats.sess,
+				       dst->fs_sock->stats.max_sess,
+				       dst->fs_sock->stats.id_cpu, psz);
 			}
 		}
-		lock_stop_read(dst->fs_sock->hb_data_lk);
+		lock_stop_read(dst->fs_sock->stats_lk);
 	}
 	lock_stop_write(ref_lock);
 }
 
 /******************** MI commands ***********************/
-
-static struct mi_root* mi_lb_reload(struct mi_root *cmd_tree, void *param)
+mi_response_t *mi_lb_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
 	LM_INFO("\"lb_reload\" MI command received!\n");
 
@@ -1046,9 +797,9 @@ static struct mi_root* mi_lb_reload(struct mi_root *cmd_tree, void *param)
 		goto error;
 	}
 
-	return init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
+	return init_mi_result_ok();
 error:
-	return init_mi_tree( 500, "Failed to reload",16);
+	return init_mi_error( 500, MI_SSTR("Failed to reload"));
 }
 
 /*! \brief
@@ -1058,265 +809,244 @@ error:
  *        size (number)
  */
 
-static struct mi_root* mi_lb_resize(struct mi_root *cmd, void *param)
+mi_response_t *mi_lb_resize(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root *rpl_tree;
 	struct lb_dst *dst;
-	struct mi_node *node;
-	unsigned int  id, size;
-	str *name;
-	int n;
+	int n, size;
+	int id;
+	str name;
 
-	for( n=0,node = cmd->node.kids; n<3 && node ; n++,node=node->next );
-	if (n!=3 || node!=0)
-		return init_mi_tree( 400, MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
-
-	node = cmd->node.kids;
-
-	/* id (param 1) */
-	if (str2int( &node->value, &id) < 0)
-		goto bad_syntax;
-
-	/* resource (param 2) */
-	node = node->next;
-	name = &node->value;
-
-	/* id (param 3) */
-	node = node->next;
-	if (str2int( &node->value, &size) < 0)
-		goto bad_syntax;
+	if (get_mi_int_param(params, "destination_id", &id) < 0)
+		return init_mi_param_error();
+	if (get_mi_string_param(params, "res_name", &name.s, &name.len) < 0)
+		return init_mi_param_error();
+	if (get_mi_int_param(params, "destination_id", &size) < 0)
+		return init_mi_param_error();
 
 	lock_start_read( ref_lock );
 
 	/* get destination */
 	for( dst=(*curr_data)->dsts ; dst && dst->id!=id ; dst=dst->next);
 	if (dst==NULL) {
-		rpl_tree = init_mi_tree( 404, MI_SSTR("Destination ID not found"));
+		lock_stop_read( ref_lock );
+		return init_mi_error( 404, MI_SSTR("Destination ID not found"));
 	} else {
 		/* get resource */
 		for( n=0 ; n<dst->rmap_no ; n++)
-			if (dst->rmap[n].resource->name.len == name->len &&
-			memcmp( dst->rmap[n].resource->name.s, name->s, name->len)==0)
+			if (dst->rmap[n].resource->name.len == name.len &&
+			memcmp( dst->rmap[n].resource->name.s, name.s, name.len)==0)
 				break;
 		if (n==dst->rmap_no) {
-			rpl_tree = init_mi_tree( 404,
+			lock_stop_read( ref_lock );
+			return init_mi_error( 404,
 				MI_SSTR("Destination has no such resource"));
 		} else {
 			dst->rmap[n].max_load = size;
-			rpl_tree = init_mi_tree( 200, MI_SSTR(MI_OK_S));
 		}
 	}
 
 	lock_stop_read( ref_lock );
 
-	return rpl_tree;
-bad_syntax:
-	return init_mi_tree( 400, MI_SSTR(MI_BAD_PARM_S));
-
+	return init_mi_result_ok();
 }
 
 
-/*! \brief
- * Expects 2 nodes:
- *        destination ID (number)
- *        status (number)
- */
-
-static struct mi_root* mi_lb_status(struct mi_root *cmd, void *param)
+mi_response_t *mi_lb_status(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root *rpl_tree;
+	int id;
 	struct lb_dst *dst;
-	struct mi_node *node;
-	unsigned int  id, stat;
-	unsigned int old_flags;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
 
-	node = cmd->node.kids;
-	if (node==NULL)
-		return init_mi_tree( 400, MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return 0;
 
-	/* id (param 1) */
-	if (str2int( &node->value, &id) < 0)
-		return init_mi_tree( 400, MI_SSTR(MI_BAD_PARM_S));
+	if (get_mi_int_param(params, "destination_id", &id) < 0)
+		return init_mi_param_error();
 
 	lock_start_read( ref_lock );
 
-	/* status (param 2) */
-	node = node->next;
-	if (node == NULL) {
-		/* return the status -> find the destination */
-		for(dst=(*curr_data)->dsts; dst && dst->id!=id ;dst=dst->next);
-		if (dst==NULL) {
-			rpl_tree = init_mi_tree( 404,
-				MI_SSTR("Destination ID not found"));
-		} else {
-			rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-			if (rpl_tree!=NULL) {
-				if (dst->flags&LB_DST_STAT_DSBL_FLAG) {
-					node = add_mi_node_child( &rpl_tree->node, 0, "enable", 6,
-							"no", 2);
-				} else {
-					node = add_mi_node_child( &rpl_tree->node, 0, "enable", 6,
-							"yes", 3);
-				}
-				if (node==NULL) {free_mi_tree(rpl_tree); rpl_tree=NULL;}
-			}
-		}
+	for(dst=(*curr_data)->dsts; dst && dst->id!=id ;dst=dst->next);
+	if (dst==NULL) {
+		lock_stop_read( ref_lock );
+		return init_mi_error(404, MI_SSTR("Destination ID not found"));
 	} else {
-		/* set the status */
-		if (node->next) {
-			rpl_tree = init_mi_tree( 400,
-				MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
-		} else if (str2int( &node->value, &stat) < 0) {
-			rpl_tree = init_mi_tree( 400, MI_SSTR(MI_BAD_PARM_S));
+		if (dst->flags&LB_DST_STAT_DSBL_FLAG) {
+			if (add_mi_string(resp_obj, MI_SSTR("enable"), MI_SSTR("no")) < 0)
+				goto error;
 		} else {
-			/* find the destination */
-			for( dst=(*curr_data)->dsts ; dst && dst->id!=id ; dst=dst->next);
-			if (dst==NULL) {
-				rpl_tree =  init_mi_tree( 404,
-					MI_SSTR("Destination ID not found"));
-			} else {
-				/* set the disable/enable */
-				old_flags = dst->flags;
-				if (stat) {
-					dst->flags &=
-						~ (LB_DST_STAT_DSBL_FLAG|LB_DST_STAT_NOEN_FLAG);
-				} else {
-					dst->flags |=
-						LB_DST_STAT_DSBL_FLAG|LB_DST_STAT_NOEN_FLAG;
-				}
-				if (old_flags != dst->flags) {
-					lb_status_changed(dst);
-					if( lb_prob_verbose )
-						LM_INFO("manually %s destination %d <%.*s>\n",
-							(stat ? "enable" : "disable"),
-							dst->id, dst->uri.len, dst->uri.s
-						);
-				}
-				lock_stop_read( ref_lock );
-				return init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-			}
+			if (add_mi_string(resp_obj, MI_SSTR("enable"), MI_SSTR("yes")) < 0)
+				goto error;
 		}
 	}
 
 	lock_stop_read( ref_lock );
+	return resp;
 
-	return rpl_tree;
+error:
+	lock_stop_read( ref_lock );
+	free_mi_response(resp);
+	return 0;
+}
+
+mi_response_t *mi_lb_status_1(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	int id;
+	int stat;
+	unsigned int old_flags;
+	struct lb_dst *dst;
+
+	if (get_mi_int_param(params, "destination_id", &id) < 0)
+		return init_mi_param_error();
+	if (get_mi_int_param(params, "new_status", &stat) < 0)
+		return init_mi_param_error();
+
+	lock_start_read( ref_lock );
+
+	for( dst=(*curr_data)->dsts ; dst && dst->id!=id ; dst=dst->next);
+	if (dst==NULL) {
+		lock_stop_read( ref_lock );
+		return init_mi_error(404, MI_SSTR("Destination ID not found"));
+	} else {
+		/* set the disable/enable */
+		old_flags = dst->flags;
+		if (stat) {
+			dst->flags &=
+				~ (LB_DST_STAT_DSBL_FLAG|LB_DST_STAT_NOEN_FLAG);
+		} else {
+			dst->flags |=
+				LB_DST_STAT_DSBL_FLAG|LB_DST_STAT_NOEN_FLAG;
+		}
+		if (old_flags != dst->flags) {
+			lb_status_changed(dst);
+			if( lb_prob_verbose )
+				LM_INFO("manually %s destination %d <%.*s>\n",
+					(stat ? "enable" : "disable"),
+					dst->id, dst->uri.len, dst->uri.s
+				);
+		}
+	}
+
+	lock_stop_read( ref_lock );
+	return init_mi_result_ok();
 }
 
 
-
-
-static struct mi_root* mi_lb_list(struct mi_root *cmd_tree, void *param)
+mi_response_t *mi_lb_list(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root *rpl_tree;
-	struct mi_node *dst_node;
-	struct mi_node *node, *node1;
-	struct mi_attr *attr;
 	struct lb_dst *dst;
-	char *p;
-	int len;
 	int i;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	mi_item_t *dests_arr, *dest_item, *res_arr, *res_item;
 
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==NULL)
-		return NULL;
-	rpl_tree->node.flags |= MI_IS_ARRAY;
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return 0;
+
+	dests_arr = add_mi_array(resp_obj, MI_SSTR("Destinations"));
+	if (!dests_arr)
+		goto error;
 
 	lock_start_read( ref_lock );
 
 	/* go through all destination */
 	for( dst=(*curr_data)->dsts ; dst ; dst=dst->next) {
-		/* add a destination node */
-		dst_node = add_mi_node_child( &rpl_tree->node, 0, "Destination", 11,
-					dst->uri.s, dst->uri.len);
-		if (dst_node==0)
+		dest_item = add_mi_object(dests_arr, NULL, 0);
+		if (!dest_item)
 			goto error;
 
-		/* add some attributes to the destination node */
-		p= int2str((unsigned long)dst->id, &len);
-		attr = add_mi_attr( dst_node, MI_DUP_VALUE, "id", 2, p, len);
-		if (attr==0)
+		if (add_mi_string(dest_item, MI_SSTR("uri"), dst->uri.s, dst->uri.len) < 0)
 			goto error;
 
-		p= int2str((unsigned long)dst->group, &len);
-		attr = add_mi_attr( dst_node, MI_DUP_VALUE, "group", 5, p, len);
-		if (attr==0)
+		if (add_mi_number(dest_item, MI_SSTR("id"), dst->id) < 0)
+			goto error;
+
+		if (add_mi_number(dest_item, MI_SSTR("group"), dst->group) < 0)
 			goto error;
 
 		if (dst->flags&LB_DST_STAT_DSBL_FLAG) {
-			attr = add_mi_attr( dst_node, 0, "enabled", 7, "no", 2);
+			if (add_mi_string(dest_item, MI_SSTR("enabled"), MI_SSTR("no")) < 0)
+				goto error;
 		} else {
-			attr = add_mi_attr( dst_node, 0, "enabled", 7, "yes", 3);
+			if (add_mi_string(dest_item, MI_SSTR("enabled"), MI_SSTR("yes")) < 0)
+				goto error;
 		}
-		if (attr==0)
-			goto error;
 
 		if (dst->flags&LB_DST_STAT_NOEN_FLAG) {
-			attr = add_mi_attr( dst_node, 0, "auto-reenable", 13, "off", 3);
+			if (add_mi_string(dest_item, MI_SSTR("auto-reenable"),
+				MI_SSTR("off")) < 0)
+				goto error;
 		} else {
-			attr = add_mi_attr( dst_node, 0, "auto-reenable", 13, "on", 2);
+			if (add_mi_string(dest_item, MI_SSTR("auto-reenable"),
+				MI_SSTR("on")) < 0)
+				goto error;
 		}
-		if (attr==0)
-			goto error;
 
-		node = add_mi_node_child( dst_node, MI_IS_ARRAY, "Resources", 9, NULL, 0);
-		if (node==0)
+		res_arr = add_mi_array(resp_obj, MI_SSTR("Resources"));
+		if (!res_arr)
 			goto error;
 
 		/* go through all resources */
 		for( i=0 ; i<dst->rmap_no ; i++) {
-		/* add a resource node */
-			node1 = add_mi_node_child( node, 0, "Resource", 8,
-				dst->rmap[i].resource->name.s,dst->rmap[i].resource->name.len);
-			if (node1==0)
+			res_item = add_mi_object(res_arr, NULL, 0);
+			if (!res_item)
 				goto error;
 
-			/* add some attributes to the destination node */
-			p= int2str((unsigned long)dst->rmap[i].max_load, &len);
-			attr = add_mi_attr( node1, MI_DUP_VALUE, "max", 3, p, len);
-			if (attr==0)
+			if (add_mi_string(res_item, MI_SSTR("name"),
+				dst->rmap[i].resource->name.s,dst->rmap[i].resource->name.len) < 0)
 				goto error;
 
-			p= int2str((unsigned long)lb_dlg_binds.get_profile_size
-				(dst->rmap[i].resource->profile, &dst->profile_id), &len);
-			attr = add_mi_attr( node1, MI_DUP_VALUE, "load", 4, p, len);
-			if (attr==0)
+			if (add_mi_number(res_item, MI_SSTR("max"), dst->rmap[i].max_load) < 0)
+				goto error;
+
+			if (add_mi_number(res_item, MI_SSTR("load"),
+				lb_dlg_binds.get_profile_size
+				(dst->rmap[i].resource->profile, &dst->profile_id)) < 0)
 				goto error;
 		}
 	}
 
 	lock_stop_read( ref_lock );
-	return rpl_tree;
+	return resp;
+
 error:
 	lock_stop_read( ref_lock );
-	free_mi_tree(rpl_tree);
+	free_mi_response(resp);
 	return 0;
 }
 
 
-void receive_lb_binary_packet(enum clusterer_event ev, bin_packet_t *packet, int packet_type,
-				struct receive_info *ri, int cluster_id, int src_id, int dest_id)
+int lb_update_from_replication( unsigned int group, str *uri,
+														unsigned int flags)
 {
-	LM_DBG("received a binary packet [%d]!\n", packet_type);
+	struct lb_dst *dst;
 
-	if (ev == CLUSTER_NODE_DOWN || ev == CLUSTER_NODE_UP)
-		return;
-	else if (ev == CLUSTER_ROUTE_FAILED) {
-		LM_INFO("Failed to route replication packet of type %d from node id: %d "
-			"to node id: %d in cluster: %d\n", cluster_id, packet_type, src_id, dest_id);
-		return;
+	lock_start_read( ref_lock );
+
+	for( dst=(*curr_data)->dsts; dst; dst=dst->next ) {
+		if ( (dst->group == group) &&
+		(strncmp(dst->uri.s, uri->s, dst->uri.len) == 0)) {
+			if ((dst->flags&LB_DST_STAT_MASK) != flags) {
+				/* import the status flags */
+				dst->flags = ((~LB_DST_STAT_MASK)&dst->flags)|
+					(LB_DST_STAT_MASK&flags);
+				/* raise event of status change */
+				lb_raise_event(dst);
+				lock_stop_read( ref_lock );
+				return 0;
+			}
+		}
 	}
 
-	if(get_bin_pkg_version(packet) != BIN_VERSION) {
-		LM_ERR("incompatible bin protocol version\n");
-		return;
-	}
+	lock_stop_read( ref_lock );
 
-	if (packet_type == REPL_LB_STATUS_UPDATE) {
-		lock_start_read(ref_lock);
-		replicate_lb_status_update(packet, *curr_data);
-		lock_stop_read(ref_lock);
-	} else {
-		LM_ERR("invalid load_balancer binary packet type: %d\n", packet_type);
-	}
+	return -1;
 }
+
+

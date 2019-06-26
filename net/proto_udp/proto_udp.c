@@ -54,8 +54,8 @@ static int udp_port = SIP_PORT;
 
 
 static cmd_export_t cmds[] = {
-	{"proto_init", (cmd_function)proto_udp_init, 0, 0, 0, 0},
-	{0,0,0,0,0,0}
+	{"proto_init", (cmd_function)proto_udp_init, {{0,0,0}}, 0},
+	{0,0,{{0,0,0}},0}
 };
 
 
@@ -70,6 +70,7 @@ struct module_exports proto_udp_exports = {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,               /* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	cmds,       /* exported functions */
 	0,          /* exported async functions */
@@ -83,6 +84,7 @@ struct module_exports proto_udp_exports = {
 	0,          /* response function */
 	0,          /* destroy function */
 	0,          /* per-child init function */
+	0           /* reload confirm function */
 };
 
 
@@ -121,23 +123,11 @@ static int udp_read_req(struct socket_info *si, int* bytes_read)
 {
 	struct receive_info ri;
 	int len;
-#ifdef DYN_BUF
-	char* buf;
-#else
 	static char buf [BUF_SIZE+1];
-#endif
 	char *tmp;
 	unsigned int fromlen;
 	callback_list* p;
 	str msg;
-
-#ifdef DYN_BUF
-	buf=pkg_malloc(BUF_SIZE+1);
-	if (buf==0){
-		LM_ERR("could not allocate receive buffer\n");
-		goto error;
-	}
-#endif
 
 	fromlen=sockaddru_len(si->su);
 	len=recvfrom(bind_address->socket, buf, BUF_SIZE,0,&ri.src_su.s,&fromlen);
@@ -190,7 +180,7 @@ static int udp_read_req(struct socket_info *si, int* bytes_read)
 	}
 
 	/* receive_msg must free buf too!*/
-	receive_msg( msg.s, msg.len, &ri, NULL);
+	receive_msg( msg.s, msg.len, &ri, NULL, 0);
 
 	return 0;
 }

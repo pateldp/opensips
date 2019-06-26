@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para> 
 	The modules is an XCAP client for OpenSIPS that can be used by other modules.
@@ -34,7 +34,7 @@
 	</para>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -71,9 +71,9 @@
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_periodical_query" xreflabel="periodical_query">
 		<title><varname>periodical_query</varname>(int)</title>
 		<para>
 		A flag to disable periodical query as an update method for
@@ -98,7 +98,7 @@ modparam("xcap_client", "periodical_query", 0)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_query_period" xreflabel="query_period">
 		<title><varname>query_period</varname>(int)</title>
 		<para>
 		Should be set if periodical query is not disabled. 
@@ -123,16 +123,16 @@ modparam("xcap_client", "query_period", 50)
 	</section>
 	</section>
 
-<section>
+<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
 	<para>
 	None to be used in configuration file.
 	</para>
 </section>
 
-<section>
+<section id="exported_mi_functions" xreflabel="Exported MI Functions">
 	<title>Exported MI Functions</title>
-	<section>
+	<section id="mi_refreshXcapDoc" xreflabel="refreshXcapDoc">
 		<title>
 		<function moreinfo="none">refreshXcapDoc</function>
 		</title>
@@ -146,10 +146,10 @@ modparam("xcap_client", "query_period", 50)
 		<para>Parameters:</para>
 		<itemizedlist>
 			<listitem>
-				<para>document uri: the uri of the document</para>
+				<para>doc_uri: the uri of the document</para>
 			</listitem>
 			<listitem>
-				<para>xcap server port: the port of the xcap server</para>
+				<para>port: the port of the xcap server</para>
 			</listitem>
 		 </itemizedlist>
 
@@ -158,10 +158,7 @@ modparam("xcap_client", "query_period", 50)
 		</para>
         <programlisting  format="linespecific">
 ...
-:refreshXcapDoc:fifo_reply
-/xcap-root/resource-lists/users/eyebeam/buddies-resource-list.xml
-8000
-_empty_line_
+opensips-cli -x mi refreshXcapDoc /xcap-root/resource-lists/users/eyebeam/buddies-resource-list.xml 8000
 ...
 		</programlisting>
 	</section>

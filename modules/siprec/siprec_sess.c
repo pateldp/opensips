@@ -32,11 +32,11 @@ struct tm_binds srec_tm;
 struct dlg_binds srec_dlg;
 static str srec_dlg_name = str_init("siprecX_ctx");
 
-static struct src_sess *src_create_session(str *rtp, str *grp,
+static struct src_sess *src_create_session(str *rtp, str *m_ip, str *grp,
 		struct socket_info *si, int version, time_t ts, siprec_uuid *uuid)
 {
-	struct src_sess *ss = shm_malloc(sizeof *ss +
-			(rtp ? rtp->len : 0) + (grp ? grp->len : 0));
+	struct src_sess *ss = shm_malloc(sizeof *ss + (rtp ? rtp->len : 0) +
+			(m_ip ? m_ip->len : 0) + (grp ? grp->len : 0));
 	if (!ss) {
 		LM_ERR("not enough memory for creating siprec session!\n");
 		return NULL;
@@ -49,8 +49,17 @@ static struct src_sess *src_create_session(str *rtp, str *grp,
 		ss->rtpproxy.len = rtp->len;
 	}
 
+	if (m_ip) {
+		ss->media_ip.s = (char *)(ss + 1) + ss->rtpproxy.len;
+		memcpy(ss->media_ip.s, m_ip->s, m_ip->len);
+		ss->media_ip.len = m_ip->len;
+	} else {
+		ss->media_ip.s = NULL;
+		ss->media_ip.len = 0;
+	}
+
 	if (grp) {
-		ss->group.s = (char *)(ss + 1) + ss->rtpproxy.len;
+		ss->group.s = (char *)(ss + 1) + ss->rtpproxy.len + ss->media_ip.len;
 		memcpy(ss->group.s, grp->s, grp->len);
 		ss->group.len = grp->len;
 	}
@@ -66,7 +75,7 @@ static struct src_sess *src_create_session(str *rtp, str *grp,
 	return ss;
 }
 
-struct src_sess *src_new_session(str *srs, str *rtp, str *grp,
+struct src_sess *src_new_session(str *srs, str *rtp, str *m_ip, str *grp,
 		struct socket_info *si)
 {
 	struct src_sess *sess;
@@ -77,7 +86,7 @@ struct src_sess *src_new_session(str *srs, str *rtp, str *grp,
 	siprec_uuid uuid;
 	siprec_build_uuid(uuid);
 
-	sess = src_create_session(rtp, grp, si, 0, time(NULL), &uuid);
+	sess = src_create_session(rtp, m_ip, grp, si, 0, time(NULL), &uuid);
 	if (!sess)
 		return NULL;
 
@@ -123,6 +132,8 @@ void src_free_participant(struct src_part *part)
 	}
 	if (part->aor.s)
 		shm_free(part->aor.s);
+	if (part->xml_val.s)
+		shm_free(part->xml_val.s);
 }
 
 void src_unref_session(void *p)
@@ -154,7 +165,8 @@ void src_free_session(struct src_sess *sess)
 	shm_free(sess);
 }
 
-int src_add_participant(struct src_sess *sess, str *aor, str *name, siprec_uuid *uuid)
+int src_add_participant(struct src_sess *sess, str *aor, str *name,
+					str *xml_val, siprec_uuid *uuid)
 {
 	struct src_part *part;
 	if (sess->participants_no >= SRC_MAX_PARTICIPANTS) {
@@ -169,24 +181,37 @@ int src_add_participant(struct src_sess *sess, str *aor, str *name, siprec_uuid 
 	else
 		siprec_build_uuid(part->uuid);
 
-	part->aor.s = shm_malloc(aor->len + (name ? name->len: 0));
-	if (!part->aor.s) {
-		LM_ERR("out of shared memory!\n");
-		return -1;
+	if (xml_val) {
+		part->xml_val.s = shm_malloc(xml_val->len);
+		if (!part->xml_val.s) {
+			LM_ERR("out of shared memory!\n");
+			return -1;
+		}
+		memcpy(part->xml_val.s, xml_val->s, xml_val->len);
+		part->xml_val.len = xml_val->len;
+	} else {
+		part->xml_val.s = NULL;
+
+		part->aor.s = shm_malloc(aor->len + (name ? name->len: 0));
+		if (!part->aor.s) {
+			LM_ERR("out of shared memory!\n");
+			return -1;
+		}
+
+		part->aor.len = aor->len;
+		memcpy(part->aor.s, aor->s, aor->len);
+		if (name) {
+			/* remove the quotes, if provided */
+			if (name->len > 2 && name->s[0] == '"') {
+				name->s++;
+				name->len -= 2;
+			}
+			part->name.len = name->len;
+			part->name.s = part->aor.s + part->aor.len;
+			memcpy(part->name.s, name->s, name->len);
+		}
 	}
 
-	part->aor.len = aor->len;
-	memcpy(part->aor.s, aor->s, aor->len);
-	if (name) {
-		/* remove the quotes, if provided */
-		if (name->len > 2 && name->s[0] == '"') {
-			name->s++;
-			name->len -= 2;
-		}
-		part->name.len = name->len;
-		part->name.s = part->aor.s + part->aor.len;
-		memcpy(part->name.s, name->s, name->len);
-	}
 	sess->participants_no++;
 
 	return 1;
@@ -210,11 +235,12 @@ void srec_loaded_callback(struct dlg_cell *dlg, int type,
 	bin_packet_t packet;
 	int version;
 	time_t ts;
-	str tmp, rtpproxy, srs_uri, group, host;
-	str aor, name;
+	str tmp, rtpproxy, media_ip, srs_uri, group, host;
+	str aor, name, *xml_val;
 	siprec_uuid uuid;
 	struct socket_info *si;
 	int p, port, proto, c, label, medianum;
+	int p_type;
 
 	if (!dlg) {
 		LM_ERR("null dialog - cannot fetch siprec info!\n");
@@ -242,6 +268,7 @@ void srec_loaded_callback(struct dlg_cell *dlg, int type,
 	memcpy(&ts, tmp.s, tmp.len);
 	SIPREC_BIN_POP(int, &version);
 	SIPREC_BIN_POP(str, &rtpproxy);
+	SIPREC_BIN_POP(str, &media_ip);
 	SIPREC_BIN_POP(str, &srs_uri);
 	SIPREC_BIN_POP(str, &group);
 	SIPREC_BIN_POP(str, &tmp);
@@ -269,7 +296,7 @@ void srec_loaded_callback(struct dlg_cell *dlg, int type,
 	memcpy(&uuid, tmp.s, tmp.len);
 
 	sess = src_create_session((rtpproxy.len ? &rtpproxy : NULL),
-			(group.len ? &group : NULL),
+			(media_ip.len ? &media_ip : NULL), (group.len ? &group : NULL),
 			si, version, ts, &uuid);
 	if (!sess) {
 		LM_ERR("cannot create a new siprec session!\n");
@@ -321,8 +348,14 @@ void srec_loaded_callback(struct dlg_cell *dlg, int type,
 
 	SIPREC_BIN_POP(int, &p);
 	for (; p > 0; p--) {
-		SIPREC_BIN_POP(str, &aor);
-		SIPREC_BIN_POP(str, &name);
+		SIPREC_BIN_POP(int, &p_type); /* actual xml val or nameaddr ? */
+		if (p_type == 0)
+			SIPREC_BIN_POP(str, xml_val);
+		else {
+			SIPREC_BIN_POP(str, &aor);
+			SIPREC_BIN_POP(str, &name);
+			xml_val = NULL;
+		}
 		SIPREC_BIN_POP(str, &tmp);
 		if (tmp.len != sizeof(siprec_uuid)) {
 			LM_ERR("invalid length for uuid (%d != %d)\n", tmp.len,
@@ -330,7 +363,7 @@ void srec_loaded_callback(struct dlg_cell *dlg, int type,
 			goto error;
 		}
 		memcpy(&uuid, tmp.s, tmp.len);
-		if (src_add_participant(sess, &aor, &name, &uuid) < 0) {
+		if (src_add_participant(sess, &aor, &name, xml_val, &uuid) < 0) {
 			LM_ERR("cannot add new participant!\n");
 			goto error;
 		}
@@ -396,7 +429,7 @@ static inline str *srec_serialize(void *field, int size)
 		} \
 	} while (0)
 
-void srec_shutdown_callback(struct dlg_cell *dlg, int type,
+void srec_dlg_write_callback(struct dlg_cell *dlg, int type,
 		struct dlg_cb_params *params)
 {
 	str name = str_init("siprec");
@@ -422,6 +455,7 @@ void srec_shutdown_callback(struct dlg_cell *dlg, int type,
 	SIPREC_BIN_PUSH(str, SIPREC_SERIALIZE(ss->ts));
 	SIPREC_BIN_PUSH(int, ss->version);
 	SIPREC_BIN_PUSH(str, &ss->rtpproxy);
+	SIPREC_BIN_PUSH(str, &ss->media_ip);
 	/* push only the first SRS - this is the one chosen */
 	SIPREC_BIN_PUSH(str, &SIPREC_SRS(ss));
 	SIPREC_BIN_PUSH(str, &ss->group);
@@ -438,8 +472,16 @@ void srec_shutdown_callback(struct dlg_cell *dlg, int type,
 	SIPREC_BIN_PUSH(int, ss->participants_no);
 
 	for (p = 0; p < ss->participants_no; p++) {
-		SIPREC_BIN_PUSH(str, &ss->participants[p].aor);
-		SIPREC_BIN_PUSH(str, &ss->participants[p].name);
+		if (ss->participants[p].xml_val.s) {
+			/* serialize actual xml val */
+			SIPREC_BIN_PUSH(int, 0);
+			SIPREC_BIN_PUSH(str, &ss->participants[p].xml_val);
+		} else {
+			/* serialize nameaddr */
+			SIPREC_BIN_PUSH(int, 1);
+			SIPREC_BIN_PUSH(str, &ss->participants[p].aor);
+			SIPREC_BIN_PUSH(str, &ss->participants[p].name);
+		}
 		SIPREC_BIN_PUSH(str, SIPREC_SERIALIZE(ss->participants[p].uuid));
 		/* count the number of sessions */
 		c = 0;

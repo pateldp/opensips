@@ -65,7 +65,6 @@ struct tm_binds tmb;
 struct rr_binds rrb;
 
 static int mod_init(void);
-static void destroy(void);
 static int child_init(int rank);
 
 
@@ -146,11 +145,10 @@ int acc_created_avp_id = -1;
 /* acc context position */
 int acc_flags_ctx_idx;
 int acc_tm_flags_ctx_idx;
+int acc_dlg_ctx_idx;
 
 /* ------------- fixup function --------------- */
-static int acc_fixup(void** param, int param_no);
-static int free_acc_fixup(void** param, int param_no);
-
+static int fixup_init_dburl(void **param);
 
 /**
  * pseudo-variables exported by acc module
@@ -168,55 +166,32 @@ static pv_export_t mod_items[] = {
 };
 
 static cmd_export_t cmds[] = {
-	{"acc_log_request", (cmd_function)w_acc_log_request, 1,
-		acc_fixup, free_acc_fixup,
+	{"acc_log_request", (cmd_function)w_acc_log_request, {
+		{CMD_PARAM_STR, 0, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"acc_db_request",  (cmd_function)w_acc_db_request,  2,
-		acc_fixup, free_acc_fixup,
+	{"acc_db_request",  (cmd_function)w_acc_db_request, {
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_STR, fixup_init_dburl, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"acc_aaa_request", (cmd_function)w_acc_aaa_request, 1,
-		acc_fixup, free_acc_fixup,
+	{"acc_aaa_request", (cmd_function)w_acc_aaa_request, {
+		{CMD_PARAM_STR, 0, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"acc_evi_request", (cmd_function)w_acc_evi_request, 1,
-		acc_fixup, free_acc_fixup,
+	{"acc_evi_request", (cmd_function)w_acc_evi_request, {
+		{CMD_PARAM_STR, 0, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-
-	/* only the type of acc(db,evi...) */
-	{"do_accounting", (cmd_function)w_do_acc_1, 1,
-		do_acc_fixup, NULL,
+	{"do_accounting", (cmd_function)w_do_acc, {
+		{CMD_PARAM_STR, do_acc_fixup_type, do_acc_fixup_free_ival},
+		{CMD_PARAM_STR|CMD_PARAM_OPT, do_acc_fixup_flags, do_acc_fixup_free_ival},
+		{CMD_PARAM_STR|CMD_PARAM_OPT, 0, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-
-	/* type of acc(db,evi...) and flags(log cdr, log missed) */
-	{"do_accounting", (cmd_function)w_do_acc_2, 2,
-		do_acc_fixup, NULL,
+	{"drop_accounting", (cmd_function)w_drop_acc, {
+		{CMD_PARAM_STR|CMD_PARAM_OPT, do_acc_fixup_type, do_acc_fixup_free_ival},
+		{CMD_PARAM_STR|CMD_PARAM_OPT, do_acc_fixup_flags, do_acc_fixup_free_ival}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-
-	/* type of acc(db,evi...) and flags(log cdr, log missed)
-	 * and db table */
-	{"do_accounting", (cmd_function)w_do_acc_3, 3,
-		do_acc_fixup, NULL,
+	{"acc_new_leg", (cmd_function)w_new_leg, {{0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-
-	{"drop_accounting", (cmd_function)w_drop_acc_0, 0, 0, NULL,
-		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-
-	/* we use the same fixup function since the parameters
-	 * have the same meanining as for do_accounting  */
-	{"drop_accounting", (cmd_function)w_drop_acc_1, 1,
-		do_acc_fixup, NULL,
-		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-
-	{"drop_accounting", (cmd_function)w_drop_acc_2, 2,
-		do_acc_fixup, NULL,
-		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-
-	{"acc_new_leg", (cmd_function)w_new_leg, 0, 0, 0,
-		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-
-	{0, 0, 0, 0, 0, 0}
+	{0,0,{{0,0,0}},0}
 };
-
-
 
 static param_export_t params[] = {
 	{"early_media",             INT_PARAM, &early_media               },
@@ -285,6 +260,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,  /* module version */
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,       /* exported functions */
 	0,          /* exported async functions */
@@ -296,63 +272,20 @@ struct module_exports exports= {
 	0,          /* extra processes */
 	mod_init,   /* initialization module */
 	0,          /* response function */
-	destroy,    /* destroy function */
-	child_init  /* per-child init function */
+	0,          /* destroy function */
+	child_init, /* per-child init function */
+	0           /* reload confirm function */
 };
 
 
 
 /************************** FIXUP functions ****************************/
-
-
-static int acc_fixup(void** param, int param_no)
+static int fixup_init_dburl(void **param)
 {
-	str s;
-
-	pv_elem_t *model = NULL;
-
-	s.s = (char*)(*param);
-
-	if (s.s==0 || s.s[0]==0) {
-		LM_ERR("first parameter is empty\n");
-		return E_SCRIPT;
-	}
-
-	if (param_no == 1) {
-		if (s.s==NULL) {
-			LM_ERR("null format in P%d\n",
-					param_no);
-		}
-
-		s.len = strlen(s.s);
-
-		if(pv_parse_format(&s, &model)<0) {
-			LM_ERR("wrong format[%s]\n", s.s);
-			return E_UNSPEC;
-		}
-
-		*param = (void*)model;
-		return 0;
-	} else if (param_no == 2) {
-		/* only for db acc - the table name */
-		if (db_url.s==0) {
-			pkg_free(s.s);
-			*param = 0;
-		}
-	}
-	return 0;
+	if (!db_url.s || db_url.len == 0)
+		init_db_url(db_url, 1 /* can be null */);
+	return 0;	
 }
-
-static int free_acc_fixup(void** param, int param_no)
-{
-	if(*param)
-	{
-		pkg_free(*param);
-		*param = 0;
-	}
-	return 0;
-}
-
 
 
 /************************** INTERFACE functions ****************************/
@@ -361,8 +294,8 @@ static int mod_init( void )
 {
 	LM_INFO("initializing...\n");
 
-	if (db_url.s)
-		db_url.len = strlen(db_url.s);
+	init_db_url(db_url, 1 /* can be null */);
+
 	db_table_acc.len = strlen(db_table_acc.s);
 	db_table_mc.len = strlen(db_table_mc.s);
 	acc_method_col.len = strlen(acc_method_col.s);
@@ -379,7 +312,7 @@ static int mod_init( void )
 		if (tmp != -1)
 			acc_log_facility = tmp;
 		else {
-			LM_ERR("invalid log facility configured");
+			LM_ERR("invalid log facility configured\n");
 			return -1;
 		}
 	}
@@ -418,7 +351,7 @@ static int mod_init( void )
 		}
 	} else {
 		if (db_extra_tags || db_leg_tags) {
-			LM_ERR("leg and/or extra fields defined but no DB url!\n");
+			LM_ERR("DB leg and/or extra fields defined but no DB url!\n");
 			return -1;
 		}
 	}
@@ -432,7 +365,7 @@ static int mod_init( void )
 		}
 	} else {
 		if (aaa_extra_tags || aaa_leg_tags) {
-			LM_ERR("leg and/or extra fields defined but no AAA url!\n");
+			LM_ERR("AAA leg and/or extra fields defined but no AAA url!\n");
 			return -1;
 		}
 		aaa_proto_url = NULL;
@@ -445,8 +378,8 @@ static int mod_init( void )
 		return -1;
 	}
 
-	acc_flags_ctx_idx = context_register_ptr(CONTEXT_GLOBAL, free_processing_acc_ctx);
-	acc_tm_flags_ctx_idx = tmb.t_ctx_register_ptr(NULL);
+	acc_flags_ctx_idx = context_register_ptr(CONTEXT_GLOBAL, unref_acc_ctx);
+	acc_tm_flags_ctx_idx = tmb.t_ctx_register_ptr(unref_acc_ctx);
 
 	return 0;
 }
@@ -462,27 +395,4 @@ static int child_init(int rank)
 	return 0;
 }
 
-
-static void destroy(void)
-{
-	if (log_extra_tags)
-		destroy_extras( log_extra_tags);
-	if (log_leg_tags)
-		destroy_extras( log_leg_tags);
-	acc_db_close();
-	if (db_extra_tags)
-		destroy_extras( db_extra_tags);
-	if (db_leg_tags)
-		destroy_extras( db_leg_tags);
-
-	if (aaa_extra_tags)
-		destroy_extras( aaa_extra_tags);
-	if (aaa_leg_tags)
-		destroy_extras( aaa_leg_tags);
-
-	if (evi_extra_tags)
-		destroy_extras( evi_extra_tags);
-	if (evi_leg_tags)
-		destroy_extras( evi_leg_tags);
-}
 

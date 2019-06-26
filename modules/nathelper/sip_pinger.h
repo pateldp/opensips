@@ -47,9 +47,6 @@
 
 #define BSTART ";branch="
 
-#define LIST_END_CELL ((struct ping_cell*)-1) /* this cell is the end of the list */
-#define FREE_CELL NULL /* this cell is not in the timer list */
-
 /* helping macros for building SIP PING ping request */
 #define append_str( _p, _s) \
 	do {\
@@ -63,6 +60,7 @@
 		_p += sizeof(_s)-1;\
 	}while(0)
 
+extern  usrloc_api_t ul;
 /* info used to generate SIP ping requests */
 static int  sipping_fromtag = 0;
 static char sipping_callid_buf[8];
@@ -70,10 +68,10 @@ static int  sipping_callid_cnt = 0;
 static str  sipping_callid = {0,0};
 static str  sipping_from = {0,0};
 static str  sipping_method = {"OPTIONS",7};
-static int  remove_on_timeout=0;
+static int  match_ctid=0;
 
 
-static void init_sip_ping(int rto)
+static void init_sip_ping(int _match_ctid)
 {
 	int len;
 	char *p;
@@ -88,19 +86,20 @@ static void init_sip_ping(int rto)
 	sipping_callid.len = 8-len;
 	/* callid counter part */
 	sipping_callid_cnt = rand();
-	remove_on_timeout=(rto>0?1:0);
+	match_ctid=(_match_ctid>0?1:0);
 }
 
 
 static int parse_branch(str branch)
 {
-	int hash_id, cid_len;
+	unsigned int hash_id, label;
+	int sipping_latency;
 	char *end;
-
-	int64_t ret;
-	uint64_t contact_id=0;
+	ucontact_coords ct_coords;
+	struct timeval timeval_st;
 
 	struct ping_cell *p_cell;
+	gettimeofday(&timeval_st, NULL);
 
 	if (branch.len < BMAGIC_LEN
 			|| memcmp(branch.s, BMAGIC, BMAGIC_LEN)) {
@@ -112,55 +111,69 @@ static int parse_branch(str branch)
 	branch.len -= BMAGIC_LEN;
 
 	end = q_memchr(branch.s, '.', branch.len);
-	if (0 == end) {
+	if (!end) {
 		/* if reverse hex2int succeeds on this it's a simple
 		 * ping based on sipping_callid_cnt label */
-		if (reverse_hex2int(branch.s, end-branch.s) > 0)
+		if (reverse_hex2int(branch.s, branch.len, &label) == 0)
 			return 0;
 
 		return 1;
 	}
 
-	hash_id = reverse_hex2int(branch.s, end-branch.s);
+	reverse_hex2int(branch.s, end - branch.s, &hash_id);
 
-	branch.len -= (end-branch.s + 1);
-	branch.s = end+1;
+	branch.len -= (end - branch.s + 1);
+	branch.s = end + 1;
 
-
-	if (0 == end)
-		return 1;
-
-	end = q_memchr(branch.s, '.', branch.len);
-	cid_len = end-branch.s;
-	ret = reverse_hex2int64(branch.s, cid_len, 1/* request unsafe parsing */);
-	/* we don't parse the label since we don't need it */
-
-	if (ret == -1) {
-		LM_ERR("received invalid contact id\n");
-		return -1;
-	}
-
-	contact_id = (uint64_t)ret;
+	/* reverse_hex2int64() cannot fail in unsafe mode and it will return 
+	   whatever it was able to parse (0 if nothing )*/
+	reverse_hex2int64(branch.s, branch.len, 1, &ct_coords);
 
 	lock_hash(hash_id);
-	if ((p_cell=get_cell(hash_id, contact_id))==NULL) {
-		LM_WARN("received ping response for a removed contact"
-				" with contact id %llu\n", (long long unsigned int)contact_id);
+	p_cell = get_cell(hash_id, ct_coords);
+	if (!p_cell) {
+		LM_WARN("received ping response for a removed contact\n");
 		unlock_hash(hash_id);
 		return 0;
 	}
+	LM_DBG("ping received for %llu\n", (unsigned long long)ct_coords);
 
+	sipping_latency =
+	    (timeval_st.tv_sec - p_cell->last_send_time.tv_sec) * 1000000 +
+		(timeval_st.tv_usec - p_cell->last_send_time.tv_usec);
+
+	if (p_cell->ct_flags & sipping_latency_flag) {
+		LM_DBG("update_sipping_latency with %d us\n", sipping_latency);
+		if(ul.update_sipping_latency(p_cell->d, ct_coords, sipping_latency)<0){
+			/* we keep going since it might work for other contacts */
+			LM_ERR("failed to update ucontact sipping_latency\n");
+		}
+	}
 	/* when we receive answer to a ping we consider all pings sent
 	 * confirmed, because what we want to know is that the contact
 	 * is alive; only remove the cell from the hash; will be
 	 * completely removed when the timer will be up */
 	p_cell->not_responded = 0;
 	/* mark for removal */
+	p_cell->state = PING_CELL_STATE_ANSWERED;
 	p_cell->timestamp = 0;
 
-	remove_given_cell(p_cell, &get_htable()->entries[p_cell->hash_id]);
-
+	remove_from_hash(p_cell);
 	unlock_hash(hash_id);
+	return 0;
+}
+
+static inline int ignore_reply(const struct sip_msg *rpl)
+{
+	extern unsigned short *ignore_rpl_codes;
+	unsigned short *code;
+
+	if (!ignore_rpl_codes)
+		return 0;
+
+	for (code = ignore_rpl_codes; *code; code++)
+		if (*code == (unsigned short)rpl->REPLY_STATUS)
+			return 1;
 
 	return 0;
 }
@@ -194,10 +207,11 @@ static int sipping_rpl_filter(struct sip_msg *rpl)
 	rpl->callid->body.s[sipping_callid.len]!='-')
 		goto skip;
 
-	LM_DBG("reply for SIP natping filtered\n");
+	LM_DBG("reply for SIP natping filtered (%d)\n", match_ctid);
 	/* it's a reply to a SIP NAT ping -> absorb it and stop any
 	 * further processing of it */
-	if (remove_on_timeout && parse_branch(rpl->via1->branch->value))
+	if (!ignore_reply(rpl) && match_ctid &&
+	    parse_branch(rpl->via1->branch->value))
 			goto skip;
 
 	return 0;
@@ -210,55 +224,70 @@ error:
 
 /*
  */
-
 static inline int
 build_branch(char *branch, int *size,
-		str *curi, udomain_t *d, uint64_t contact_id, int rm_on_to)
+		str *curi, udomain_t *d, ucontact_coords ct_coords, int ct_flags)
 {
-
 	int hash_id, ret, label;
 	time_t timestamp;
 	struct ping_cell *p_cell;
 	struct nh_table *htable;
+	struct timeval timeval_st;
+	int dangling_coords = 0;
+	int old_state;
+	int reply_matching;
 
 	/* we want all contact pings from a contact in one bucket*/
 	hash_id = core_hash(curi, 0, 0) & (NH_TABLE_ENTRIES-1);
 
-	if (rm_on_to) {
+	/* do we need to track and match the replies for this ping?
+	 * We do if latency or remove on timeout flags are set for the contact */
+	reply_matching = ((ct_flags) & (rm_on_to_flag | sipping_latency_flag));
+
+	if (reply_matching) {
 		/* get the time before the lock - we may wait a little bit
 		 * on this lock */
 		timestamp=now;
+		gettimeofday(&timeval_st, NULL);
+
+		htable = get_htable();
+
 		lock_hash(hash_id);
-		if ((p_cell=get_cell(hash_id, contact_id))==NULL) {
-			if (0 == (p_cell = build_p_cell(hash_id, d, contact_id))) {
+
+		if ((p_cell=get_cell(hash_id, ct_coords))==NULL) {
+			if (0 == (p_cell = build_p_cell(hash_id, d, ct_coords))) {
 				unlock_hash(hash_id);
 				goto out_memfault;
 			}
 			insert_into_hash(p_cell);
+		} else {
+			dangling_coords = 1;
 		}
 
+		old_state = p_cell->state;
+		p_cell->state = PING_CELL_STATE_PINGING;
+		p_cell->ct_flags = ct_flags;
 		p_cell->timestamp = timestamp;
-		unlock_hash(hash_id);
-
-		htable = get_htable();
-
-		/* put the cell in timer list */
-		lock_get(&htable->timer_list.mutex);
-
-		if (p_cell->tnext == FREE_CELL) {
-			if (!htable->timer_list.first) {
-				htable->timer_list.first = htable->timer_list.last = p_cell;
-			} else {
-				htable->timer_list.last->tnext = p_cell;
-				htable->timer_list.last = p_cell;
-			}
-			/* this cell will be the end of the list */
-			p_cell->tnext = LIST_END_CELL;
-		}
+		p_cell->last_send_time = timeval_st;
 
 		/* we get the label that assures us that the via is unique */
 		label = htable->entries[hash_id].next_via_label++;
+
+		unlock_hash(hash_id);
+
+		/* put the cell in timer list */
+		lock_get(&htable->timer_list.mutex);
+		/* if record found in WAIT (and moved into PINGING), remove first
+		 * from old timer list */
+		if (old_state==PING_CELL_STATE_WAITING)
+			list_del(&p_cell->t_linker);
+		/* add to pinging list*/
+		list_add_tail( &p_cell->t_linker, &htable->timer_list.pg_timer);
+
 		lock_release(&htable->timer_list.mutex);
+
+		LM_DBG("ping cell acquired (new=%d, old_state=%d) for %llu\n",
+			(old_state==PING_CELL_STATE_NONE)?1:0, old_state, (unsigned long long)ct_coords);
 	} else {
 		label = sipping_callid_cnt;
 	}
@@ -267,7 +296,7 @@ build_branch(char *branch, int *size,
 
 	branch += BMAGIC_LEN;
 
-	if (rm_on_to) {
+	if (reply_matching) {
 		ret=int2reverse_hex(&branch, size, hash_id);
 		if (ret < 0)
 			goto out_nospace;
@@ -275,17 +304,17 @@ build_branch(char *branch, int *size,
 		*branch = '.';
 		branch++;
 
-		ret=int64_2reverse_hex(&branch, size, contact_id);
+		ret=int64_2reverse_hex(&branch, size, ct_coords);
 		if (ret < 0)
 			goto out_nospace;
-
-		*branch = '.';
-		branch++;
+	} else {
+		ret=int2reverse_hex(&branch, size, label);
+		if (ret < 0)
+			goto out_nospace;
 	}
 
-	ret=int2reverse_hex(&branch, size, label);
-	if (ret < 0)
-		goto out_nospace;
+	if (dangling_coords)
+		ul.free_ucontact_coords(ct_coords);
 
 	*branch = '\0';
 
@@ -304,7 +333,7 @@ out_nospace:
 /* build the buffer of a SIP ping request */
 static inline char*
 build_sipping(udomain_t *d, str *curi, struct socket_info* s,str *path,
-		int *len_p, uint64_t contact_id, int rm_on_to)
+		int *len_p, ucontact_coords ct_coords, int ct_flags)
 {
 #define s_len(_s) (sizeof(_s)-1)
 	static char buf[MAX_SIPPING_SIZE];
@@ -313,16 +342,16 @@ build_sipping(udomain_t *d, str *curi, struct socket_info* s,str *path,
 	str st;
 	int len;
 
-	int  bsize = 100;
+	int  bsize = 120;
 	str  sbranch;
-	char branch[100];
+	char branch[120];
 	char *bbuild = branch;
 
 	memcpy(bbuild, BSTART, sizeof(BSTART) - 1);
 	bbuild += sizeof(BSTART) - 1;
 	bsize -= (bbuild - branch);
 
-	build_branch( bbuild, &bsize, curi, d, contact_id, rm_on_to);
+	build_branch( bbuild, &bsize, curi, d, ct_coords, ct_flags);
 
 	sbranch.s = branch;
 	sbranch.len = strlen(branch);

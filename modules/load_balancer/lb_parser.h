@@ -17,11 +17,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  *
- * History:
- * --------
- *  2009-02-01 initial version (bogdan)
  */
 
 
@@ -42,15 +39,6 @@ struct lb_res_str_list {
 	int n;
 	struct lb_res_str* resources;
 };
-
-#define	RES_TEXT	(1<<0)
-#define	RES_ELEM	(1<<1)
-
-struct lb_res_parse {
-	char type;
-	void *param;
-};
-
 
 struct lb_res_str* search_resource_str( struct lb_res_str_list *lb_rl,
 		str *name);

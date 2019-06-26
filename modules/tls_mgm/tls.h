@@ -32,9 +32,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  *
- * History:
- * -------
- *  2015-02-12  first version (bogdan)
  */
 
 #ifndef _PROTO_TLS_H_
@@ -64,7 +61,11 @@
 	#warning ""
 #endif
 
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+static int ssl_versions[TLS_USE_TLSv1_2 + 1];
+#else
 static SSL_METHOD     *ssl_methods[TLS_USE_TLSv1_2 + 1];
+#endif
 
 #define VERIFY_DEPTH_S 3
 

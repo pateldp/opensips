@@ -32,9 +32,9 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <mysql/mysql.h>
-#include <mysql/errmsg.h>
-#include <mysql/mysqld_error.h>
+#include <mysql.h>
+#include <errmsg.h>
+#include <mysqld_error.h>
 #include "../../mem/mem.h"
 #include "../../dprint.h"
 #include "../../db/db_query.h"
@@ -181,6 +181,10 @@ static inline int wrapper_single_mysql_real_query(const db_con_t *conn,
 		case CR_SERVER_LOST:
 		case CR_COMMANDS_OUT_OF_SYNC:
 			return -1; /* reconnection error -> <0 */
+		case ER_LOCK_DEADLOCK:
+			LM_WARN("server error (%i): %s\n", error,
+				mysql_error(CON_CONNECTION(conn)));
+			return -1; /* reconnection error -> <0 */
 		default:
 			LM_CRIT("driver error (%i): %s\n", error,
 				mysql_error(CON_CONNECTION(conn)));
@@ -292,7 +296,8 @@ static int db_mysql_submit_query(const db_con_t* _h, const str* _s)
 	for (i=0; i<max_db_queries; i++) {
 		start_expire_timer(start,db_mysql_exec_query_threshold);
 		code = wrapper_single_mysql_real_query(_h, _s);
-		stop_expire_timer(start,db_mysql_exec_query_threshold,"mysql query",_s->s,_s->len,0);
+		_stop_expire_timer(start, db_mysql_exec_query_threshold, "mysql query",
+		            _s->s, _s->len, 0, sql_slow_queries, sql_total_queries);
 		if (code < 0) {
 			/* got disconnected during call */
 			switch_state_to_disconnected(_h);
@@ -714,7 +719,8 @@ static int db_mysql_do_prepared_query(const db_con_t* conn, const str *query,
 
 		start_expire_timer(start,db_mysql_exec_query_threshold);
 		code = wrapper_single_mysql_stmt_execute(conn, ctx->stmt);
-		stop_expire_timer(start,db_mysql_exec_query_threshold,"mysql prep stmt",query->s,query->len,0);
+		_stop_expire_timer(start, db_mysql_exec_query_threshold, "mysql prep stmt",
+		        query->s, query->len, 0, sql_slow_queries, sql_total_queries);
 		if (code < 0) {
 			/* got disconnected during call */
 			switch_state_to_disconnected(conn);
@@ -1157,8 +1163,10 @@ int db_mysql_async_raw_query(db_con_t *_h, const str *_s, void **_priv)
 		} else {
 			code = wrapper_single_mysql_real_query(_h, _s);
 		}
-		stop_expire_timer(start, db_mysql_exec_query_threshold,
-						  "mysql async query", _s->s, _s->len, 0);
+		_stop_expire_timer(start, db_mysql_exec_query_threshold,
+				"mysql async query", _s->s, _s->len, 0,
+				sql_slow_queries, sql_total_queries);
+
 		if (code < 0) {
 			/* got disconnected during call */
 			switch_state_to_disconnected(_h);

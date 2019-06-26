@@ -85,6 +85,7 @@ struct module_exports exports= {
 	MOD_TYPE_CACHEDB,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,            /* dlopen flags */
+	0,				            /* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	0,                          /* exported functions */
 	0,                          /* exported async functions */
@@ -97,7 +98,8 @@ struct module_exports exports= {
 	mod_init,                   /* module initialization function */
 	(response_function) 0,      /* response handling function */
 	(destroy_function) destroy, /* destroy function */
-	child_init                  /* per-child init function */
+	child_init,                 /* per-child init function */
+	0                           /* reload confirm function */
 };
 
 
@@ -113,8 +115,9 @@ int wrap_memcached_insert(cachedb_con *con,str* attr, str* value,int expires)
 	rc = memcached_set(connection->memc,attr->s, attr->len , value->s,
 				value->len, (time_t)expires, (uint32_t)0);
 
-	stop_expire_timer(start,memcache_exec_threshold,
-	"cachedb_memcached insert",attr->s,attr->len,0);
+	_stop_expire_timer(start,memcache_exec_threshold,
+		"cachedb_memcached insert",attr->s,attr->len,0,
+		cdb_slow_queries, cdb_total_queries);
 
 	if( rc != MEMCACHED_SUCCESS)
 	{
@@ -136,8 +139,9 @@ int wrap_memcached_remove(cachedb_con *connection,str* attr)
 
 	rc = memcached_delete(con->memc,attr->s,attr->len,0);
 
-	stop_expire_timer(start,memcache_exec_threshold,
-	"cachedb_memcached remove",attr->s,attr->len,0);
+	_stop_expire_timer(start,memcache_exec_threshold,
+		"cachedb_memcached remove",attr->s,attr->len,0,
+		cdb_slow_queries, cdb_total_queries);
 
 	if( rc != MEMCACHED_SUCCESS && rc != MEMCACHED_NOTFOUND)
 	{
@@ -171,16 +175,18 @@ int wrap_memcached_get(cachedb_con *connection,str* attr, str* res)
 		{
 			res->s = NULL;
 			res->len = 0;
-			stop_expire_timer(start,memcache_exec_threshold,
-			"cachedb_memcached get",attr->s,attr->len,0);
+			_stop_expire_timer(start,memcache_exec_threshold,
+				"cachedb_memcached get",attr->s,attr->len,0,
+				cdb_slow_queries, cdb_total_queries);
 			return -2;
 		}
 		else
 		{
 			err = (char*)memcached_strerror(con->memc,rc);
 			LM_ERR("Failed to get: %s\n",err );
-			stop_expire_timer(start,memcache_exec_threshold,
-			"cachedb_memcached get",attr->s,attr->len,0);
+			_stop_expire_timer(start,memcache_exec_threshold,
+				"cachedb_memcached get",attr->s,attr->len,0,
+				cdb_slow_queries, cdb_total_queries);
 			return -1;
 		}
 	}
@@ -189,8 +195,9 @@ int wrap_memcached_get(cachedb_con *connection,str* attr, str* res)
 	if( value == NULL)
 	{
 		LM_ERR("Memory allocation");
-		stop_expire_timer(start,memcache_exec_threshold,
-		"cachedb_memcached get",attr->s,attr->len,0);
+		_stop_expire_timer(start,memcache_exec_threshold,
+			"cachedb_memcached get",attr->s,attr->len,0,
+			cdb_slow_queries, cdb_total_queries);
 		return -1;
 	}
 
@@ -200,8 +207,9 @@ int wrap_memcached_get(cachedb_con *connection,str* attr, str* res)
 
 	free(ret);
 
-	stop_expire_timer(start,memcache_exec_threshold,
-	"cachedb_memcached get",attr->s,attr->len,0);
+	_stop_expire_timer(start,memcache_exec_threshold,
+		"cachedb_memcached get",attr->s,attr->len,0,
+		cdb_slow_queries, cdb_total_queries);
 	return 0;
 }
 
@@ -225,20 +233,23 @@ int wrap_memcached_add(cachedb_con *connection,str* attr,int val,
 			ins_val.s = sint2str(val,&ins_val.len);
 			if (wrap_memcached_insert(connection,attr,&ins_val,expires) < 0) {
 				LM_ERR("failed to insert value\n");
-				stop_expire_timer(start,memcache_exec_threshold,
-				"cachedb_memcached add",attr->s,attr->len,0);
+				_stop_expire_timer(start,memcache_exec_threshold,
+					"cachedb_memcached add",attr->s,attr->len,0,
+					cdb_slow_queries, cdb_total_queries);
 				return -1;
 			}
 			if (new_val)
 				*new_val = val;
 
-			stop_expire_timer(start,memcache_exec_threshold,
-			"cachedb_memcached add",attr->s,attr->len,0);
+			_stop_expire_timer(start,memcache_exec_threshold,
+				"cachedb_memcached add",attr->s,attr->len,0,
+				cdb_slow_queries, cdb_total_queries);
 			return 0;
 		} else {
 			LM_ERR("Failed to add: %s\n",memcached_strerror(con->memc,rc));
-			stop_expire_timer(start,memcache_exec_threshold,
-			"cachedb_memcached add",attr->s,attr->len,0);
+			_stop_expire_timer(start,memcache_exec_threshold,
+				"cachedb_memcached add",attr->s,attr->len,0,
+				cdb_slow_queries, cdb_total_queries);
 			return -1;
 		}
 	}
@@ -246,8 +257,9 @@ int wrap_memcached_add(cachedb_con *connection,str* attr,int val,
 	if (new_val)
 		*new_val = (int)res;
 
-	stop_expire_timer(start,memcache_exec_threshold,
-	"cachedb_memcached add",attr->s,attr->len,0);
+	_stop_expire_timer(start,memcache_exec_threshold,
+		"cachedb_memcached add",attr->s,attr->len,0,
+		cdb_slow_queries, cdb_total_queries);
 	return 0;
 }
 
@@ -271,20 +283,23 @@ int wrap_memcached_sub(cachedb_con *connection,str* attr,int val,
 			ins_val.s = sint2str(val,&ins_val.len);
 			if (wrap_memcached_insert(connection,attr,&ins_val,expires) < 0) {
 				LM_ERR("failed to insert value\n");
-				stop_expire_timer(start,memcache_exec_threshold,
-				"cachedb_memcached sub",attr->s,attr->len,0);
+				_stop_expire_timer(start,memcache_exec_threshold,
+					"cachedb_memcached sub",attr->s,attr->len,0,
+					cdb_slow_queries, cdb_total_queries);
 				return -1;
 			}
 			if (new_val)
 				*new_val = val;
 
-			stop_expire_timer(start,memcache_exec_threshold,
-			"cachedb_memcached sub",attr->s,attr->len,0);
+			_stop_expire_timer(start,memcache_exec_threshold,
+				"cachedb_memcached sub",attr->s,attr->len,0,
+				cdb_slow_queries, cdb_total_queries);
 			return 0;
 		} else {
 			LM_ERR("Failed to sub: %s\n",memcached_strerror(con->memc,rc));
-			stop_expire_timer(start,memcache_exec_threshold,
-			"cachedb_memcached sub",attr->s,attr->len,0);
+			_stop_expire_timer(start,memcache_exec_threshold,
+				"cachedb_memcached sub",attr->s,attr->len,0,
+				cdb_slow_queries, cdb_total_queries);
 			return -1;
 		}
 	}
@@ -292,8 +307,9 @@ int wrap_memcached_sub(cachedb_con *connection,str* attr,int val,
 	if (new_val)
 		*new_val = (int)res;
 
-	stop_expire_timer(start,memcache_exec_threshold,
-	"cachedb_memcached sub",attr->s,attr->len,0);
+	_stop_expire_timer(start,memcache_exec_threshold,
+		"cachedb_memcached sub",attr->s,attr->len,0,
+		cdb_slow_queries, cdb_total_queries);
 
 	return 0;
 }
@@ -319,16 +335,18 @@ int wrap_memcached_get_counter(cachedb_con *connection,str* attr, int* res)
 	{
 		if(rc == MEMCACHED_NOTFOUND)
 		{
-			stop_expire_timer(start,memcache_exec_threshold,
-			"cachedb_memcached counter fetch",attr->s,attr->len,0);
+			_stop_expire_timer(start,memcache_exec_threshold,
+				"cachedb_memcached counter fetch",attr->s,attr->len,0,
+				cdb_slow_queries, cdb_total_queries);
 			return -2;
 		}
 		else
 		{
 			err = (char*)memcached_strerror(con->memc,rc);
 			LM_ERR("Failed to get: %s\n",err );
-			stop_expire_timer(start,memcache_exec_threshold,
-			"cachedb_memcached counter fetch",attr->s,attr->len,0);
+			_stop_expire_timer(start,memcache_exec_threshold,
+				"cachedb_memcached counter fetch",attr->s,attr->len,0,
+				cdb_slow_queries, cdb_total_queries);
 			return -1;
 		}
 	}
@@ -338,15 +356,17 @@ int wrap_memcached_get_counter(cachedb_con *connection,str* attr, int* res)
 	
 	if (str2sint(&rpl,res) < 0) {
 		LM_ERR("Failed to convert %.*s to int\n",(int)ret_len,ret);
-		stop_expire_timer(start,memcache_exec_threshold,
-			"cachedb_memcached counter fetch",attr->s,attr->len,0);
+		_stop_expire_timer(start,memcache_exec_threshold,
+			"cachedb_memcached counter fetch",attr->s,attr->len,0,
+			cdb_slow_queries, cdb_total_queries);
 		free(ret);
 		return -1;
 		
 	}
 
-	stop_expire_timer(start,memcache_exec_threshold,
-		"cachedb_memcached counter fetch",attr->s,attr->len,0);
+	_stop_expire_timer(start,memcache_exec_threshold,
+		"cachedb_memcached counter fetch",attr->s,attr->len,0,
+		cdb_slow_queries, cdb_total_queries);
 	free(ret);
 	return 0;
 }
@@ -446,6 +466,7 @@ static int mod_init(void)
 	cachedb_engine cde;
 
 	LM_NOTICE("initializing module cachedb_memcached\n");
+	memset(&cde, 0, sizeof cde);
 
 	cde.name = cache_mod_name;
 

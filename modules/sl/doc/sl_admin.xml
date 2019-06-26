@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		The <acronym>SL</acronym> module allows &osips; to act as a stateless 
@@ -37,7 +37,7 @@
 		ACK is forwarded.
 	</para>
 	</section>
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -68,9 +68,9 @@
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_enable_stats" xreflabel="enable_stats">
 		<title><varname>enable_stats</varname> (integer)</title>
 		<para>
 		If the module should generate and export statistics to the core
@@ -92,9 +92,9 @@ modparam("sl", "enable_stats", 0)
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_sl_send_reply" xreflabel="sl_send_reply()">
 		<title>
 		<function moreinfo="none">sl_send_reply(code, reason)</function>
 		</title>
@@ -108,11 +108,11 @@ modparam("sl", "enable_stats", 0)
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>code</emphasis> - Return code.
+			<para><emphasis>code (int)</emphasis> - Return code.
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>reason</emphasis> - Reason phrase.
+			<para><emphasis>reason (string)</emphasis> - Reason phrase.
 			</para>
 		</listitem>
 		</itemizedlist>
@@ -123,15 +123,15 @@ modparam("sl", "enable_stats", 0)
 		<title><function>sl_send_reply</function> usage</title>
 		<programlisting format="linespecific">
 ...
-sl_send_reply("404", "Not found");
+sl_send_reply(404, "Not found");
 ...
-sl_send_reply("$err.rcode", "$err.rreason");
+sl_send_reply($err.rcode, $err.rreason);
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section>
+	<section id="func_sl_reply_error" xreflabel="sl_reply_error()">
 		<title>
 		<function moreinfo="none">sl_reply_error()</function>
 		</title>
@@ -156,55 +156,55 @@ sl_reply_error();
 
 	<section>
 	<title>Exported Statistics</title>
-	<section>
+	<section id="stat_1xx_replies" xreflabel="1xx_replies">
 		<title><varname>1xx_replies</varname></title>
 		<para>
 		The number of 1xx_replies.
 		</para>
 	</section>
-	<section>
+	<section id="stat_2xx_replies" xreflabel="2xx_replies">
 		<title><varname>2xx_replies</varname></title>
 		<para>
 		The number of 2xx_replies.
 		</para>
 	</section>
-	<section>
+	<section id="stat_3xx_replies" xreflabel="3xx_replies">
 		<title><varname>3xx_replies</varname></title>
 		<para>
 		The number of 3xx_replies.
 		</para>
 	</section>
-	<section>
+	<section id="stat_4xx_replies" xreflabel="4xx_replies">
 		<title><varname>4xx_replies</varname></title>
 		<para>
 		The number of 4xx_replies.
 		</para>
 	</section>
-	<section>
+	<section id="stat_5xx_replies" xreflabel="5xx_replies">
 		<title><varname>5xx_replies</varname></title>
 		<para>
 		The number of 5xx_replies.
 		</para>
 	</section>
-	<section>
+	<section id="stat_6xx_replies" xreflabel="6xx_replies">
 		<title><varname>6xx_replies</varname></title>
 		<para>
 		The number of 6xx_replies.
 		</para>
 	</section>
-	<section>
+	<section id="stat_sent_replies" xreflabel="sent_replies">
 		<title><varname>sent_replies</varname></title>
 		<para>
 		The number of sent_replies.
 		</para>
 	</section>
-	<section>
+	<section id="stat_sent_err_replies" xreflabel="sent_err_replies">
 		<title><varname>sent_err_replies</varname></title>
 		<para>
 		The number of sent_err_replies.
 		</para>
 	</section>
-	<section>
+	<section id="stat_received_ACKs" xreflabel="received_ACKs">
 		<title><varname>received_ACKs</varname></title>
 		<para>
 		The number of received_ACKs.

@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		<ulink url='http://www.cgrates.org/'><emphasis>CGRateS</emphasis></ulink>
@@ -46,14 +46,14 @@
 		The authorization is used to check if an account is allowed to start a new call
 		and it has enough credit to call to that destination. This is done using the
 		<emphasis>cgrates_auth()</emphasis> command, which returns the number of seconds
-		a call is allowed to run in the <emphasis>$cgrret</emphasis> pseudo-variable.
+		a call is allowed to run in the <emphasis>$cgr_ret</emphasis> pseudo-variable.
 	</para>
 	<para>
 		Usage example:
 		<programlisting format="linespecific">
 		...
 		if (cgrates_auth("$fU", "$rU"))
-			xlog("Call is allowed to run $cgrret seconds\n");
+			xlog("Call is allowed to run $cgr_ret seconds\n");
 		}
 		...
 		</programlisting>
@@ -92,7 +92,7 @@
 			sl_send_reply("403", "Forbidden");
 			exit;
 		}
-		xlog("Call is allowed to run $cgrret seconds\n");
+		xlog("Call is allowed to run $cgr_ret seconds\n");
 		# do accounting for this call
 		cgrates_acc("cdr", "$fU", "$rU");
 		...
@@ -109,21 +109,21 @@
 	<title>Other Commands</title>
 	<para>
 		You can use the <emphasis>cgrates_cmd()</emphasis> to send arbitrary
-		commands to the CGRateS engine, and use the <emphasis>$cgrret</emphasis>
+		commands to the CGRateS engine, and use the <emphasis>$cgr_ret</emphasis>
 		pseudo-variable to retrieve the response.
 	</para>
 	<para>
 		The following example simulates the <emphasis>cgrates_auth()</emphasis> CGRateS call:
 		<programlisting format="linespecific">
 		...
-		$cgr(Tenant) = $fd;
+		$cgr_opt(Tenant) = $fd; # or $cgr(Tenant) = $fd; /* in compat mode */
 		$cgr(Account) = $fU;
 		$cgr(OriginID) = $ci;
 		$cgr(SetupTime) = "" + $Ts;
 		$cgr(RequestType) = "*prepaid";
 		$cgr(Destination) = $rU;
-		cgrates_cmd("SMGenericV1.GetMaxUsage");
-		xlog("Call is allowed to run $cgrret seconds\n");
+		cgrates_cmd("SessionSv1.AuthorizeEvent");
+		xlog("Call is allowed to run $cgr_ret(MaxUsage) seconds\n");
 		...
 		</programlisting>
 	</para>
@@ -152,6 +152,22 @@
 	</section>
 
 	<section>
+	<title>CGRateS Compatibility</title>
+	<para>
+		The module supports two different versions of CGRateS: the
+		<emphasis>compat_mode</emphasis> one, which works with pre-rc8 releases, and a
+		new one which works with the post-rc8 releases. The difference between the two
+		versions consist in the way the requests and responses to and from CGRateS
+		are built. In the non-<emphasis>compat_mode</emphasis>/new version, a new
+		variable, <emphasis>$cgr_opt()</emphasis>, is available, and can be used to
+		tune the request options. This variable should not be used in
+		<emphasis>compat_mode</emphasis> mode to avoid abiguities, but if it is used,
+		it behaves exactly as <emphasis>$cgr()</emphasis>. By default
+		<emphasis>compat_mode</emphasis> is disabled.
+	</para>
+	</section>
+
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -183,9 +199,9 @@
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_cgrates_engine" xreflabel="cgrates_engine">
 		<title><varname>cgrates_engine</varname> (string)</title>
 		<para>
 			This parameter is used to specify a CGRateS engine connection.
@@ -211,7 +227,7 @@ modparam("cgrates", "cgrates_engine", "127.0.0.1:2013")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_bind_ip" xreflabel="bind_ip">
 		<title><varname>bind_ip</varname> (string)</title>
 		<para>
 			IP used to bind the socket that communicates with the
@@ -234,7 +250,7 @@ modparam("cgrates", "bind_ip", "10.0.0.100")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_max_async_connections" xreflabel="max_async_connections">
 		<title><varname>max_async_connections</varname> (integer)</title>
 		<para>
 			The maximum number of simultaneous asynchronous connections
@@ -254,7 +270,7 @@ modparam("cgrates", "max_async_connections", 20)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_retry_timeout" xreflabel="retry_timeout">
 		<title><varname>retry_timeout</varname> (integer)</title>
 		<para>
 			The number of seconds after which a disabled connection/engine
@@ -274,11 +290,31 @@ modparam("cgrates", "retry_timeout", 120)
 </programlisting>
 		</example>
 	</section>
+	<section id="param_compat_mode" xreflabel="compat_mode">
+		<title><varname>compat_mode</varname> (integer)</title>
+		<para>
+			Indicates whether OpenSIPS should use the old (compat_mode)
+			CGRateS version API (pre-rc8).
+		</para>
+		<para>
+		<emphasis>
+			Default value is <quote>false (0)</quote>.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>compat_mode</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("cgrates", "compat_mode", 1)
+...
+</programlisting>
+		</example>
+	</section>
 	</section>
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section id="cgrates_acc">
+	<section id="func_cgrates_acc" xreflabel="cgrates_acc()">
 		<title>
 			<function moreinfo="none">cgrates_acc([flags[, account[, destination[, session]]]])</function>
 		</title>
@@ -316,10 +352,10 @@ modparam("cgrates", "retry_timeout", 120)
 		</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>flags</emphasis> - indicates whether &osips; should generate
-				a CDR at the end of the call. This parameter is optional, and if missing,
-				no CDR is generated - the session is only passed through CGRateS. The
-				following values can be used, separated by '|': </para>
+			<para><emphasis>flags</emphasis> (string, optional) - indicates whether &osips;
+				should generate a CDR at the end of the call. If the parameter is missing,
+				no CDR is generated - the session is only passed through CGRateS.
+				The following values can be used, separated by '|': </para>
 			<itemizedlist>
 				<listitem>
 					<para><emphasis>cdr</emphasis> - also generate a CDR;</para>
@@ -332,18 +368,17 @@ modparam("cgrates", "retry_timeout", 120)
 			</itemizedlist>
 		</listitem>
 		<listitem>
-			<para><emphasis>account</emphasis> - the account that will be charged
-				in CGrateS. This parameter is optional, and if not specified,
-				the user in the From header is used.
+			<para><emphasis>account</emphasis> (string, optional) - the account that will be charged
+				in CGrateS. If not specified, the user in the From header is used.
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>destination</emphasis> - the dialled number. Optional
-				parameter, if not present the request URI user is used.
+			<para><emphasis>destination</emphasis> (string, optional) - the dialled number.
+			If not present the request URI user is used.
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>session</emphasis> - the tag of the session that
+			<para><emphasis>session</emphasis> (string, optional) - the tag of the session that
 				will be started if the branch/call completes with success. This parameter
 				indicates what set of data from the <emphasis>$cgr()</emphasis> variable
 				should be considered. If missing, the default set is used.
@@ -383,8 +418,8 @@ modparam("cgrates", "retry_timeout", 120)
 		...
 		if (!has_totag()) {
 			...
-			if (cgrates_auth("$fU", "$rU"))
-				cgrates_acc("cdr|missed", "$fU", "$rU");
+			if (cgrates_auth($fU, $rU))
+				cgrates_acc("cdr|missed", $fU, $rU);
 			...
 		}
 		...
@@ -392,7 +427,7 @@ modparam("cgrates", "retry_timeout", 120)
 		</example>
 
 	</section>
-	<section id="cgrates_auth">
+	<section id="func_cgrates_auth" xreflabel="cgrates_auth()">
 		<title>
 			<function moreinfo="none">cgrates_auth([account[, destination[, session]]])</function>
 		</title>
@@ -406,18 +441,17 @@ modparam("cgrates", "retry_timeout", 120)
 		</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>account</emphasis> - the account that will be checked
-				in CGrateS. This parameter is optional, and if not specified,
-				the user in the From header is used.
+			<para><emphasis>account</emphasis> (string, optional) - the account that will be checked
+				in CGrateS. If not specified, the user in the From header is used.
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>destination</emphasis> - the dialled number. Optional
-				parameter, if not present the request URI user is used.
+			<para><emphasis>destination</emphasis> (string, optional) - the dialled number.
+			If not present the request URI user is used.
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>session</emphasis> - the tag of the session that
+			<para><emphasis>session</emphasis> (string, optional) - the tag of the session that
 				will be started if the branch/call completes with success. This parameter
 				indicates what set of data from the <emphasis>$cgr()</emphasis> variable
 				should be considered. If missing, the default set is used.
@@ -470,8 +504,8 @@ modparam("cgrates", "retry_timeout", 120)
 		...
 		if (!has_totag()) {
 			...
-			if (!cgrates_auth("$fU", "$rU")) {
-				sl_send_reply("403", "Forbidden");
+			if (!cgrates_auth($fU, $rU)) {
+				sl_send_reply(403, "Forbidden");
 				exit;
 			}
 			...
@@ -480,8 +514,32 @@ modparam("cgrates", "retry_timeout", 120)
 		</programlisting>
 		</example>
 
+		<example>
+				<title>cgrates_auth() usage with attributes parsing</title>
+				<programlisting format="linespecific">
+		...
+		if (!has_totag()) {
+			...
+			$cgr_opt(GetAttributes) = 1;
+			if (!cgrates_auth($fU, $rU)) {
+				sl_send_reply(403, "Forbidden");
+				exit;
+			}
+			# move attributes from AttributesDigest variable to plain AVPs
+			$var(idx) = 0;
+			while ($(cgr_ret(AttributesDigest){s.select,$var(idx),,}) != NULL) {
+				$avp($(cgr_ret(AttributesDigest){s.select,$var(idx),,}{s.select,0,:}))
+					= $(cgr_ret(AttributesDigest){s.select,$var(idx),,}{s.select,1,:});
+				$var(idx) = $var(idx) + 1;
+			}
+			...
+		}
+		...
+		</programlisting>
+		</example>
+
 	</section>
-	<section id="cgrates_cmd">
+	<section id="func_cgrates_cmd" xreflabel="cgrates_cmd()">
 		<title>
 			<function moreinfo="none">cgrates_cmd(command[, session])</function>
 		</title>
@@ -495,12 +553,12 @@ modparam("cgrates", "retry_timeout", 120)
 		</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>command</emphasis> - the command sent to the
-				CGRateS engine. This is a mandatory parameter.
+			<para><emphasis>command</emphasis> (string) - the command sent to the
+				CGRateS engine.
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>session</emphasis> - the tag of the session that
+			<para><emphasis>session</emphasis> (string, optional) - the tag of the session that
 				will be started if the branch/call completes with success. This parameter
 				indicates what set of data from the <emphasis>$cgr()</emphasis> variable
 				should be considered. If missing, the default set is used.
@@ -534,23 +592,22 @@ modparam("cgrates", "retry_timeout", 120)
 		</itemizedlist>
 
 		<para>
-			This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
-			BRANCH_ROUTE and LOCAL_ROUTE.
+			This function can be used from any route.
 		</para>
 
 		<example>
 				<title>cgrates_cmd() usage</title>
 				<programlisting format="linespecific">
 		...
-		# cgrates_auth("$fU", "$rU"); simulation
-		$cgr(Tenant) = $fd;
+		# cgrates_auth($fU, $rU); simulation
+		$cgr_opt(Tenant) = $fd;
 		$cgr(Account) = $fU;
 		$cgr(OriginID) = $ci;
 		$cgr(SetupTime) = "" + $Ts;
 		$cgr(RequestType) = "*prepaid";
 		$cgr(Destination) = $rU;
-		cgrates_cmd("SMGenericV1.GetMaxUsage");
-		xlog("Call is allowed to run $cgrret seconds\n");
+		cgrates_cmd("SessionSv1.AuthorizeEvent");
+		xlog("Call is allowed to run $cgr_ret seconds\n");
 		...
 		</programlisting>
 		</example>
@@ -558,10 +615,10 @@ modparam("cgrates", "retry_timeout", 120)
 	</section>
 	</section>
 
-	<section>
-	<title>Exported pseudo-variables</title>
+	<section id="exported_pseudo_variables">
+	<title>Exported Pseudo-Variables</title>
 
-		<section>
+		<section id="pv_cgr" xreflabel="$cgr">
 			<title><varname>$cgr(name) / $(cgr(name)[session])</varname></title>
 			<para>
 				Pseudo-variable used to set different parameters for the
@@ -594,7 +651,7 @@ modparam("cgrates", "retry_timeout", 120)
 		...
 		if (!has_totag()) {
 			...
-			$cgr(Tenant) = $fd; # set the From domain as a tenant
+			$cgr_opt(Tenant) = $fd; # set the From domain as a tenant
 			$cgr(RequestType) = "*prepaid"; # do prepaid accounting
 			if (!cgrates_auth("$fU", "$rU")) {
 				sl_send_reply("403", "Forbidden");
@@ -611,7 +668,7 @@ modparam("cgrates", "retry_timeout", 120)
 		if (!has_totag()) {
 			...
 			# first session - authorize the user
-			$cgr(Tenant) = $fd; # set the From domain as a tenant
+			$cgr_opt(Tenant) = $fd; # set the From domain as a tenant
 			$cgr(RequestType) = "*prepaid"; # do prepaid accounting
 			if (!cgrates_auth("$fU", "$rU")) {
 				sl_send_reply("403", "Forbidden");
@@ -619,7 +676,7 @@ modparam("cgrates", "retry_timeout", 120)
 			}
 
 			# second session - authorize the carrier
-			$(cgr(Tenant)[carrier]) = $td;
+			$(cgr_opt(Tenant)[carrier]) = $td;
 			$(cgr(RequestType)[carrier]) = "*postpaid";
 			if (!cgrates_auth("$tU", "$fU", "carrier")) {
 				# use a different carrier
@@ -634,17 +691,69 @@ modparam("cgrates", "retry_timeout", 120)
 		</programlisting>
 		</example>
 		</section>
-		<section>
-			<title><varname>$cgrret</varname></title>
+		<section id="pv_cgr_opt" xreflabel="$cgr_opt">
+			<title><varname>$cgr_opt(name) / $(cgr_opt(name)[session])</varname></title>
 			<para>
-				Returns the reply message of a CGRateS command in script.
+				Used to tune the request parameter of a CGRateS request when used in
+				non-<emphasis>compat_mode</emphasis>.
+			</para>
+			<para>
+				<emphasis>Note:</emphasis> for all request options integer values act as
+				boolean values: <emphasis>0</emphasis> disables the feature and
+				<emphasis>1</emphasis>(or different than 0 value) enables it. String
+				variables are passed just as they are set.
+			</para>
+			<para>
+				Possible values at the time the documentation was written:
+				<itemizedlist>
+				<listitem>
+					<para><emphasis>Tenant</emphasis> - tune CGRateS Tenant.</para>
+				</listitem>
+				<listitem>
+					<para><emphasis>GetAttributes</emphasis> - requests the account
+						attributes from the CGRateS DB.</para>
+				</listitem>
+				<listitem>
+					<para><emphasis>GetMaxUsage</emphasis> - request the maximum time
+						the call is allowed to run.</para>
+				</listitem>
+				<listitem>
+					<para><emphasis>GetSuppliers</emphasis> - request an array with
+						all the suppliers for that can terminate that call.</para>
+				</listitem>
+				</itemizedlist>
 			</para>
 		<example>
-				<title>$cgrret usage</title>
+				<title>$cgr_opt(name) usage</title>
+				<programlisting format="linespecific">
+		...
+		$cgr_opt(Tenant) = "cgrates.org";
+		$cgr_opt(GetMaxUsage) = 1; # also retrieve the max usage
+		if (!cgrates_auth("$fU", "$rU")) {
+			# call rejected
+		}
+		...
+		</programlisting>
+		</example>
+		</section>
+		<section id="pv_cgr_ret" xreflabel="$cgr_ret">
+			<title><varname>$cgr_ret(name)</varname></title>
+			<para>
+				Returns the reply message of a CGRateS command in script,
+				or when used in the non-compat mode, one of the objects
+				within the reply.
+			</para>
+		<example>
+				<title>$cgr_ret(name) usage</title>
 				<programlisting format="linespecific">
 		...
 		cgrates_auth("$fU", "$rU");
-		xlog("Call is allowed to run $cgrret seconds\n");
+
+		# in compat mode
+		xlog("Call is allowed to run $cgr_ret seconds\n");
+
+		# in non-compat mode
+		xlog("Call is allowed to run $cgr_ret(MaxUsage) seconds\n");
 		...
 		</programlisting>
 		</example>
@@ -654,7 +763,7 @@ modparam("cgrates", "retry_timeout", 120)
 
 	<section>
 	<title>Exported Asynchronous Functions</title>
-	<section>
+	<section id="afunc_cgrates_auth" xreflabel="cgrates_auth()">
 		<title>
 		<function moreinfo="none">cgrates_auth([account[, destination[, session]]])</function>
 		</title>
@@ -730,7 +839,7 @@ route {
 route [auth_reply]
 {
 	if ($rc &lt; 0) {
-		xlog("Call not authorized: code=$cgrret!\n");
+		xlog("Call not authorized: code=$cgr_ret!\n");
 		send_reply("403", "Forbidden");
 		exit;
 	}
@@ -739,7 +848,7 @@ route [auth_reply]
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="afunc_cgrates_cmd" xreflabel="cgrates_cmd()">
 		<title>
 		<function moreinfo="none">cgrates_cmd(command[, session])</function>
 		</title>
@@ -772,8 +881,7 @@ route [auth_reply]
 		<listitem>
 			<para><emphasis>1</emphasis> - successful call - the CGRateS account
 				is allowed to make the call.
-			</para>
-		</listitem>
+			</para> </listitem>
 		<listitem>
 			<para><emphasis>-1</emphasis> - &osips; returned an internal error
 				(i.e. server is out of memory).
@@ -790,7 +898,7 @@ route [auth_reply]
 		</listitem>
 		</itemizedlist>
 		<example>
-		<title><function moreinfo="none">async cgrates_cmd</function> usage</title>
+		<title><function moreinfo="none">async cgrates_cmd compat_mode</function> usage</title>
 		<programlisting format="linespecific">
 route {
 	...
@@ -806,7 +914,32 @@ route {
 route [auth_reply]
 {
 	if ($rc &lt; 0) {
-		xlog("Call not authorized: code=$cgrret!\n");
+		xlog("Call not authorized: code=$cgr_ret!\n");
+		send_reply("403", "Forbidden");
+		exit;
+	}
+	...
+}
+</programlisting>
+		</example>
+		<example>
+		<title><function moreinfo="none">async cgrates_cmd new</function> usage</title>
+		<programlisting format="linespecific">
+route {
+	...
+	$cgr_opt(Tenant) = $fd;
+	$cgr(Account) = $fU;
+	$cgr(OriginID) = $ci;
+	$cgr(SetupTime) = "" + $Ts;
+	$cgr(RequestType) = "*prepaid";
+	$cgr(Destination) = $rU;
+	async(cgrates_cmd("SessionSv1.AuthorizeEventWithDigest"), auth_reply);
+}
+
+route [auth_reply]
+{
+	if ($rc &lt; 0) {
+		xlog("Call not authorized: MaxUsage=$cgr_ret(MaxUsage)!\n");
 		send_reply("403", "Forbidden");
 		exit;
 	}

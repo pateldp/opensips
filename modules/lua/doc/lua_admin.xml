@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 		<title>Overview</title>
 		<para>
    The time needed when writing a new OpenSIPS module
@@ -48,7 +48,7 @@ if (lua_exec("mongo_alias")) {
     for further informations.
     </para>
   </section>
-  <section>
+  <section id="dependencies" xreflabel="Dependencies">
     <title>Dependencies</title>
     <section>
       <title>OpenSIPS Modules</title>
@@ -92,7 +92,7 @@ if (lua_exec("mongo_alias")) {
       </para>
     </section>
   </section>
-  <section>
+  <section id="exported_parameters" xreflabel="Exported Parameters">
     <title>Exported Parameters</title>
     <section>
       <title>luafilename (string)</title>
@@ -145,7 +145,7 @@ modparam("lua", "luafilename", "/etc/opensips/opensips.lua")
       <para>Disable by default</para>
     </section>
   </section>
-  <section>
+  <section id="exported_functions" xreflabel="exported_functions">
     <title>Exported Functions</title>
     <section>
       <title>lua_exec(func, [param])</title>
@@ -153,6 +153,16 @@ modparam("lua", "luafilename", "/etc/opensips/opensips.lua")
       Calls a Lua function with passing it the current SIP message.
       This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
       ONREPLY_ROUTE and BRANCH_ROUTE.
+      </para>
+      <para>Parameters:</para>
+      <itemizedlist>
+        <listitem><para>
+          <emphasis>func</emphasis> (string) - Lua function name
+        </para></listitem>
+        <listitem><para>
+          <emphasis>param</emphasis> (string, optional) - Parameter to be passed to the Lua function.
+        </para></listitem>
+      </itemizedlist>
         <example>
           <title>lua_exec() usage</title>
 <programlisting format="linespecific">
@@ -163,7 +173,6 @@ if (lua_exec("mongo_alias")) {
 ...
 </programlisting>
         </example>
-      </para>
     </section>
     <section>
       <title>lua_meminfo()</title>
@@ -172,5 +181,33 @@ if (lua_exec("mongo_alias")) {
       </para>
     </section>
   </section>
+
+  <section id="exported_mi_functions" xreflabel="Exported MI Functions">
+  <title>Exported MI Functions</title>
+  <section id="mi_watch" xreflabel="watch">
+    <title>
+    <function moreinfo="none">watch</function>
+    </title>
+    <para>
+    Name: <emphasis>watch</emphasis>
+    </para>
+    <para>Parameters: <emphasis>none</emphasis></para>
+    <itemizedlist>
+      <listitem>
+        <para><emphasis>action</emphasis> (optional) - 'add' or 'delete'</para>
+      </listitem>
+      <listitem>
+        <para><emphasis>extension</emphasis> (optional) - required if
+        <emphasis>action</emphasis> is provided</para>
+      </listitem>
+    </itemizedlist>
+    <para>MI FIFO Command Format:</para>
+  <programlisting  format="linespecific">
+  opensips-cli -x mi watch
+  </programlisting>
+  </section>
+
+</section>
+
 </chapter>
 

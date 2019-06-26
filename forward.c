@@ -96,7 +96,7 @@ struct socket_info* get_out_socket(union sockaddr_union* to, int proto)
 	socklen_t len;
 	union sockaddr_union from;
 	struct socket_info* si;
-	struct ip_addr ip;
+	struct ip_addr ip, ip_dst;
 
 	if (proto!=PROTO_UDP) {
 		LM_CRIT("can only be called for UDP\n");
@@ -119,12 +119,16 @@ struct socket_info* get_out_socket(union sockaddr_union* to, int proto)
 	}
 	su2ip_addr(&ip, &from);
 	si=find_si(&ip, 0, proto);
-	if (si==0) goto error;
+	if (si==0) {
+		LM_ERR("outbound IP %s not found as listener\n", ip_addr2a(&ip));
+		goto error;
+	}
 	close(temp_sock);
 	LM_DBG("socket determined: %p\n", si );
 	return si;
 error:
-	LM_ERR("no socket found\n");
+	su2ip_addr( &ip_dst, to);
+	LM_ERR("failed to find route to %s\n", ip_addr2a(&ip_dst));
 	close(temp_sock);
 	return 0;
 }
@@ -344,7 +348,7 @@ int forward_request( struct sip_msg* msg, struct proxy_l * p)
 				pkg_free(buf.s);
 
 			buf.s = build_req_buf_from_sip_req( msg, (unsigned int*)&buf.len,
-				send_sock, p->proto, 0 /*flags*/);
+				send_sock, p->proto, NULL, 0 /*flags*/);
 			if (!buf.s){
 				LM_ERR("building req buf failed\n");
 				tcp_no_new_conn = 0;
@@ -468,7 +472,7 @@ int forward_reply(struct sip_msg* msg)
 	unsigned int new_len;
 	struct sr_module *mod;
 	int proto;
-	int id; /* used only by tcp*/
+	unsigned int id; /* used only by tcp*/
 	struct socket_info *send_sock;
 	char* s;
 	int len;
@@ -523,7 +527,8 @@ int forward_reply(struct sip_msg* msg)
 		if (msg->via1->i&&msg->via1->i->value.s){
 			s=msg->via1->i->value.s;
 			len=msg->via1->i->value.len;
-			id=reverse_hex2int(s, len);
+			if (reverse_hex2int(s, len, &id)<0)
+				id = 0;
 		}
 	}
 
@@ -535,10 +540,16 @@ int forward_reply(struct sip_msg* msg)
 		goto error;
 	}
 
-	if (msg_send(send_sock, proto, to, id, new_buf, new_len, msg)<0) {
+	if (msg->flags & tcp_no_new_conn_rplflag)
+		tcp_no_new_conn = 1;
+
+	if (msg_send(send_sock, proto, to, (int)id, new_buf, new_len, msg)<0) {
+		tcp_no_new_conn = 0;
 		update_stat( drp_rpls, 1);
 		goto error0;
 	}
+	tcp_no_new_conn = 0;
+
 	update_stat( fwd_rpls, 1);
 	/*
 	 * If no port is specified in the second via, then this

@@ -1,40 +1,4 @@
 TLS_MGM module
-
-Peter Griffiths
-
-   unknown
-
-Klaus Darilion
-
-   enum.at
-
-Edited by
-
-Klaus Darilion
-
-Bogdan-Andrei Iancu
-
-Cesc Santasusana
-
-Klaus Darilion
-
-Christian Lahme
-
-Ionut-Razvan Ionita
-
-Marius Cristian Eseanu
-
-Robert-Vladut Patrascu
-
-   Copyright © 2005 Voice Sistem SRL
-
-   Copyright © 2005 Cesc Santasusana
-
-   Copyright © 2006 enum.at
-
-   Copyright © 2013 Secusmart GmbH
-
-   Copyright © 2015 OpenSIPS Solutions
      __________________________________________________________
 
    Table of Contents
@@ -69,27 +33,30 @@ Robert-Vladut Patrascu
               1.8.10. verify_cert ([domain](string) and
                       require_cert ([domain](string)
 
-              1.8.11. tls_handshake_timeout (integer) and
-                      tls_send_timeout (integer)
-
-              1.8.12. client_domain_avp (integer)
-              1.8.13. db_url (string)
-              1.8.14. db_table (string)
-              1.8.15. domain_col (string)
-              1.8.16. address_col (string)
-              1.8.17. tls_method_col (string)
-              1.8.18. verify_cert_col (string)
-              1.8.19. require_cert_col (string)
-              1.8.20. certificate_col (string)
-              1.8.21. private_key_col (string)
-              1.8.22. crl_check_all_col (string)
-              1.8.23. crl_dir_col (string)
-              1.8.24. ca_list_col (string)
-              1.8.25. ca_dir_col (string)
-              1.8.26. cipher_list_col (string)
-              1.8.27. dh_params_col (string)
-              1.8.28. ec_curve_col (string)
-              1.8.29. server_domain, client_domain (string)
+              1.8.11. tls_handshake_timeout (integer)
+              1.8.12. tls_send_timeout (integer)
+              1.8.13. client_tls_domain_avp (string)
+              1.8.14. client_sip_domain_avp (string)
+              1.8.15. db_url (string)
+              1.8.16. db_table (string)
+              1.8.17. domain_col (string)
+              1.8.18. match_ip_address_col (string)
+              1.8.19. match_sip_domain_col (string)
+              1.8.20. tls_method_col (string)
+              1.8.21. verify_cert_col (string)
+              1.8.22. require_cert_col (string)
+              1.8.23. certificate_col (string)
+              1.8.24. private_key_col (string)
+              1.8.25. crl_check_all_col (string)
+              1.8.26. crl_dir_col (string)
+              1.8.27. ca_list_col (string)
+              1.8.28. ca_dir_col (string)
+              1.8.29. cipher_list_col (string)
+              1.8.30. dh_params_col (string)
+              1.8.31. ec_curve_col (string)
+              1.8.32. match_ip_address (string)
+              1.8.33. match_sip_domain (string)
+              1.8.34. server_domain, client_domain (string)
 
         1.9. Variables
 
@@ -152,6 +119,22 @@ Robert-Vladut Patrascu
               2.4.9. tls_new_client_domain_name
               2.4.10. tls_free_domains
 
+   3. Contributors
+
+        3.1. By Commit Statistics
+        3.2. By Commit Activity
+
+   4. Documentation
+
+        4.1. Contributors
+
+   List of Tables
+
+   3.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   3.2. Most recently active contributors^(1) to this module
+
    List of Examples
 
    1.1. is_peer_verified usage
@@ -164,37 +147,41 @@ Robert-Vladut Patrascu
    1.8. Set ciphers_list variable
    1.9. Set dh_params variable
    1.10. Set verify_cert & require_cert variable
-   1.11. Set tls_handshake_timeout & tls_send_timeout variable
-   1.12. Set tls_client_domain_avp variable
-   1.13. Usage of db_url block
-   1.14. Usage of db_table block
-   1.15. Usage of domain_col block
-   1.16. Usage of address_col block
-   1.17. Usage of tls_method_col block
-   1.18. Usage of vertify_cert_col block
-   1.19. Usage of require_cert_col block
-   1.20. Usage of certificate_col block
-   1.21. Usage of private_key_col block
-   1.22. Usage of crl_check_all block
-   1.23. Usage of crl_dir_col block
-   1.24. Usage of ca_list_col block
-   1.25. Usage of ca_dir_col block
-   1.26. Usage of cipher_list_col block
-   1.27. Usage of dh_params_col block
-   1.28. Usage of ec_curve_col block
-   1.29. Usage of tls_client_domain and tls_server_domain block
-   1.30. Example of $tls_[peer|my]_[subject|issuer]
-   1.31. Script with TLS support
-   1.32. Example of TLS logging
+   1.11. Set tls_handshake_timeout variable
+   1.12. Set tls_send_timeout variable
+   1.13. Set client_tls_domain_avp variable
+   1.14. Set client_sip_domain_avp variable
+   1.15. Usage of db_url block
+   1.16. Usage of db_table block
+   1.17. Usage of domain_col block
+   1.18. Usage of match_ip_address_col block
+   1.19. Usage of match_sip_domain_col block
+   1.20. Usage of tls_method_col block
+   1.21. Usage of vertify_cert_col block
+   1.22. Usage of require_cert_col block
+   1.23. Usage of certificate_col block
+   1.24. Usage of private_key_col block
+   1.25. Usage of crl_check_all block
+   1.26. Usage of crl_dir_col block
+   1.27. Usage of ca_list_col block
+   1.28. Usage of ca_dir_col block
+   1.29. Usage of cipher_list_col block
+   1.30. Usage of dh_params_col block
+   1.31. Usage of ec_curve_col block
+   1.32. Set match_ip_address variable
+   1.33. Set match_sip_domain variable
+   1.34. Usage of tls_client_domain and tls_server_domain block
+   1.35. Example of $tls_[peer|my]_[subject|issuer]
+   1.36. Script with TLS support
+   1.37. Example of TLS logging
 
 Chapter 1. Admin Guide
 
 1.1. Overview
 
    This module is a management module for TLS certificates and
-   parameters. It provides an interfaces for all the modules that
-   use the TLS protocol. It also implements TLS related functions
-   to use in the routing script, and exports pseudo variables with
+   parameters. It provides an interface for all the modules that
+   use the TLS protocol. It also exports pseudo variables with
    certificate and TLS parameters.
 
 1.2. Usage
@@ -218,60 +205,38 @@ Chapter 1. Admin Guide
    have different parameters than another TLS connection (from
    another TLS domain). Thus, TLS domains are not directly related
    to different SIP domains, although they are often used in
-   common. Depending on the direction of the TLS handshake, a TLS
-   domain is called 'client domain' (=outgouing TLS connection) or
-   'server domain' (= incoming TLS connection).
+   conjunction. Depending on the direction of the TLS handshake, a
+   TLS domain is called 'client domain' (=outgoing TLS connection)
+   or 'server domain' (= incoming TLS connection).
 
-   If you only run one domain, a default domain is enough. If you
-   are running several TLS servers (that is, you have more than
-   one listen=tls:ip:port entry in the config file), you can
-   specify some parameters for each of them separately (not all
-   the above).
+   If you run several SIP domains you can specify some parameters
+   for each of them separately (regardless if you have only one or
+   multiple listen=tls:ip:port entries in the config file).
 
    For example, TLS domains can be used in virtual hosting
    scenarios with TLS. OpenSIPS offers SIP service for multiple
    domains, e.g. atlanta.com and biloxi.com. Altough both domains
-   will be hosted a single SIP proxy, the SIP proxy needs 2
+   will be hosted on a single SIP proxy, the SIP proxy needs 2
    certificates: One for atlanta.com and one for biloxi.com. For
    incoming TLS connections, the SIP proxy has to present the
    respective certificate during the TLS handshake. As the SIP
    proxy does not have a received SIP message yet (this is done
    after the TLS handshake), the SIP proxy can not retrieve the
-   target domain (which will be usually retrieved from the domain
-   in the request URI). Thus, distinction for these domains must
-   be done by using multiple sockets. The socket on which the TLS
-   connection is received, identifies the respective domain. Thus
-   the SIP proxy is able to present the proper certificate.
+   target domain from SIP (which would have been usually retrieved
+   from the domain in the request URI). Thus, distinction for
+   these domains must be done by using multiple listening sockets
+   or by having clients that send the Servername TLS
+   extension(SNI) in the handshake process.
 
-   For outgoing TLS connections, the SIP proxy usually has to
-   provide a client certificate. In this scenario, socket based
-   distinction is not preferable as there is no dedicated outgoing
-   socket. Thus, the certificate selection (selection of the
-   proper TLS client domain) can be name based. If the SIP proxy
-   establishes a new outgoing TLS connection, it checks for the
-   TLS client domain AVP (parameter tls_client_domain_avp). If
-   this AVP is set (e.g. in OpenSIPS.cfg), OpenSIPS searches for a
-   TLS client domain with the same name as the AVP value and uses
-   the associated certificates.
-
-   TLS client domains can also be matched by socket. If no TLS
-   client domain AVP is found, OpenSIPS searches for a TLS client
-   domain based on the destination socket of the underlying
-   outgoing TCP connection that must match with the defined
-   address for a client domain.
-
-   Note: If there is already an existing TLS connection to the
-   remote target, it will be reused wether the TLS client domain
-   AVP matches or not.
-
-   NOTE: Make sure to also configure OpenSIPS to listen on the
-   specified IP:port.
+   For outgoing TLS connections, the TLS domain is chosen based on
+   the destination socket of the underlying outgoing TCP
+   connection and/or by taking a decision at script level via an
+   AVP. For example, you can inspect headers like RURI or From and
+   match the domain in the SIP header with filters that you have
+   set up for the TLS domains.
 
    NOTE: Except tls_handshake_timeout and tls_send_timeout all TLS
-   parameters can be set per TLS domain. If a parameter is not
-   explicit set, the default value will be used.
-
-   It's usable only if TLS support was compiled.
+   parameters can be set per TLS domain.
 
 1.4. Defining TLS domains
 
@@ -282,26 +247,11 @@ Chapter 1. Admin Guide
 
    For the domains defined in the DB, the certificate, private
    key, list of trusted CAs and Diffie-Hellman parameters are
-   provisioned as BLOB values whether for script defined domains
-   you must provide path to files.
-
-   When a TLS domain can't be chosen for an outgoing or incoming
-   TLS connection the default client or server domain is used. A
-   default domain is automatically created (with default settings)
-   but you can also set the certificate, private key etc. in the
-   same way as for other domains (through the module parameters or
-   by DB).
-
-   The default domains from the DB (provisioned with the domain
-   name default) overwrite the standard default domains even if
-   you have set ceratain parameters (certificate, ca_list etc.)
-   for the default domain through the script. When defining
-   default domains in the DB you can specificy a default client or
-   server domain separately or a single specification to be used
-   for both scenarios.
+   provisioned as BLOB values while for script defined domains you
+   must provide path to files.
 
    You can define domains both in the DB and script at the same
-   time (even default domains).
+   time.
 
    For any TLS domain (defined through script or DB, default or
    virtual) if not specified otherwise, the default settings are:
@@ -379,8 +329,8 @@ listen = tls:1.2.3.4:5061
 
 1.8.2. tls_method ([domain]string)
 
-   Sets the TLS protocol. The domain, if set, represents the name
-   of the TLS domain. TLS method which can be:
+   Sets the TLS protocol. The domain part represents the name of
+   the TLS domain. The supported TLS methods are:
      * TLSv1_2 - means OpenSIPS will accept only TLSv1.2
        connections (rfc3261 conformant).
      * TLSv1 - means OpenSIPS will accept only TLSv1 connections
@@ -412,7 +362,6 @@ Warning
 
    Example 1.3. Set tls_method variable
 ...
-modparam("tls_mgm", "tls_method", "TLSv1")
 modparam("tls_mgm", "tls_method", "[dom]TLSv1")
 ...
 
@@ -421,14 +370,12 @@ modparam("tls_mgm", "tls_method", "[dom]TLSv1")
    Public certificate file for OpenSIPS. It will be used as
    server-side certificate for incoming TLS connections, and as a
    client-side certificate for outgoing TLS connections. The
-   domain, if set, represents the name of the TLS domain.
+   domain part represents the name of the TLS domain.
 
    Default value is "CFG_DIR/tls/cert.pem".
 
    Example 1.4. Set certificate variable
 ...
-modparam("tls_mgm", "certificate", "/mycerts/certs/opensips_server_cert.
-pem")
 modparam("tls_mgm", "certificate", "[dom]/mycerts/certs/opensips_server_
 cert.pem")
 ...
@@ -436,14 +383,13 @@ cert.pem")
 1.8.4. private_key ([domain](string)
 
    Private key of the above certificate. I must be kept in a safe
-   place with tight permissions! The domain, if set, represents
-   the name of the TLS omain.
+   place with tight permissions! The domain part represents the
+   name of the TLS omain.
 
    Default value is "CFG_DIR/tls/ckey.pem".
 
    Example 1.5. Set private_key variable
 ...
-modparam("tls_mgm", "private_key", "/mycerts/private/prik.pem")
 modparam("tls_mgm", "private_key", "[dom]/mycerts/private/prik.pem")
 ...
 
@@ -451,13 +397,12 @@ modparam("tls_mgm", "private_key", "[dom]/mycerts/private/prik.pem")
 
    List of trusted CAs. The file contains the certificates
    accepted, one after the other. It MUST be a file, not a folder.
-   The domain, if set, represents the name of the TLS domain.
+   The domain part represents the name of the TLS domain.
 
    Default value is "".
 
    Example 1.6. Set ca_list variable
 ...
-modparam("tls_mgm", "ca_list", "/mycerts/certs/ca_list.pem")
 modparam("tls_mgm", "ca_list", "[dom]/mycerts/certs/ca_list.pem")
 ...
 
@@ -465,23 +410,22 @@ modparam("tls_mgm", "ca_list", "[dom]/mycerts/certs/ca_list.pem")
 
    Directory storing trusted CAs. The path contains the
    certificates accepted, each as hash which is linked to
-   certificate file. The domain, if set, represents the name of
-   the TLS domain.
+   certificate file. The domain part represents the name of the
+   TLS domain.
 
    Default value is "/etc/pki/CA/".
 
    Example 1.7. Set ca_dir variable
 ...
-modparam("tls_mgm", "ca_dir", "/mycerts/certs")
 modparam("tls_mgm", "ca_dir", "[dom]/mycerts/certs")
 ...
 
 1.8.7. ciphers_list ([domain](string)
 
    You can specify the list of algorithms for authentication and
-   encryption that you allow. The domain, if set, represents the
-   name of the TLS domain. To obtain a list of ciphers and then
-   choose, use the openssl application:
+   encryption that you allow. The domain part represents the name
+   of the TLS domain. To obtain a list of ciphers and then choose,
+   use the openssl application:
      * openssl ciphers 'ALL:eNULL:!LOW:!EXPORT'
 
 Warning
@@ -493,7 +437,6 @@ Warning
 
    Example 1.8. Set ciphers_list variable
 ...
-modparam("tls_mgm", "ciphers_list", "NULL")
 modparam("tls_mgm", "ciphers_list", "[dom]NULL")
 ...
 
@@ -501,21 +444,20 @@ modparam("tls_mgm", "ciphers_list", "[dom]NULL")
 
    You can specify a file which contains Diffie-Hellman parameters
    as a PEM-file. This is needed if you would like to specify
-   ciphers including Diffie-Hellman mode. The domain, if set,
+   ciphers including Diffie-Hellman mode. The domain part
    represents the name of the TLS domain.
 
    It defaults to not set a dh param file.
 
    Example 1.9. Set dh_params variable
 ...
-modparam("tls_mgm", "dh_params", "/etc/pki/CA/dh1024.pem")
 modparam("tls_mgm", "dh_params", "[dom]/etc/pki/CA/dh1024.pem")
 ...
 
 1.8.9. ec_curve ([domain](string)
 
    You can specify an elliptic curve which should be used for
-   ciphers which demand an elliptic curve. The domain, if set,
+   ciphers which demand an elliptic curve. The domain part
    represents the name of the TLS domain.
 
    It's usable only if TLS v1.1/1.2 support was compiled. A list
@@ -531,10 +473,8 @@ modparam("tls_mgm", "dh_params", "[dom]/etc/pki/CA/dh1024.pem")
    ssl_context. 'require_cert' does the same with
    SSL_VERIFY_FAIL_IF_NO_PEER_CERT, which is only possible if
    SSL_VERIFY_PEER is also turned on. Since version 2.1, these
-   parameters act have been reduced to only one. They act both on
-   client side and server side if no domain specified, elseway
-   they act on a specific domain, depending on the first
-   parameter.
+   parameters act have been reduced to only one. The domain part
+   represents the name of the TLS domain.
 
    These two parameters are used for incoming TLS connections,
    where OpenSIPS acts as server.
@@ -546,204 +486,305 @@ modparam("tls_mgm", "dh_params", "[dom]/etc/pki/CA/dh1024.pem")
    Example 1.10. Set verify_cert & require_cert variable
 ...
 # turn on the strictest and strongest authentication possible
-modparam("tls_mgm", "require_cert", "1")
-modparam("tls_mgm", "require_cert", "[dom]1")
-modparam("tls_mgm", "verify_cert", "0")
-modparam("tls_mgm", "verify_cert", "[dom]1")
+modparam("tls_mgm", "require_cert", "[dom]0")
+modparam("tls_mgm", "verify_cert", "[dom]0")
 ...
 
-1.8.11. tls_handshake_timeout (integer) and tls_send_timeout
-(integer)
+1.8.11. tls_handshake_timeout (integer)
 
-   Timeouts ... advanced users only
+   Sets the timeout (in milliseconds) for the handshake sequence
+   to complete. It may be necessary to increase this value when
+   using a CPU intensive cipher for the connection to allow time
+   for keys to be generated and processed.
 
-   Default value for both is 30.
+   The timeout is invoked during acceptance of a new connection
+   (inbound) and during the wait period when a new session is
+   being initiated (outbound).
 
-   Example 1.11. Set tls_handshake_timeout & tls_send_timeout
-   variable
+   Default value is 100.
+
+   Example 1.11. Set tls_handshake_timeout variable
 ...
-modparam("tls_mgm", "tls_handshake_timeout", 119) # number of seconds
-modparam("tls_mgm", "tls_send_timeout", 121) # number of seconds
-...
-
-1.8.12. client_domain_avp (integer)
-
-   This sets the AVP used for name based TLS client domain
-   matching (please see Section 1.8.29, “server_domain,
-   client_domain (string)” for more details). Setting the value to
-   0 disables name based TLS client domain matching.
-
-   It's usable only if TLS support was compiled.
-
-   Default value is 0.
-
-   Example 1.12. Set tls_client_domain_avp variable
-...
-modparam("tls_mgm", "tls_client_domain_avp", "tls_cli_dom")
+modparam("tls_mgm", "tls_handshake_timeout", 200) # number of millisecon
+ds
 ...
 
-1.8.13. db_url (string)
+1.8.12. tls_send_timeout (integer)
+
+   Sets the timeout (in milliseconds) for the send operations to
+   complete
+
+   The send timeout is invoked for all TLS write operations,
+   excluding the handshake process (see: tls_handshake_timeout)
+
+   Default value is 100.
+
+   Example 1.12. Set tls_send_timeout variable
+...
+modparam("tls_mgm", "tls_send_timeout", 200) # number of milliseconds
+...
+
+1.8.13. client_tls_domain_avp (string)
+
+   Name of the AVP used for enforcing the selection of a specific
+   TLS client domain. Setting this AVP to the name of a TLS client
+   domain will result in using that specific domain regardless of
+   the standard matching mechanism.
+
+   Note: If there is already an existing TLS connection to the
+   remote target, it will be reused and setting this AVP has no
+   effect.
+
+   No default value.
+
+   Example 1.13. Set client_tls_domain_avp variable
+...
+modparam("tls_mgm", "client_tls_domain_avp", "tls_match_dom")
+...
+
+1.8.14. client_sip_domain_avp (string)
+
+   Name of the AVP that sets the SIP domain used in the TLS client
+   domain matching process.
+
+   Note: If there is already an existing TLS connection to the
+   remote target, it will be reused and setting this AVP has no
+   effect.
+
+   For the AVP usage example, refer to Section 1.8.34,
+   “server_domain, client_domain (string)”.
+
+   No default value.
+
+   Example 1.14. Set client_sip_domain_avp variable
+...
+modparam("tls_mgm", "client_sip_domain_avp", "sip_match_dom")
+...
+
+1.8.15. db_url (string)
 
    The database url. It cannot be NULL.
 
-   Example 1.13. Usage of db_url block
+   You cannot use the "tls_domain=dom_name" URL parameter for a
+   TLS connection to the database for the tls_mgm module itself.
+
+   Example 1.15. Usage of db_url block
 modparam("tls_mgm", "db_url", "mysql://root:admin@localhost/opensips")
 
-1.8.14.  db_table (string)
+1.8.16.  db_table (string)
 
    Sets the database table name.
 
    Default value is "tls_mgm".
 
-   Example 1.14. Usage of db_table block
+   Example 1.16. Usage of db_table block
 modparam("tls_mgm", "db_table", "tls_mgm")
 
-1.8.15.  domain_col (string)
+1.8.17.  domain_col (string)
 
-   Sets the name.for the TLS domain column.
+   Sets the name for the TLS domain column.
 
    Default value is "domain".
 
-   Example 1.15. Usage of domain_col block
+   Example 1.17. Usage of domain_col block
 modparam("tls_mgm", "domain_col", "tls_domain")
 
-1.8.16.  address_col (string)
+1.8.18.  match_ip_address_col (string)
 
-   Sets the address column name.
+   Sets the IP address matching column name.
 
-   Default value is "address".
+   Default value is "match_ip_address".
 
-   Example 1.16. Usage of address_col block
-modparam("tls_mgm", "address_col", "addr")
+   Example 1.18. Usage of match_ip_address_col block
+modparam("tls_mgm", "match_ip_address_col", "addr")
 
-1.8.17.  tls_method_col (string)
+1.8.19.  match_sip_domain_col (string)
+
+   Sets the SIP domain matching column name.
+
+   Default value is "match_sip_domain".
+
+   Example 1.19. Usage of match_sip_domain_col block
+modparam("tls_mgm", "match_sip_domain_col", "addr")
+
+1.8.20.  tls_method_col (string)
 
    Sets the method column name.
 
    Default value is "method".
 
-   Example 1.17. Usage of tls_method_col block
+   Example 1.20. Usage of tls_method_col block
 modparam("tls_mgm", "tls_method_col", "method")
 
-1.8.18.  verify_cert_col (string)
+1.8.21.  verify_cert_col (string)
 
    Sets the verrify certificate column name.
 
    Default value is "verify_cert".
 
-   Example 1.18. Usage of vertify_cert_col block
+   Example 1.21. Usage of vertify_cert_col block
 modparam("tls_mgm", "verify_cert_col", "verify_cert")
 
-1.8.19.  require_cert_col (string)
+1.8.22.  require_cert_col (string)
 
    Sets the require certificate column name.
 
    Default value is "require_cert".
 
-   Example 1.19. Usage of require_cert_col block
+   Example 1.22. Usage of require_cert_col block
 modparam("tls_mgm", "require_cert_col", "req")
 
-1.8.20.  certificate_col (string)
+1.8.23.  certificate_col (string)
 
    Sets the certificate column name.
 
    Default value is "certificate".
 
-   Example 1.20. Usage of certificate_col block
+   Example 1.23. Usage of certificate_col block
 modparam("tls_mgm", "certificate_col", "certificate")
 
-1.8.21.  private_key_col (string)
+1.8.24.  private_key_col (string)
 
    Sets the private key column name.
 
    Default value is "private_key".
 
-   Example 1.21. Usage of private_key_col block
+   Example 1.24. Usage of private_key_col block
 modparam("tls_mgm", "private_key_col", "pk")
 
-1.8.22.  crl_check_all_col (string)
+1.8.25.  crl_check_all_col (string)
 
    Sets the crl_check_all column name.
 
    Default value is "crl_check_all".
 
-   Example 1.22. Usage of crl_check_all block
+   Example 1.25. Usage of crl_check_all block
 modparam("tls_mgm", "crl_check_all_col", "crl_check")
 
-1.8.23.  crl_dir_col (string)
+1.8.26.  crl_dir_col (string)
 
    Sets the crl directory column name.
 
    Default value is "crl_dir".
 
-   Example 1.23. Usage of crl_dir_col block
+   Example 1.26. Usage of crl_dir_col block
 modparam("tls_mgm", "crl_dir_col", "crl_dir")
 
-1.8.24.  ca_list_col (string)
+1.8.27.  ca_list_col (string)
 
    Sets the CA list column name.
 
    Default value is "ca_list".
 
-   Example 1.24. Usage of ca_list_col block
+   Example 1.27. Usage of ca_list_col block
 modparam("tls_mgm", "ca_list_col", "ca_list")
 
-1.8.25.  ca_dir_col (string)
+1.8.28.  ca_dir_col (string)
 
    Sets the CA directory column name.
 
    Default value is "ca_dir".
 
-   Example 1.25. Usage of ca_dir_col block
+   Example 1.28. Usage of ca_dir_col block
 modparam("tls_mgm", "ca_dir_col", "ca_dir")
 
-1.8.26.  cipher_list_col (string)
+1.8.29.  cipher_list_col (string)
 
    Sets the cipher list column name.
 
    Default value is "cipher_list".
 
-   Example 1.26. Usage of cipher_list_col block
+   Example 1.29. Usage of cipher_list_col block
 modparam("tls_mgm", "cipher_list_col", "cipher_list")
 
-1.8.27.  dh_params_col (string)
+1.8.30.  dh_params_col (string)
 
    Sets the Diffie-Hellmann parameters column name.
 
    Default value is "dh_params".
 
-   Example 1.27. Usage of dh_params_col block
+   Example 1.30. Usage of dh_params_col block
 modparam("tls_mgm", "dh_params_col", "dh_parms")
 
-1.8.28.  ec_curve_col (string)
+1.8.31.  ec_curve_col (string)
 
    Sets the ec_curve column name.
 
    Default value is "ec_curve".
 
-   Example 1.28. Usage of ec_curve_col block
+   Example 1.31. Usage of ec_curve_col block
 modparam("tls_mgm", "ec_curve_col", "ec_curve")
 
-1.8.29. server_domain, client_domain (string)
+1.8.32. match_ip_address (string)
+
+   The IP addresses and ports used to match a TLS connection with
+   a virtual TLS domain. For TLS server domains, these values will
+   be mathced against the socket on which the connection is
+   received. For TLS client domains, the values will be compared
+   with the destination socket of the connection.
+
+   The parameter accepts a list of values, and the special value
+   "*" means: match any address.
+
+   Default value is "*" (match any address).
+
+   Example 1.32. Set match_ip_address variable
+...
+modparam("tls_mgm", "match_ip_address", "[dom1]10.0.0.10:5061, 10.0.0.11
+:5061")
+...
+
+1.8.33. match_sip_domain (string)
+
+   The SIP domains used to match a TLS connection with a virtual
+   TLS domain. For TLS server domains, these values will be
+   matched against the hostname provided in the TLS Servername
+   extension(SNI). For TLS client domains, the values will be
+   compared with the value of the client_sip_domain_avp AVP.
+
+   The parameter accepts a list of FQDNs or the special values:
+     * * - match any sip domain( including no SNI provided, in
+       case of TLS server domains);
+     * none - match the TLS domain when there is no SNI provided
+       (make sense only for TLS server domains). Note that if a
+       SNI is provided, but does not match any other SIP domain
+       filter, the connection will be rejected.
+
+   The FQDNs can be specified as with Unix shell-style wildcards.
+   If there are multiple potential matches, the most specific
+   domain will be selected(eg. a request for "foo.bar.com" is
+   matched with the domain specified with "foo.bar.com" versus the
+   one with "*.bar.com").
+
+   Default value is "*" (match any sip domain).
+
+   Example 1.33. Set match_sip_domain variable
+...
+modparam("tls_mgm", "match_sip_domain", "[dom1]foo.com, bar.com, *.baz.c
+om")
+modparam("tls_mgm", "match_sip_domain", "[default_dom]*")
+...
+
+1.8.34. server_domain, client_domain (string)
 
    You can define virtual TLS domains through these parameters.
 
-   The syntax for defining a domain is "domain=IP:port" where the
-   'domain' is the domain name and the address part is optional
-   for client domains.
+   The value of these parameters represents the virtual tls
+   domain's name which is only used for identification.
 
-   Example 1.29. Usage of tls_client_domain and tls_server_domain
+   Example 1.34. Usage of tls_client_domain and tls_server_domain
    block
 ...
-listen=tls:IP_2:port2
-listen=tls:IP_3:port3
+listen=tls:10.0.0.10:5061
 ...
 # set the TLS client domain AVP
-modparam("proto_tls", "tls_client_domain_avp", "tls_cli_dom")
+modparam("tls_mgm", "client_sip_domain_avp", "tls_sip_dom")
 ...
 
 # 'atlanta' server domain
-modparam("tls_mgm", "server_domain", "dom1=IP_2:port2")
+modparam("tls_mgm", "server_domain", "dom1")
+modparam("tls_mgm", "match_ip_address", "[dom1]10.0.0.10:5061")
+modparam("tls_mgm", "match_sip_domain", "[dom1]atlanta.com")
 
 modparam("tls_mgm", "certificate", "[dom1]/certs/atlanta.com/cert.pem")
 modparam("tls_mgm", "private_key", "[dom1]/certs/atlanta.com/privkey.pem
@@ -754,8 +795,9 @@ modparam("tls_mgm", "verify_cert", "[dom1]1")
 modparam("tls_mgm", "require_cert", "[dom1]1")
 
 #'biloxy' server domain
-
-modparam("tls_mgm", "server_domain", "dom2=IP_3:port3")
+modparam("tls_mgm", "server_domain", "dom2")
+modparam("tls_mgm", "match_ip_address", "[dom2]10.0.0.10:5061")
+modparam("tls_mgm", "match_sip_domain", "[dom2]biloxy.com")
 
 modparam("tls_mgm", "certificate", "[dom2]/certs/biloxy.com/cert.pem")
 modparam("tls_mgm", "private_key", "[dom2]/certs/biloxy.com/privkey.pem"
@@ -765,48 +807,52 @@ modparam("tls_mgm", "tls_method", "[dom2]tlsv1")
 modparam("tls_mgm", "verify_cert", "[dom2]1")
 modparam("tls_mgm", "require_cert", "[dom2]1")
 
-# 'atlanta' client domain
-modparam("tls_mgm", "client_domain", "dom3")
+# generic TLS server domain, if the client does not provide SNI
+modparam("tls_mgm", "server_domain", "dom3")
+modparam("tls_mgm", "match_ip_address", "[dom3]10.0.0.10:5061")
+modparam("tls_mgm", "match_sip_domain", "[dom3]none")
 
-modparam("tls_mgm", "certificate", "[dom3]/certs/atlanta.com/cert.pem")
-modparam("tls_mgm", "private_key", "[dom3]/certs/atlanta.com/privkey.pem
-")
+modparam("tls_mgm", "certificate", "[dom3]/certs/generic/cert.pem")
+modparam("tls_mgm", "private_key", "[dom3]/certs/generic/privkey.pem")
 modparam("tls_mgm", "ca_list", "[dom3]/certs/wellknownCAs")
 modparam("tls_mgm", "tls_method", "[dom3]tlsv1")
 modparam("tls_mgm", "verify_cert", "[dom3]1")
 modparam("tls_mgm", "require_cert", "[dom3]1")
 
-#'biloxy' client domain
+# 'atlanta' client domain
 modparam("tls_mgm", "client_domain", "dom4")
+modparam("tls_mgm", "match_ip_address", "[dom4]*")
+modparam("tls_mgm", "match_sip_domain", "[dom4]atlanta.com")
 
-modparam("tls_mgm", "certificate", "[dom4]/certs/biloxy.com/cert.pem")
-modparam("tls_mgm", "private_key", "[dom4]/certs/biloxy.com/privkey.pem"
-)
+
+modparam("tls_mgm", "certificate", "[dom4]/certs/atlanta.com/cert.pem")
+modparam("tls_mgm", "private_key", "[dom4]/certs/atlanta.com/privkey.pem
+")
 modparam("tls_mgm", "ca_list", "[dom4]/certs/wellknownCAs")
 modparam("tls_mgm", "tls_method", "[dom4]tlsv1")
 modparam("tls_mgm", "verify_cert", "[dom4]1")
 modparam("tls_mgm", "require_cert", "[dom4]1")
 
+# 'biloxy' client domain
+modparam("tls_mgm", "client_domain", "dom5")
+modparam("tls_mgm", "match_ip_address", "[dom5]*")
+modparam("tls_mgm", "match_sip_domain", "[dom5]biloxy.com")
 
-# socket based TLS server domains (for TLS based downstream from GW prov
-ider)
-modparam("tls_mgm", "client_domain", "dom5=IP_5:port5")
-
-modparam("tls_mgm", "certificate", "[dom5]/certs/atlanta.com/cert.pem")
-modparam("tls_mgm", "private_key", "[dom5]/certs/atlanta.com/privkey.pem
-")
+modparam("tls_mgm", "certificate", "[dom5]/certs/biloxy.com/cert.pem")
+modparam("tls_mgm", "private_key", "[dom5]/certs/biloxy.com/privkey.pem"
+)
 modparam("tls_mgm", "ca_list", "[dom5]/certs/wellknownCAs")
 modparam("tls_mgm", "tls_method", "[dom5]tlsv1")
-modparam("tls_mgm", "verify_cert", "[dom5]0")
+modparam("tls_mgm", "verify_cert", "[dom5]1")
+modparam("tls_mgm", "require_cert", "[dom5]1")
 
-# socket based TLS client domains (for TLS based upstream to GW provider
-)
-# GW IP: 1.2.3.4, GW port: 6677
-modparam("tls_mgm", "client_domain", "dom6=1.2.3.4:6677")
+# TLS client domain for GW provider
+modparam("tls_mgm", "client_domain", "dom6")
+modparam("tls_mgm", "match_ip_address", "[dom6]1.2.3.4:6677")
+modparam("tls_mgm", "match_sip_domain", "[dom6]*")
 
-modparam("tls_mgm", "certificate", "[dom6]/certs/biloxy.com/cert.pem")
-modparam("tls_mgm", "private_key", "[dom6]/certs/biloxy.com/privkey.pem"
-)
+modparam("tls_mgm", "certificate", "[dom6]/certs/gw/cert.pem")
+modparam("tls_mgm", "private_key", "[dom6]/certs/gw/privkey.pem")
 modparam("tls_mgm", "ca_list", "[dom6]/certs/wellknownCAs")
 modparam("tls_mgm", "tls_method", "[dom6]tlsv1")
 modparam("tls_mgm", "verify_cert", "[dom6]0")
@@ -814,18 +860,12 @@ modparam("tls_mgm", "verify_cert", "[dom6]0")
 ...
 route{
 ...
-    # for biloxy or atlanta domains we set the TLS client domain AVP
-    if ($rd == "atlanta.com")
-        $avp(tls_cli_dom) = "dom3";
-    else if ($rd == "biloxy.com")
-        $avp(tls_cli_dom) = "dom4";
-...
-    # calls to other SIP domains
-    # set the proper SSL context (certificate) for local hosted domains
-    t_relay(); # uses NAPTR and SRV lookups
+    # we match the TLS client domain using the SIP domain in the RURI
+    $avp(tls_sip_dom) = $rd;
+    t_relay();
     exit;
 ...
-    # calls to the PSTN GW
+    # calls to the PSTN GW, will match the correct TLS domain by IP
     t_relay("tls:1.2.3.4:6677");
     exit;
 ...
@@ -874,7 +914,7 @@ route{
    $tls_[peer|my]_[subject|issuer] - ASCII dump of the fields in
    the issuer/subject section of the certificate. String type.
 
-   Example 1.30. Example of $tls_[peer|my]_[subject|issuer]
+   Example 1.35. Example of $tls_[peer|my]_[subject|issuer]
 /C=AT/ST=Vienna/L=Vienna/O=enum.at/CN=enum.at
 
 1.9.8. $tls_[peer|my]_[subject|issuer]_cn
@@ -969,7 +1009,7 @@ route{
    for more details).
      * fork = yes
 
-   Example 1.31. Script with TLS support
+   Example 1.36. Script with TLS support
   # ----------- global configuration parameters ------------------------
   log_level=3
   log_stderror=no
@@ -1046,7 +1086,7 @@ route{
               proxy_challenge("domA.net","0"/*no-qop*/);
               exit;
           };
-          if (!db_check_from()) {
+          if ($au!=$fU) {
               xlog("FROM hdr Cheating attempt in INVITE\n");
               send_reply("403",
                   "That is ugly -- use From=id next time (OB)");
@@ -1104,7 +1144,7 @@ route{
               "0" /* no qop -- some phones can't deal with it */);
           exit;
       };
-      if (!db_check_to()) {
+      if ($au!=$tU) {
           xlog("TO hdr Cheating attempt\n");
           send_reply("403", "That is ugly -- use To=id in REGISTERs");
           exit;
@@ -1146,7 +1186,7 @@ route{
    statements into your OpenSIPS.cfg. This will dump all available
    TLS pseudo variables.
 
-   Example 1.32. Example of TLS logging
+   Example 1.37. Example of TLS logging
 xlog("L_INFO","================= start TLS pseudo variables ============
 ===\n");
 xlog("L_INFO","$$tls_version                   = '$tls_version'\n");
@@ -1405,3 +1445,82 @@ Chapter 2. Developer Guide
    void tls_free_domains(void);
 
    Cleans up the entire domain lists.
+
+Chapter 3. Contributors
+
+3.1. By Commit Statistics
+
+   Table 3.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Vlad Patrascu (@rvlad-patrascu) 89 26 2992 2147
+   2. Eseanu Marius Cristian (@eseanucristian) 51 11 4268 321
+   3. Razvan Crainea (@razvancrainea) 45 33 652 288
+   4. Bogdan-Andrei Iancu (@bogdan-iancu) 23 11 285 454
+   5. Liviu Chircu (@liviuchircu) 21 15 133 212
+   6. Ionut Ionita (@ionutrazvanionita) 17 9 383 169
+   7. Ionel Cerghit (@ionel-cerghit) 7 1 494 109
+   8. Alexey Vasilyev (@vasilevalex) 4 2 33 19
+   9. Callum Guy 3 1 33 8
+   10. Ovidiu Sas (@ovidiusas) 3 1 1 1
+
+   All remaining contributors: Peter Lemenkov (@lemenkov), Maksym
+   Sobolyev (@sobomax).
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+3.2. By Commit Activity
+
+   Table 3.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Liviu Chircu (@liviuchircu)         Oct 2015 - May 2019
+   2.  Vlad Patrascu (@rvlad-patrascu)     Apr 2017 - May 2019
+   3.  Razvan Crainea (@razvancrainea)     Sep 2015 - May 2019
+   4.  Bogdan-Andrei Iancu (@bogdan-iancu) Mar 2016 - May 2019
+   5.  Alexey Vasilyev (@vasilevalex)      Nov 2018 - May 2019
+   6.  Callum Guy                          Jun 2018 - Jun 2018
+   7.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   8.  Ovidiu Sas (@ovidiusas)             Jun 2017 - Jun 2017
+   9.  Ionut Ionita (@ionutrazvanionita)   Apr 2016 - Apr 2017
+   10. Ionel Cerghit (@ionel-cerghit)      Aug 2016 - Aug 2016
+
+   All remaining contributors: Maksym Sobolyev (@sobomax), Eseanu
+   Marius Cristian (@eseanucristian).
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 4. Documentation
+
+4.1. Contributors
+
+   Last edited by: Liviu Chircu (@liviuchircu), Bogdan-Andrei
+   Iancu (@bogdan-iancu), Vlad Patrascu (@rvlad-patrascu), Callum
+   Guy, Peter Lemenkov (@lemenkov), Razvan Crainea
+   (@razvancrainea), Eseanu Marius Cristian (@eseanucristian).
+
+   Documentation Copyrights:
+
+   Copyright © 2015 www.opensips-solutions.com
+
+   Copyright © 2013 Secusmart GmbH
+
+   Copyright © 2006 enum.at
+
+   Copyright © 2005 Cesc Santasusana
+
+   Copyright © 2005 Voice Sistem SRL

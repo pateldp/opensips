@@ -34,6 +34,7 @@
 #include "../../parser/parse_uri.h"
 #include "../../parser/contact/parse_contact.h"
 #include "../../ut.h"
+#include "../../mod_fix.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -41,7 +42,7 @@
 
 //#define DEBUG
 int
-encode_contact (struct sip_msg *msg, char *encoding_prefix,char *public_ip)
+encode_contact (struct sip_msg *msg, str *encoding_prefix, str *public_ip)
 {
 
 	contact_body_t *cb;
@@ -50,8 +51,6 @@ encode_contact (struct sip_msg *msg, char *encoding_prefix,char *public_ip)
 	str newUri;
 	int res;
 	char separator;
-
-
 
 	/*
 	 * I have a list of contacts in contact->parsed which is of type
@@ -143,7 +142,7 @@ encode_contact (struct sip_msg *msg, char *encoding_prefix,char *public_ip)
 }
 
 int
-decode_contact (struct sip_msg *msg,char *unused1,char *unused2)
+decode_contact (struct sip_msg *msg)
 {
 
 	str uri;
@@ -204,7 +203,7 @@ decode_contact (struct sip_msg *msg,char *unused1,char *unused2)
 }
 
 int
-decode_contact_header (struct sip_msg *msg,char *unused1,char *unused2)
+decode_contact_header (struct sip_msg *msg)
 {
 
 	contact_body_t *cb;
@@ -376,7 +375,7 @@ encode2format (str uri, struct uri_format *format)
 
 
 int
-encode_uri (str uri, char *encoding_prefix, char *public_ip,char separator, str * result)
+encode_uri (str uri, str *encoding_prefix, str *public_ip,char separator, str * result)
 {
 	struct uri_format format;
 	char *pos;
@@ -392,8 +391,15 @@ encode_uri (str uri, char *encoding_prefix, char *public_ip,char separator, str 
 			LM_ERR("invalid NULL value for public_ip parameter\n");
 			return -2;
 		}
+
+	if (public_ip->s == NULL || public_ip->len == 0) {
+		LM_ERR("Empty public_ip parameter\n");
+		return -2;
+	}
+
 #ifdef DEBUG
-	fprintf (stdout, "Primit cerere de encodare a [%.*s] cu %s-%s\n", uri.len,uri.s, encoding_prefix, public_ip);
+	fprintf (stdout, "Primit cerere de encodare a [%.*s] cu %.*s-%s\n",
+		uri.len,uri.s, encoding_prefix->len, encoding_prefix->s, public_ip);
 #endif
 	fflush (stdout);
 	foo = encode2format (uri, &format);
@@ -413,11 +419,11 @@ encode_uri (str uri, char *encoding_prefix, char *public_ip,char separator, str 
 
 	foo = 1;		/*strlen(separator); */
 	result->len = format.first + uri.len - format.second +	//ar trebui sa sterg 1
-		strlen (encoding_prefix) + foo +
+		encoding_prefix->len + foo +
 		format.username.len + foo +
 		format.password.len + foo +
 		format.ip.len + foo + format.port.len + foo +
-		format.protocol.len + 1 + strlen (public_ip);
+		format.protocol.len + 1 + public_ip->len;
 	/* adding one comes from @ */
 	result->s = pkg_malloc (result->len);
 	pos = result->s;
@@ -433,7 +439,7 @@ encode_uri (str uri, char *encoding_prefix, char *public_ip,char separator, str 
 	fprintf (stdout, "[pass=%d][Allocated %d bytes][first=%d][lengthsec=%d]\nAdding [%d] ->%.*s\n",format.password.len,result->len,format.first,uri.len-format.second,format.first, format.first,uri.s);fflush (stdout);
 #endif
 
-	res = snprintf(pos,result->len,"%.*s%s%c%.*s%c%.*s%c%.*s%c%.*s%c%.*s@",format.first,uri.s,encoding_prefix,separator,
+	res = snprintf(pos,result->len,"%.*s%.*s%c%.*s%c%.*s%c%.*s%c%.*s%c%.*s@",format.first,uri.s,encoding_prefix->len,encoding_prefix->s,separator,
 	format.username.len,format.username.s,separator,format.password.len,format.password.s,
 	separator,format.ip.len,format.ip.s,separator,format.port.len,format.port.s,separator,format.protocol.len,format.protocol.s);
 
@@ -447,8 +453,8 @@ encode_uri (str uri, char *encoding_prefix, char *public_ip,char separator, str 
 	fprintf(stdout,"res= %d\npos=%s\n",res,pos);
 #endif
 	pos = pos + res ;/* overwriting the \0 from snprintf */
-	memcpy (pos, public_ip, strlen (public_ip));
-	pos = pos + strlen (public_ip);
+	memcpy (pos, public_ip->s, public_ip->len);
+	pos = pos + public_ip->len;
 	memcpy (pos, uri.s + format.second, uri.len - format.second);
 
 #ifdef DEBUG

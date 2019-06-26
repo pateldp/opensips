@@ -89,6 +89,9 @@ static char hostbuf[MAX_BUFF_SIZE];
 static char *h_addr_ptrs[MAXADDRS];
 static char *host_aliases[MAXALIASES];
 
+stat_var *dns_total_queries;
+stat_var *dns_slow_queries;
+
 typedef union {
 	int32_t al;
 	char ac;
@@ -447,58 +450,59 @@ query:
 
 inline struct hostent* resolvehost(char* name, int no_ip_test)
 {
-        static struct hostent* he=0;
+	static struct hostent *he = NULL;
 #ifdef HAVE_GETIPNODEBYNAME
-        int err;
-        static struct hostent* he2=0;
+	int err;
+	static struct hostent *he2 = NULL;
 #endif
-        struct ip_addr* ip;
-        str s;
+	struct timeval start;
+	struct ip_addr *ip;
+	str s;
 
-        if (!no_ip_test) {
-                s.s = (char*)name;
-                s.len = strlen(name);
+	if (!no_ip_test) {
+		s.s = (char *)name;
+		s.len = strlen(name);
 
-                /* check if it's an ip address */
-                if ( ((ip=str2ip(&s))!=0)
-                        || ((ip=str2ip6(&s))!=0)
-                ){
-                        /* we are lucky, this is an ip address */
-                        return ip_addr2he(&s, ip);
-                }
-        }
+		/* check if it's an ip address */
+		if ((ip = str2ip(&s)) || (ip = str2ip6(&s))) {
+			/* we are lucky, this is an ip address */
+			return ip_addr2he(&s, ip);
+		}
+	}
 
-        if(dns_try_ipv6){
-                /*try ipv6*/
-        #ifdef HAVE_GETHOSTBYNAME2
-                if (dnscache_fetch_func != NULL) {
-                        he = own_gethostbyname2(name,AF_INET6);
-                }
-                else {
-                        he=gethostbyname2(name, AF_INET6);
-                }
+	start_expire_timer(start, execdnsthreshold);
 
-        #elif defined HAVE_GETIPNODEBYNAME
-                /* on solaris 8 getipnodebyname has a memory leak,
-                 * after some time calls to it will fail with err=3
-                 * solution: patch your solaris 8 installation */
-                if (he2) freehostent(he2);
-                he=he2=getipnodebyname(name, AF_INET6, 0, &err);
-        #else
-                #error neither gethostbyname2 or getipnodebyname present
-        #endif
-                if (he != 0)
-                        /* return the inet6 result if exists */
-                        return he;
-        }
+	if (dns_try_ipv6) {
+		/* try ipv6 */
+	#ifdef HAVE_GETHOSTBYNAME2
+		if (dnscache_fetch_func)
+	        he = own_gethostbyname2(name,AF_INET6);
+		else
+			he = gethostbyname2(name, AF_INET6);
 
-        if (dnscache_fetch_func != NULL) {
-                he = own_gethostbyname2(name,AF_INET);
-        }
-        else {
-                he=gethostbyname(name);
-        }
-        return he;
+	#elif defined HAVE_GETIPNODEBYNAME
+		/* on solaris 8 getipnodebyname has a memory leak,
+		 * after some time calls to it will fail with err=3
+		 * solution: patch your solaris 8 installation */
+		if (he2) freehostent(he2);
+		he = he2 = getipnodebyname(name, AF_INET6, 0, &err);
+	#else
+		#error "neither gethostbyname2 or getipnodebyname present"
+	#endif
+		if (he != 0)
+			/* return the inet6 result if exists */
+			goto out;
+	}
+
+	if (dnscache_fetch_func)
+		he = own_gethostbyname2(name,AF_INET);
+	else
+		he = gethostbyname(name);
+
+out:
+	_stop_expire_timer(start, execdnsthreshold, "dns",
+	            name, strlen(name), 0, dns_slow_queries, dns_total_queries);
+	return he;
 }
 
 struct hostent * own_gethostbyaddr(void *addr, socklen_t len, int af)
@@ -611,32 +615,19 @@ struct hostent* rev_resolvehost(struct ip_addr *ip)
 int check_ip_address(struct ip_addr* ip, str *name,
 				unsigned short port, unsigned short proto, int resolver)
 {
+	struct ip_addr *ip2;
 	struct hostent* he;
-	int i, len;
-	char* s;
+	int i;
 
-	/* maybe we are lucky and name it's an ip */
-	s=ip_addr2a(ip);
-	if (s==NULL) {
-		LM_CRIT("could not convert ip address\n");
+	/* maybe we are lucky and host (name) is an IP */
+	if ( (ip2=str2ip(name))!=NULL || (ip2=str2ip6(name))!=NULL ) {
+		/* It's an IP :D */
+		if (ip_addr_cmp(ip, ip2))
+			return 0;
 		return -1;
 	}
 
-	LM_DBG("params %s, %.*s, %d\n", s, name->len, name->s, resolver);
-	len=strlen(s);
-
-	/* force first a full matching (v4 and v6) */
-	if ( (len==name->len) && (strncasecmp(name->s, s, name->len)==0) )
-		return 0;
-
-	/* check if name->s is an ipv6 address ref. */
-	if (ip->af==AF_INET6 &&
-		((len==(name->len-2))&&(name->s[0]=='[')&&
-			(name->s[name->len-1]==']')&&
-			(strncasecmp(name->s+1, s, len)==0))
-	)
-		return 0;
-
+	/* host is not an IP, do the DNS lookups on it :(*/
 	if (port==0) port=SIP_PORT;
 	if (resolver&DO_DNS){
 		LM_DBG("doing dns lookup\n");
@@ -695,6 +686,13 @@ int resolv_init(void)
 #warning "no resolv timeout support"
 	LM_WARN("no resolv options support - resolv options will be ignored\n");
 #endif
+
+	if (register_stat("dns", "dns_total_queries", &dns_total_queries, 0) ||
+	    register_stat("dns", "dns_slow_queries", &dns_slow_queries, 0)) {
+		LM_ERR("failed to register DNS stats\n");
+		return -1;
+	}
+
 	return 0;
 }
 
@@ -954,8 +952,12 @@ struct txt_rdata* dns_txt_parser( unsigned char* msg, unsigned char* end,
 	len = *rdata;
 	if (rdata + 1 + len >= end)
 		goto error;	/*  something fishy in the record */
+
+#if 0
+	/* Comparison is always false because len <= 255. */
 	if (len >= sizeof(txt->txt))
 		goto error; /* not enough space? */
+#endif
 	memcpy(txt->txt, rdata+1, len);
 	txt->txt[len] = 0;		/* 0-terminate string */
 	return txt;
@@ -1091,7 +1093,9 @@ struct rdata* get_record(char* name, int type)
 query:
 	start_expire_timer(start,execdnsthreshold);
 	size=res_search(name, C_IN, type, buff.buff, sizeof(buff));
-	stop_expire_timer(start,execdnsthreshold,"dns",name,strlen(name),0);
+	_stop_expire_timer(start, execdnsthreshold, "dns",
+	            name, strlen(name), 0, dns_slow_queries, dns_total_queries);
+
 	if (size<0) {
 		LM_DBG("lookup(%s, %d) failed\n", name, type);
 		if (dnscache_put_func != NULL) {

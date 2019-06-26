@@ -35,6 +35,7 @@
 #include <ctype.h>
 #include "../../dprint.h"
 #include "../../ut.h"
+#include "../../trim.h"
 #include "../../usr_avp.h"
 #include "../../socket_info.h"
 #include "../../mem/mem.h"
@@ -151,7 +152,7 @@ static inline int add_extra(str* tag, str* value,
 		return -1;
 	}
 
-	if ((xel=shm_malloc(sizeof(struct acc_extra))) == NULL) {
+	if ((xel=pkg_malloc(sizeof(struct acc_extra))) == NULL) {
 		LM_ERR("no more pkg mem!\n");
 		return -1;
 	}
@@ -189,58 +190,48 @@ static inline int add_extra(str* tag, str* value,
 }
 
 
-static inline struct acc_extra** extra_str2bkend(str* bkend)
+static struct acc_extra** extra_str2bkend(str* bkend)
 {
-	static str log_bkend_s = str_init("log");
-	static str db_bkend_s = str_init("db");
-	static str aaa_bkend_s = str_init("aaa");
-	static str evi_bkend_s = str_init("evi");
+	str log_bkend_s = str_init("log");
+	str db_bkend_s = str_init("db");
+	str aaa_bkend_s = str_init("aaa");
+	str evi_bkend_s = str_init("evi");
 
-	if (bkend->len == log_bkend_s.len &&
-			!memcmp(bkend->s, log_bkend_s.s, log_bkend_s.len)) {
+	if (!str_strcmp(bkend, &log_bkend_s))
 		return &log_extra_tags;
-	} else
-	if (bkend->len == db_bkend_s.len &&
-			!memcmp(bkend->s, db_bkend_s.s, db_bkend_s.len)) {
+
+	if (!str_strcmp(bkend, &db_bkend_s))
 		return &db_extra_tags;
-	} else
-	if (bkend->len == aaa_bkend_s.len &&
-			!memcmp(bkend->s, aaa_bkend_s.s, aaa_bkend_s.len)) {
+
+	if (!str_strcmp(bkend, &aaa_bkend_s))
 		return &aaa_extra_tags;
-	} else
-	if (bkend->len == evi_bkend_s.len &&
-			!memcmp(bkend->s, evi_bkend_s.s, evi_bkend_s.len)) {
+
+	if (!str_strcmp(bkend, &evi_bkend_s))
 		return &evi_extra_tags;
-	} else {
-		return NULL;
-	}
+
+	return NULL;
 }
 
-static inline struct acc_extra** leg_str2bkend(str* bkend)
+static struct acc_extra** leg_str2bkend(str* bkend)
 {
-	static str log_bkend_s = str_init("log");
-	static str db_bkend_s = str_init("db");
-	static str aaa_bkend_s = str_init("aaa");
-	static str evi_bkend_s = str_init("evi");
+	str log_bkend_s = str_init("log");
+	str db_bkend_s = str_init("db");
+	str aaa_bkend_s = str_init("aaa");
+	str evi_bkend_s = str_init("evi");
 
-	if (bkend->len == log_bkend_s.len &&
-			!memcmp(bkend->s, log_bkend_s.s, log_bkend_s.len)) {
+	if (!str_strcmp(bkend, &log_bkend_s))
 		return &log_leg_tags;
-	} else
-	if (bkend->len == db_bkend_s.len &&
-			!memcmp(bkend->s, db_bkend_s.s, db_bkend_s.len)) {
+
+	if (!str_strcmp(bkend, &db_bkend_s))
 		return &db_leg_tags;
-	} else
-	if (bkend->len == aaa_bkend_s.len &&
-			!memcmp(bkend->s, aaa_bkend_s.s, aaa_bkend_s.len)) {
+
+	if (!str_strcmp(bkend, &aaa_bkend_s))
 		return &aaa_leg_tags;
-	} else
-	if (bkend->len == evi_bkend_s.len &&
-			!memcmp(bkend->s, evi_bkend_s.s, evi_bkend_s.len)) {
+
+	if (!str_strcmp(bkend, &evi_bkend_s))
 		return &evi_leg_tags;
-	} else {
-		return NULL;
-	}
+
+	return NULL;
 }
 
 
@@ -339,6 +330,7 @@ static int parse_acc_list_generic(void* val, str2bkend str2bk,
 
 	char* end;
 
+	trim(&sent);
 
 	if ((end=q_memchr(sent.s, ':', sent.len)) == NULL) {
 		LM_ERR("Missing backend separator ':'!\n");
@@ -402,11 +394,10 @@ int parse_acc_leg(modparam_t type, void* val) {
 
 
 /*
- * starting from the given tags array build an array with
- * pv_value_t type variables that will store the extra variables
- *
- * */
-int build_acc_extra_array(tag_t* tags, int tags_len, extra_value_t** array_p)
+ * build an array with pv_value_t type variables
+ * that will store the extra variables
+ */
+int build_acc_extra_array(int array_len, extra_value_t** array_p)
 {
 	extra_value_t* array;
 
@@ -416,13 +407,13 @@ int build_acc_extra_array(tag_t* tags, int tags_len, extra_value_t** array_p)
 	}
 
 
-	array = shm_malloc(tags_len * sizeof(extra_value_t));
+	array = shm_malloc(array_len * sizeof(extra_value_t));
 	if (array == NULL) {
 		LM_ERR("no more shm!\n");
 		return -1;
 	}
 
-	memset(array, 0, tags_len * sizeof(extra_value_t));
+	memset(array, 0, array_len * sizeof(extra_value_t));
 
 	*array_p = array;
 
@@ -430,7 +421,7 @@ int build_acc_extra_array(tag_t* tags, int tags_len, extra_value_t** array_p)
 
 }
 
-int  build_acc_extra_array_pkg(tag_t* tags, int tags_len, extra_value_t** array_p)
+int build_acc_extra_array_pkg(int array_len, extra_value_t** array_p)
 {
 	extra_value_t* array;
 
@@ -440,13 +431,13 @@ int  build_acc_extra_array_pkg(tag_t* tags, int tags_len, extra_value_t** array_
 	}
 
 
-	array = pkg_malloc(tags_len * sizeof(extra_value_t));
+	array = pkg_malloc(array_len * sizeof(extra_value_t));
 	if (array == NULL) {
 		LM_ERR("no more shm!\n");
 		return -1;
 	}
 
-	memset(array, 0, tags_len * sizeof(extra_value_t));
+	memset(array, 0, array_len * sizeof(extra_value_t));
 
 	*array_p = array;
 
@@ -458,7 +449,7 @@ int  build_acc_extra_array_pkg(tag_t* tags, int tags_len, extra_value_t** array_
  * initialize all values in current row with null
  *
  * */
-int expand_legs(acc_ctx_t* ctx)
+int push_leg(acc_ctx_t* ctx)
 {
 	if (ctx == NULL) {
 		LM_ERR("bad usage!\n");
@@ -482,8 +473,7 @@ int expand_legs(acc_ctx_t* ctx)
 		return -1;
 	}
 
-	return build_acc_extra_array(leg_tags,
-					leg_tgs_len, &ctx->leg_values[ctx->legs_no++]);
+	return build_acc_extra_array(leg_tgs_len, &ctx->leg_values[ctx->legs_no++]);
 }
 
 void destroy_extras( struct acc_extra *extra)

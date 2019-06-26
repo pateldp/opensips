@@ -46,11 +46,12 @@
 #include "ul_callback.h"
 #include "urecord.h"
 #include "ucontact.h"
-#include "ureplication.h"
+#include "ul_cluster.h"
 #include "udomain.h"
 #include "dlist.h"
 #include "utime.h"
 #include "usrloc.h"
+#include "kv_store.h"
 
 extern event_id_t ei_c_update_id;
 
@@ -99,26 +100,32 @@ ucontact_t*
 new_ucontact(str* _dom, str* _aor, str* _contact, ucontact_info_t* _ci)
 {
 	struct sip_uri tmp_uri;
-	size_t att_data_sz;
 	ucontact_t *c;
+	int_str_t shtag, *shtagp;
 
-	att_data_sz = get_att_ct_data_sz();
-
-	c = (ucontact_t*)shm_malloc(sizeof(ucontact_t) + att_data_sz);
+	c = (ucontact_t*)shm_malloc(sizeof(ucontact_t));
 	if (!c) {
 		LM_ERR("no more shm memory\n");
 		return NULL;
 	}
-	memset(c, 0, sizeof(ucontact_t) + att_data_sz);
+	memset(c, 0, sizeof(ucontact_t));
 
-	if (att_data_sz > 0)
-		c->attached_data = (void **)(c + 1);
+	if (have_mem_storage()) {
+		if (!ZSTRP(_ci->packed_kv_storage))
+			c->kv_storage = store_deserialize(_ci->packed_kv_storage);
+		else
+			c->kv_storage = map_create(AVLMAP_SHARED);
+
+		if (!c->kv_storage) {
+			LM_ERR("oom\n");
+			goto out_free;
+		}
+	}
 
 	if (parse_uri(_contact->s, _contact->len, &tmp_uri) < 0) {
 		LM_ERR("contact [%.*s] is not valid! Will not store it!\n",
 			  _contact->len, _contact->s);
-		shm_free(c);
-		return NULL;
+		goto out_free;
 	}
 
 	if (shm_str_dup( &c->c, _contact) < 0) goto mem_error;
@@ -141,6 +148,20 @@ new_ucontact(str* _dom, str* _aor, str* _contact, ucontact_info_t* _ci)
 
 	if (_ci->attr && _ci->attr->len) {
 		if (shm_str_dup( &c->attr, _ci->attr) < 0) goto mem_error;
+	}
+
+	if (_ci->shtag.s) {
+		if (shm_str_dup(&c->shtag, &_ci->shtag) < 0)
+			goto mem_error;
+
+		shtag.is_str = 1;
+		shtag.s = _ci->shtag;
+		if (!kv_put(c->kv_storage, &ul_shtag_key, &shtag))
+			goto mem_error;
+	} else if (have_mem_storage()) {
+		shtagp = kv_get(c->kv_storage, &ul_shtag_key);
+		if (shtagp && shm_str_dup(&c->shtag, &shtagp->s) < 0)
+			goto mem_error;
 	}
 
 	get_act_time();
@@ -179,6 +200,8 @@ out_free:
 	if (c->c.s) shm_free(c->c.s);
 	if (c->instance.s) shm_free(c->instance.s);
 	if (c->attr.s) shm_free(c->attr.s);
+	if (c->shtag.s) shm_free(c->shtag.s);
+	if (c->kv_storage) store_destroy(c->kv_storage);
 	shm_free(c);
 	return NULL;
 }
@@ -191,6 +214,10 @@ out_free:
 void free_ucontact(ucontact_t* _c)
 {
 	if (!_c) return;
+
+	if (_c->flags & FL_EXTRA_HOP)
+		goto skip_fields;
+
 	if (_c->path.s) shm_free(_c->path.s);
 	if (_c->received.s) shm_free(_c->received.s);
 	if (_c->instance.s) shm_free(_c->instance.s);
@@ -198,63 +225,11 @@ void free_ucontact(ucontact_t* _c)
 	if (_c->callid.s) shm_free(_c->callid.s);
 	if (_c->c.s) shm_free(_c->c.s);
 	if (_c->attr.s) shm_free(_c->attr.s);
+	if (_c->shtag.s) shm_free(_c->shtag.s);
+	if (_c->kv_storage) store_destroy(_c->kv_storage);
+
+skip_fields:
 	shm_free( _c );
-}
-
-
-/*! \brief
- * Print contact, for debugging purposes only
- */
-void print_ucontact(FILE* _f, ucontact_t* _c)
-{
-	time_t t = time(0);
-	char* st;
-
-	switch(_c->state) {
-	case CS_NEW:   st = "CS_NEW";     break;
-	case CS_SYNC:  st = "CS_SYNC";    break;
-	case CS_DIRTY: st = "CS_DIRTY";   break;
-	default:       st = "CS_UNKNOWN"; break;
-	}
-
-	fprintf(_f, "~~~Contact(%p)~~~\n", _c);
-	fprintf(_f, "domain    : '%.*s'\n", _c->domain->len, ZSW(_c->domain->s));
-	fprintf(_f, "aor       : '%.*s'\n", _c->aor->len, ZSW(_c->aor->s));
-	fprintf(_f, "Contact   : '%.*s'\n", _c->c.len, ZSW(_c->c.s));
-	fprintf(_f, "Expires   : ");
-	if (_c->expires == 0) {
-		fprintf(_f, "Permanent\n");
-	} else if (_c->expires == UL_EXPIRED_TIME) {
-		fprintf(_f, "Deleted\n");
-	} else if (t > _c->expires) {
-		fprintf(_f, "Expired\n");
-	} else {
-		fprintf(_f, "%u\n", (unsigned int)(_c->expires - t));
-	}
-	fprintf(_f, "q         : %s\n", q2str(_c->q, 0));
-	fprintf(_f, "Call-ID   : '%.*s'\n", _c->callid.len, ZSW(_c->callid.s));
-	fprintf(_f, "CSeq      : %d\n", _c->cseq);
-	fprintf(_f, "User-Agent: '%.*s'\n",
-		_c->user_agent.len, ZSW(_c->user_agent.s));
-	fprintf(_f, "received  : '%.*s'\n",
-		_c->received.len, ZSW(_c->received.s));
-	fprintf(_f, "Path      : '%.*s'\n",
-		_c->path.len, ZSW(_c->path.s));
-	fprintf(_f, "State     : %s\n", st);
-	fprintf(_f, "Flags     : %u\n", _c->flags);
-	fprintf(_f, "Attrs     : '%.*s'\n", _c->attr.len, _c->attr.s);
-	if (_c->sock) {
-		fprintf(_f, "Sock      : %.*s (as %.*s )(%p)\n",
-				_c->sock->sock_str.len,_c->sock->sock_str.s,
-				_c->sock->adv_sock_str.len,ZSW(_c->sock->adv_sock_str.s),
-				_c->sock);
-	} else {
-		fprintf(_f, "Sock      : none (null)\n");
-	}
-	fprintf(_f, "Methods   : %u\n", _c->methods);
-	fprintf(_f, "next      : %p\n", _c->next);
-	fprintf(_f, "prev      : %p\n", _c->prev);
-	fprintf(_f, "~~~/Contact~~~~\n");
 }
 
 
@@ -268,10 +243,8 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 	do{\
 		if ((_old)->len < (_new)->len) { \
 			ptr = shm_malloc((_new)->len + ((_nt) ? 1 : 0)); \
-			if (ptr == 0) { \
-				LM_ERR("no more shm memory\n"); \
-				return -1; \
-			}\
+			if (ptr == 0) \
+				goto out_oom; \
 			memcpy(ptr, (_new)->s, (_new)->len);\
 			if ((_old)->s) shm_free((_old)->s);\
 			(_old)->s = ptr;\
@@ -284,6 +257,7 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 	} while(0)
 
 	char* ptr;
+	int_str_t shtag, *shtagp;
 
 	/* RFC 3261 states 'All registrations from a UAC SHOULD use
 	 * the same Call-ID header field value for registrations sent
@@ -297,7 +271,7 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 		update_str( &_c->received, &_ci->received, 0);
 	} else {
 		if (_c->received.s) shm_free(_c->received.s);
-		_c->received.s = 0;
+		_c->received.s = NULL;
 		_c->received.len = 0;
 	}
 
@@ -305,7 +279,7 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 		update_str( &_c->path, _ci->path, 0);
 	} else {
 		if (_c->path.s) shm_free(_c->path.s);
-		_c->path.s = 0;
+		_c->path.s = NULL;
 		_c->path.len = 0;
 	}
 
@@ -313,7 +287,7 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 		update_str( &_c->attr, _ci->attr, 0);
 	} else {
 		if (_c->attr.s) shm_free(_c->attr.s);
-		_c->attr.s = 0;
+		_c->attr.s = NULL;
 		_c->attr.len = 0;
 	}
 
@@ -330,6 +304,39 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 	_c->flags = _ci->flags;
 	_c->cflags = _ci->cflags;
 
+	if (have_mem_storage()) {
+		if (!ZSTRP(_ci->packed_kv_storage)) {
+			if (_c->kv_storage)
+				store_destroy(_c->kv_storage);
+
+			_c->kv_storage = store_deserialize(_ci->packed_kv_storage);
+			if (!_c->kv_storage)
+				goto out_oom;
+		}
+	}
+
+	if (_ci->shtag.s) {
+		update_str(&_c->shtag, &_ci->shtag, 0);
+
+		shtag.is_str = 1;
+		shtag.s = _ci->shtag;
+		if (!kv_put(_c->kv_storage, &ul_shtag_key, &shtag))
+			goto out_oom;
+	} else if (have_mem_storage()) {
+		shtagp = kv_get(_c->kv_storage, &ul_shtag_key);
+		if (shtagp) {
+			update_str(&_c->shtag, &shtagp->s, 0);
+		} else {
+			if (_c->shtag.s)
+				shm_free(_c->shtag.s);
+
+			_c->shtag.s = NULL;
+			_c->shtag.len = 0;
+
+			kv_del(_c->kv_storage, &ul_shtag_key);
+		}
+	}
+
 	if (compute_next_hop(_c) != 0)
 		LM_ERR("failed to resolve next hop. keeping old one - '%.*s'\n",
 		        _c->next_hop.name.len, _c->next_hop.name.s);
@@ -337,6 +344,10 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 	ul_raise_contact_event(ei_c_update_id, _c);
 
 	return 0;
+
+out_oom:
+	LM_ERR("oom\n");
+	return -1;
 }
 
 
@@ -363,7 +374,7 @@ void st_update_ucontact(ucontact_t* _c)
 			  * again. For db mode 1 we try to update right
 			  * now and if fails, let the timer to do the job
 			  */
-		if (db_mode != NO_DB) {
+		if (cluster_mode != CM_NONE || rr_persist == RRP_LOAD_FROM_SQL) {
 			_c->state = CS_DIRTY;
 		}
 		break;
@@ -401,7 +412,7 @@ int st_delete_ucontact(ucontact_t* _c)
 		      * the contact from the memory as well as
 		      * from the database
 		      */
-		if (db_mode != WRITE_THROUGH) {
+		if (sql_wmode != SQL_WRITE_THROUGH) {
 			_c->expires = UL_EXPIRED_TIME;
 			return 0;
 		} else {
@@ -490,20 +501,21 @@ int st_flush_ucontact(ucontact_t* _c)
  */
 int db_insert_ucontact(ucontact_t* _c,query_list_t **ins_list, int update)
 {
-	int nr_vals = 17;
+	int nr_vals = UL_COLS - 1;
 	int start = 0;
 
 	static db_ps_t myI_ps = NULL;
 	static db_ps_t myR_ps = NULL;
 	char* dom;
-	db_key_t keys[18];
-	db_val_t vals[18];
+	db_key_t keys[UL_COLS];
+	db_val_t vals[UL_COLS];
 
 	if (_c->flags & FL_MEM) {
 		return 0;
 	}
 
-	if ((db_mode == DB_ONLY) && !strstr(db_url.s,"cachedb://")) {
+	/* in CM_SQL_ONLY, we let the SQL engine auto-generate the ucontact_id */
+	if (cluster_mode == CM_SQL_ONLY) {
 		start++;
 		nr_vals--;
 	}
@@ -524,8 +536,9 @@ int db_insert_ucontact(ucontact_t* _c,query_list_t **ins_list, int update)
 	keys[13] = &methods_col;
 	keys[14] = &last_mod_col;
 	keys[15] = &sip_instance_col;
-	keys[16] = &attr_col;
-	keys[17] = &domain_col;
+	keys[16] = &kv_store_col;
+	keys[17] = &attr_col;
+	keys[UL_COLS - 1] = &domain_col; /* "domain" always stays last */
 
 	memset(vals, 0, sizeof vals);
 
@@ -540,8 +553,8 @@ int db_insert_ucontact(ucontact_t* _c,query_list_t **ins_list, int update)
 	vals[2].val.str_val.s = _c->c.s;
 	vals[2].val.str_val.len = _c->c.len;
 
-	vals[3].type = DB_DATETIME;
-	vals[3].val.time_val = _c->expires;
+	vals[3].type = DB_INT;
+	vals[3].val.int_val = _c->expires;
 
 	vals[4].type = DB_DOUBLE;
 	vals[4].val.double_val = q2double(_c->q);
@@ -606,24 +619,35 @@ int db_insert_ucontact(ucontact_t* _c,query_list_t **ins_list, int update)
 	}
 
 	vals[16].type = DB_STR;
-	if (_c->attr.s == 0) {
+	if (!_c->kv_storage || map_size(_c->kv_storage) == 0) {
+		LM_DBG("zero map size\n");
 		vals[16].nul = 1;
 	} else {
-		vals[16].val.str_val.s = _c->attr.s;
-		vals[16].val.str_val.len = _c->attr.len;
+		vals[16].val.str_val = store_serialize(_c->kv_storage);
+		if (ZSTR(vals[16].val.str_val))
+			vals[16].nul = 1;
+	}
+
+	vals[17].type = DB_STR;
+	if (_c->attr.s == 0) {
+		vals[17].nul = 1;
+	} else {
+		vals[17].val.str_val.s = _c->attr.s;
+		vals[17].val.str_val.len = _c->attr.len;
 	}
 
 	if (use_domain) {
-		vals[17].type = DB_STR;
+		vals[UL_COLS - 1].type = DB_STR;
 
 		dom = q_memchr(_c->aor->s, '@', _c->aor->len);
 		if (dom==0) {
 			vals[1].val.str_val.len = 0;
-			vals[17].val.str_val = *_c->aor;
+			vals[UL_COLS - 1].val.str_val = *_c->aor;
 		} else {
 			vals[1].val.str_val.len = dom - _c->aor->s;
-			vals[17].val.str_val.s = dom + 1;
-			vals[17].val.str_val.len = _c->aor->s + _c->aor->len - dom - 1;
+			vals[UL_COLS - 1].val.str_val.s = dom + 1;
+			vals[UL_COLS - 1].val.str_val.len =
+			         _c->aor->s + _c->aor->len - dom - 1;
 		}
 
 		nr_vals++;
@@ -631,7 +655,7 @@ int db_insert_ucontact(ucontact_t* _c,query_list_t **ins_list, int update)
 
 	if (ul_dbf.use_table(ul_dbh, _c->domain) < 0) {
 		LM_ERR("sql use_table failed\n");
-		return -1;
+		goto out_err;
 	}
 
 	if ( !update ) {
@@ -645,18 +669,22 @@ int db_insert_ucontact(ucontact_t* _c,query_list_t **ins_list, int update)
 
 		if (ul_dbf.insert(ul_dbh, keys + start, vals + start, nr_vals) < 0) {
 			LM_ERR("inserting contact in db failed\n");
-			return -1;
+			goto out_err;
 		}
 	} else {
 		/* do insert-update / replace */
 		CON_PS_REFERENCE(ul_dbh) = &myR_ps;
 		if (ul_dbf.insert_update(ul_dbh, keys + start, vals + start, nr_vals) < 0) {
 			LM_ERR("inserting contact in db failed\n");
-			return -1;
+			goto out_err;
 		}
 	}
 
+	store_free_buffer(&vals[16].val.str_val);
 	return 0;
+out_err:
+	store_free_buffer(&vals[16].val.str_val);
+	return -1;
 }
 
 
@@ -668,8 +696,8 @@ int db_update_ucontact(ucontact_t* _c)
 	static db_ps_t my_ps = NULL;
 	db_key_t keys1[2];
 	db_val_t vals1[2];
-	db_key_t keys2[14];
-	db_val_t vals2[14];
+	db_key_t keys2[15];
+	db_val_t vals2[15];
 	int keys1_no = 1;
 	int keys2_no;
 
@@ -695,15 +723,16 @@ int db_update_ucontact(ucontact_t* _c)
 	keys2[9] = &sock_col;
 	keys2[10] = &methods_col;
 	keys2[11] = &last_mod_col;
-	keys2[12] = &attr_col;
+	keys2[12] = &kv_store_col;
+	keys2[13] = &attr_col;
 
 	memset(vals2, 0, sizeof vals2);
 
 	vals2[0].type = DB_BIGINT;
 	vals2[0].val.bigint_val = _c->contact_id;
 
-	vals2[1].type = DB_DATETIME;
-	vals2[1].val.time_val = _c->expires;
+	vals2[1].type = DB_INT;
+	vals2[1].val.int_val = _c->expires;
 
 	vals2[2].type = DB_DOUBLE;
 	vals2[2].val.double_val = q2double(_c->q);
@@ -753,12 +782,21 @@ int db_update_ucontact(ucontact_t* _c)
 	vals2[11].val.time_val = _c->last_modified;
 
 	vals2[12].type = DB_STR;
-	if (_c->attr.s == 0) {
+	if (!_c->kv_storage || map_size(_c->kv_storage) == 0) {
 		vals2[12].nul = 1;
 	} else {
-		vals2[12].val.str_val = _c->attr;
+		vals2[12].val.str_val = store_serialize(_c->kv_storage);
+		if (ZSTR(vals2[12].val.str_val))
+			vals2[12].nul = 1;
 	}
-	keys2_no = 13;
+
+	vals2[13].type = DB_STR;
+	if (_c->attr.s == 0) {
+		vals2[13].nul = 1;
+	} else {
+		vals2[13].val.str_val = _c->attr;
+	}
+	keys2_no = 14;
 
 	if (matching_mode == CONTACT_CALLID) {
 		/* callid is part of the matching key */
@@ -778,7 +816,7 @@ int db_update_ucontact(ucontact_t* _c)
 
 	if (ul_dbf.use_table(ul_dbh, _c->domain) < 0) {
 		LM_ERR("sql use_table failed\n");
-		return -1;
+		goto out_err;
 	}
 
 	CON_PS_REFERENCE(ul_dbh) = &my_ps;
@@ -786,10 +824,14 @@ int db_update_ucontact(ucontact_t* _c)
 	if (ul_dbf.update(ul_dbh, keys1, 0, vals1, keys2, vals2,
 				keys1_no, keys2_no) < 0) {
 		LM_ERR("updating database failed\n");
-		return -1;
+		goto out_err;
 	}
 
+	store_free_buffer(&vals2[12].val.str_val);
 	return 0;
+out_err:
+	store_free_buffer(&vals2[12].val.str_val);
+	return -1;
 }
 
 
@@ -937,17 +979,26 @@ static inline void update_contact_pos(struct urecord* _r, ucontact_t* _c)
 int update_ucontact(struct urecord* _r, ucontact_t* _c, ucontact_info_t* _ci,
 															char is_replicated)
 {
-	int ret;
+	int ret, persist_kv_store = 1;
 
 	/* we have to update memory in any case, but database directly
-	 * only in db_mode 1 */
-	if (mem_update_ucontact( _c, _ci) < 0) {
+	 * only in sql_wmode SQL_WRITE_THROUGH */
+	if (mem_update_ucontact(_c, _ci) < 0) {
 		LM_ERR("failed to update memory\n");
 		return -1;
 	}
 
-	if (!is_replicated && ul_replicate_cluster && db_mode != DB_ONLY)
-		replicate_ucontact_update(_r, &_c->c, _ci);
+	if (is_replicated && _c->kv_storage)
+		restore_urecord_kv_store(_r, _c);
+
+	if (!is_replicated && have_data_replication()) {
+		if (persist_urecord_kv_store(_r) != 0)
+			LM_ERR("failed to persist latest urecord K/V storage\n");
+		else
+			persist_kv_store = 0;
+
+		replicate_ucontact_update(_r, _c);
+	}
 
 	/* run callbacks for UPDATE event */
 	if (exists_ulcb_type(UL_CONTACT_UPDATE))
@@ -956,12 +1007,15 @@ int update_ucontact(struct urecord* _r, ucontact_t* _c, ucontact_info_t* _ci,
 		run_ul_callbacks( UL_CONTACT_UPDATE, _c);
 	}
 
-	if (_r && db_mode!=DB_ONLY)
+	if (_r && have_mem_storage())
 		update_contact_pos( _r, _c);
 
 	st_update_ucontact(_c);
 
-	if (db_mode == WRITE_THROUGH) {
+	if (sql_wmode == SQL_WRITE_THROUGH) {
+		if (persist_kv_store && persist_urecord_kv_store(_r) != 0)
+			LM_ERR("failed to persist latest urecord K/V storage\n");
+
 		ret = db_update_ucontact(_c) ;
 		if (ret < 0) {
 			LM_ERR("failed to update database\n");
@@ -970,4 +1024,38 @@ int update_ucontact(struct urecord* _r, ucontact_t* _c, ucontact_info_t* _ci,
 		}
 	}
 	return 0;
+}
+
+int ucontact_coords_cmp(ucontact_coords _a, ucontact_coords _b)
+{
+	ucontact_sip_coords *a, *b;
+
+	if (cluster_mode != CM_FULL_SHARING_CACHEDB)
+		return _a == _b ? 0 : -1;
+
+	a = (ucontact_sip_coords *)(unsigned long)_a;
+	b = (ucontact_sip_coords *)(unsigned long)_b;
+
+	if (a->aor.len != b->aor.len || a->ct_key.len != b->ct_key.len ||
+		  str_strcmp(&a->aor, &b->aor) || str_strcmp(&a->ct_key, &b->ct_key))
+		return -1;
+
+	return 0;
+}
+
+void free_ucontact_coords(ucontact_coords coords)
+{
+	if (cluster_mode == CM_FULL_SHARING_CACHEDB)
+		shm_free((ucontact_sip_coords *)(unsigned long)coords);
+}
+
+int_str_t *get_ucontact_key(ucontact_t* _ct, const str* _key)
+{
+	return kv_get(_ct->kv_storage, _key);
+}
+
+int_str_t *put_ucontact_key(ucontact_t* _ct, const str* _key,
+                            const int_str_t* _val)
+{
+	return kv_put(_ct->kv_storage, _key, _val);
 }

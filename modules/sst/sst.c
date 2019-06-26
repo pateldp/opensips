@@ -86,8 +86,10 @@ struct dlg_binds *dlg_binds = &dialog_st;
  * Script commands we export.
  */
 static cmd_export_t cmds[]={
-	{"sstCheckMin", (cmd_function)sst_check_min, 1, 0, 0, REQUEST_ROUTE | ONREPLY_ROUTE },
-	{0,0,0,0,0,0}
+	{"sstCheckMin", (cmd_function)sst_check_min, {
+		{CMD_PARAM_INT|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE | ONREPLY_ROUTE},
+	{0,0,{{0,0,0}},0}
 };
 
 /*
@@ -98,7 +100,6 @@ static param_export_t mod_params[]={
 	{ "min_se", INT_PARAM, &sst_minSE						},
 	{ "reject_to_small",		INT_PARAM, &sst_reject 		},
 	{ "sst_flag",				STR_PARAM, &sst_flag_str	},
-	{ "sst_flag",				INT_PARAM, &sst_flag		},
 	{ "sst_interval",		INT_PARAM, &sst_interval		},
 	{ 0,0,0 }
 };
@@ -132,6 +133,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,         /* exported functions */
 	0,            /* exported async functions */
@@ -144,7 +146,8 @@ struct module_exports exports= {
 	mod_init,     /* module initialization function */
 	0,            /* reply processing function */
 	0,            /* Destroy function */
-	0             /* per-child init function */
+	0,            /* per-child init function */
+	0             /* reload confirm function */
 };
 
 /**
@@ -166,8 +169,6 @@ static int mod_init(void)
 	if (sst_enable_stats==0) {
 		exports.stats = 0;
 	}
-
-	fix_flag_name(sst_flag_str, sst_flag);
 
 	sst_flag = get_flag_id_by_name(FLAG_TYPE_MSG, sst_flag_str);
 

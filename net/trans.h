@@ -75,6 +75,9 @@ extern struct proto_info protos[];
 #define is_udp_based_proto(_p) \
 	(protos[_p].net.flags&PROTO_NET_USE_UDP)
 
+#define proto_has_listeners(_p) \
+	(protos[_p].listeners != NULL)
+
 #define DST_FCNTL_SET_LIFETIME 1
 
 #define trans_set_dst_attr( _rcv, _attr, _val) \
@@ -91,7 +94,7 @@ int trans_load(void);
 /*
  * adds a new listener
  */
-int add_listener(struct socket_id *sock, enum si_flags flags);
+int add_listener(struct socket_id *sock);
 
 /*
  * adds a temporary listener

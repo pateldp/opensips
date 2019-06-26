@@ -284,15 +284,12 @@ inline str* get_avp_name(struct usr_avp *avp)
 /* get value functions */
 inline void get_avp_val(struct usr_avp *avp, int_str *val)
 {
-	void *data;
-
 	if (avp==0 || val==0)
 		return;
 
 	if (avp->flags & AVP_VAL_STR) {
 		/* avp type ID, str value */
-		data = (void*)&avp->data;
-		val->s = *((str*)data);
+		val->s = *(str *)(&avp->data);
 	} else {
 		/* avp type ID, int value */
 		val->n = (long)(avp->data);
@@ -425,6 +422,19 @@ void destroy_index_avp( unsigned short flags, int name, int index)
 	}
 
 	destroy_avp( avp );
+}
+
+void destroy_avp_list_bulk( struct usr_avp **list )
+{
+	struct usr_avp *avp, *foo;
+
+	avp = *list;
+	while( avp ) {
+		foo = avp;
+		avp = avp->next;
+		shm_free_bulk( foo );
+	}
+	*list = 0;
 }
 
 

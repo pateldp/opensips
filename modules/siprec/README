@@ -1,16 +1,4 @@
 SIPREC Module
-
-Răzvan Crainea
-
-   OpenSIPS Solutions
-
-Edited by
-
-Răzvan Crainea
-
-   Copyright © 2017 www.opensips-solutions.com
-
-   Copyright © 2017 Module sponsored by OrecX
      __________________________________________________________
 
    Table of Contents
@@ -35,8 +23,25 @@ Răzvan Crainea
 
         1.8. Exported Functions
 
-              1.8.1. siprec_start_recording([srs [, group [,
-                      caller [, callee [, rtpproxy_set] ]]]])
+              1.8.1. siprec_start_recording(srs, [group],
+                      [caller], [callee], [rtpproxy_sock],
+                      [media_ip])
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -46,6 +51,9 @@ Răzvan Crainea
    1.4. Use siprec_start_recording() function with a single SRS
    1.5. Use siprec_start_recording() function with multiple SRS
           servers
+
+   1.6. Use siprec_start_recording() function with custom XML
+          values for participants
 
 Chapter 1. Admin Guide
 
@@ -112,13 +120,13 @@ Chapter 1. Admin Guide
 1.4. SRS Failover
 
    The siprec module supports failover between multiple SRS
-   servers - when calling the siprec_start_recording function, one
-   can provision more SRS URIs, separated by comma. In this case,
-   OpenSIPS will try to use them in the same order specified, one
-   by one, until either one of them responds with a positive reply
-   (200 OK), or the response code is one of the codes matched by
-   the skip_failover_codes regular expression. In the latter case
-   the call is not recorded at all.
+   servers - when calling the siprec_start_recording() function,
+   one can provision more SRS URIs, separated by comma. In this
+   case, OpenSIPS will try to use them in the same order
+   specified, one by one, until either one of them responds with a
+   positive reply (200 OK), or the response code is one of the
+   codes matched by the skip_failover_codes regular expression. In
+   the latter case the call is not recorded at all.
 
 1.5. Limitations
 
@@ -208,8 +216,8 @@ modparam("siprec", "skip_failover_codes", "[34][0-9][0-9]")
 
 1.8. Exported Functions
 
-1.8.1.  siprec_start_recording([srs [, group [, caller [, callee [,
-rtpproxy_set] ]]]])
+1.8.1.  siprec_start_recording(srs, [group], [caller], [callee],
+[rtpproxy_sock], [media_ip])
 
    Calling this function on an initial INVITE engages call
    recording to SRSs for that call. Note that it does not
@@ -223,20 +231,23 @@ rtpproxy_set] ]]]])
    callee.
 
    Parameters:
-     * srs - a comma-separated list of SRS URIs. These URIs are
-       used in the order specified. See siprec_srs_failover for
-       more information.
-     * group (optional) - an opaque values used by the SIPREC
-       protocol to group calls in certain profiles.
-     * caller (optional) - a nameaddr header containing
+     * srs (string) - a comma-separated list of SRS URIs. These
+       URIs are used in the order specified. See
+       siprec_srs_failover for more information.
+     * group (string, optional) - an opaque values used by the
+       SIPREC protocol to group calls in certain profiles.
+     * caller (string, optional) - an XML block containing
        information about the caller. If absent, the From header is
-       used.
-     * callee (optional) - a nameaddr header containing
+       used to build the value from.
+     * callee (string, optional) - an XML block containing
        information about the callee. If absent, the To header is
-       used.
-     * rtpproxy_set (optional) - the RTPProxy set used for this
-       call. If absent, the default set provisioned in the
-       rtpproxy module is used.
+       used to build the value from.
+     * rtpproxy_sock (string, optional) - the RTPProxy soscket
+       used for this call. If absent, the rtpproxy module will try
+       to detect the proxy used for the initial call, based on the
+       default set provisioned in the rtpproxy module.
+     * media_ip (string, optional) - the IP that RTPProxy will be
+       streaming media from. If absent 127.0.0.1 will be used.
 
    The function returns false when an internal error is triggered
    and the call recording setup fails. Otherwise, if all the
@@ -251,7 +262,7 @@ rtpproxy_set] ]]]])
                 $var(srs) = "sip:127.0.0.1";
                 xlog("Engage SIPREC call recording to $var(srs) for $ci\
 n");
-                siprec_start_recording("$var(srs)");
+                siprec_start_recording($var(srs));
         }
         ...
 
@@ -263,6 +274,67 @@ n");
 ;
                 xlog("Engage SIPREC call recording to servers $var(srs)
 for $ci in inbound group\n");
-                siprec_start_recording("$var(srs)", "inbound");
+                siprec_start_recording($var(srs), "inbound");
         }
         ...
+
+   Example 1.6. Use siprec_start_recording() function with custom
+   XML values for participants
+        ...
+        $xml(caller_xml) = "<nameID></nameID>";
+        $xml(caller_xml/nameID.attr/aor) = "sip:6024151234@10.0.0.11:509
+0";
+        $xml(caller_xml/nameID) = "<name>test</name>";
+        siprec_start_recording($var(srs),,$xml(caller_xml/nameID));
+        ...
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Razvan Crainea (@razvancrainea) 73 34 3410 621
+   2. Vlad Patrascu (@rvlad-patrascu) 10 5 152 134
+   3. Liviu Chircu (@liviuchircu) 6 4 21 44
+   4. Bogdan-Andrei Iancu (@bogdan-iancu) 3 1 2 1
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                     Name                   Commit Activity
+   1. Razvan Crainea (@razvancrainea)     Jun 2017 - Jun 2019
+   2. Vlad Patrascu (@rvlad-patrascu)     Feb 2018 - Apr 2019
+   3. Bogdan-Andrei Iancu (@bogdan-iancu) Apr 2019 - Apr 2019
+   4. Liviu Chircu (@liviuchircu)         Apr 2018 - Nov 2018
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Razvan Crainea (@razvancrainea), Vlad Patrascu
+   (@rvlad-patrascu), Liviu Chircu (@liviuchircu).
+
+   Documentation Copyrights:
+
+   Copyright © 2017 www.opensips-solutions.com

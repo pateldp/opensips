@@ -224,7 +224,7 @@ void subs_cback_func(struct cell *t, int cb_type, struct tmcb_params *ps)
 	msg= ps->rpl;
 	if(msg == NULL)
 	{
-		LM_ERR("no reply message found\n ");
+		LM_ERR("no reply message found\n");
 		goto error;
 	}
 
@@ -382,7 +382,7 @@ void subs_cback_func(struct cell *t, int cb_type, struct tmcb_params *ps)
 	/* extract the contact */
 	if(msg->contact== NULL || msg->contact->body.s== NULL)
 	{
-		LM_ERR("no contact header found");
+		LM_ERR("no contact header found\n");
 		goto error;
 	}
 	if( parse_contact(msg->contact) <0 )
@@ -432,7 +432,7 @@ void subs_cback_func(struct cell *t, int cb_type, struct tmcb_params *ps)
 	/*process record route and add it to a string*/
 	if (msg->record_route!=NULL)
 	{
-		rt = print_rr_body(msg->record_route, &record_route, 1, 0);
+		rt = print_rr_body(msg->record_route, &record_route, 1, 0, NULL);
 		if(rt != 0)
 		{
 			LM_ERR("parsing record route [%d]\n", rt);
@@ -957,7 +957,7 @@ int send_subscribe(subs_info_t* subs)
 		td= pua_build_dlg_t(presentity);
 		if(td== NULL)
 		{
-			LM_ERR("while building tm dlg_t structure");
+			LM_ERR("while building tm dlg_t structure\n");
 			ret= -1;
 			lock_release(&HashT->p_records[hash_index].lock);
 			goto done;

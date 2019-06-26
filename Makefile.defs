@@ -61,10 +61,10 @@ export makefile_defs
 MAIN_NAME=opensips
 
 #version number
-VERSION_MAJOR = 2
-VERSION_MINOR = 4
+VERSION_MAJOR = 3
+VERSION_MINOR = 0
 VERSION_SUBMINOR = 0
-VERSION_BUILD = dev
+VERSION_BUILD = beta
 
 ifneq (,$(VERSION_BUILD))
 RELEASE=$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_SUBMINOR)-$(VERSION_BUILD)
@@ -181,7 +181,7 @@ else ifneq (,$(findstring gcc, $(CC_LONGVER)))
 	#XXX: for now treat 4+.x the same as 4.x
 	CC_CLASS=$(shell echo "$(CC_SHORTVER)" | \
 				 sed -e 's/2\.9.*/2.9x/' -e 's/3\.[0-9]/3.x/' \
-				 -e 's/[4-9]\.[0-9]/4.x/')
+				 -e 's/[4-9]\(\.[0-9]\)\?/4.x/')
 endif
 
 ifneq (, $(findstring Sun, $(CC_LONGVER)))
@@ -507,6 +507,14 @@ else
   THISREVISION = unknown
 endif
 
+ifeq (,$(findstring F_MALLOC, $(DEFS)))
+ifeq (,$(findstring Q_MALLOC, $(DEFS)))
+ifeq (,$(findstring HP_MALLOC, $(DEFS)))
+	DEFS+= -DQ_MALLOC
+endif
+endif
+endif
+
 ifneq (,$(MEM_STATS_HDR))
 EXPECTED_MD5=$(shell [ -f $(MEM_STATS_HDR) ] && tail -n 1 $(MEM_STATS_HDR) | awk '{print $$4}')
 MODULES_MD5=$(shell find $(dir $(MEM_STATS_HDR))/../modules -name "[Mm]akefile" | \
@@ -527,8 +535,11 @@ endif
 #DBHTMLXSL = /usr/share/xml/docbook/stylesheet/nwalsh/html/docbook.xsl
 # On CentOS, this is the right path:
 #DBHTMLXSL = /usr/share/sgml/docbook/xsl-stylesheets/xhtml/docbook.xsl
+
 DBHTMLXSL=$(shell \
-	if [ -e /usr/share/xml/docbook/stylesheet/nwalsh/html/docbook.xsl ]; then \
+	if   [ -e /usr/share/xml/docbook/xsl-stylesheets-1.79.2-nons/xhtml/docbook.xsl ]; then \
+		echo "/usr/share/xml/docbook/xsl-stylesheets-1.79.2-nons/xhtml/docbook.xsl"; \
+	elif [ -e /usr/share/xml/docbook/stylesheet/nwalsh/html/docbook.xsl ]; then \
 		echo "/usr/share/xml/docbook/stylesheet/nwalsh/html/docbook.xsl"; \
 	elif [ -e /usr/share/sgml/docbook/xsl-stylesheets/xhtml/docbook.xsl ]; then \
 		echo "/usr/share/sgml/docbook/xsl-stylesheets/xhtml/docbook.xsl"; \
@@ -566,26 +577,19 @@ MKTAGS=ctags -R .
 # -DSHM_MMAP
 #		use mmap instead of SYSV shared memory
 # -DPKG_MALLOC
-#		uses a faster malloc (exclusive w/ USE_SHM_MEM)
-# -DUSE_SHM_MEM
-#		all pkg_malloc are mapped to shm_malloc (most mallocs use
-#		a common shared mem. segment); don't define PKG_MALLOC
-#		if you want this!
-# -DDBG_MALLOC
-#		inserts debug code, will cause pkg_malloc and shm_malloc
-#		to keep and display lot of debuging information: file name,
-#		function, line number of malloc/free call for each block,
-#		extra error checking (trying to free the same pointer
-#		twice, trying to free a pointer alloc'ed with a different
-#		malloc etc.)
-# -DVQ_MALLOC
-#		additional option of PKG_MALLOC which utilizes faster then the
-#		QM version
-#		(this is not true anymore, q_malloc performs approx. the same)
-# -DQM_MALLOC
-#		memory allocator recommended for debugging
+#		uses a faster malloc
 # -DF_MALLOC
-#		an even faster malloc, not recommended for debugging
+#		fast allocator with minimal overhead, but no fine-grained locking
+# -DQ_MALLOC
+#		decently fast allocator with extra sanity checks + safety buffers
+# -DHP_MALLOC
+#		high performance allocator optimized for shared memory multiprocessing
+# -DDBG_MALLOC
+#       will cause each of the enabled allocators to also include a "debugging"
+#       flavor of itself;  by running a debugging version of an allocator, you
+#       are able to print a summary of the entire used memory pool (summed up
+#       used fragments, along with the file/func/line which allocated them).
+#       Especially useful in quickly troubleshooting memory leaks.
 # -DFAST_LOCK
 #		uses fast architecture specific locking (see the arch. specific section)
 # -DUSE_FUTEX
@@ -793,7 +797,7 @@ endif
 CFLAGS=$(shell echo "$${CFLAGS}")
 LDFLAGS+=
 
-ifneq (,$(findstring DBG_MALLOC, $(DEFS)))
+ifneq (,$(findstring CC_O0, $(DEFS)))
 	CC_OPTIMIZE_FLAG?=-O0
 endif
 
@@ -1310,8 +1314,6 @@ endif	#ARCH, ppc
 
 endif   # CFLAGS not set
 
-CFLAGS+= $(CC_EXTRA_OPTS)
-
 LD_EXTRA_OPTS ?=
 
 # setting LDFLAGS
@@ -1621,6 +1623,7 @@ ifdef DEBUG_PARSER
 endif
 
 
+CFLAGS+= $(CC_EXTRA_OPTS)
 LDFLAGS+= $(LD_EXTRA_OPTS)
 
 ifneq (,$(findstring CYGWIN, $(OS)))
@@ -1649,5 +1652,13 @@ $(warning	No locking method found so far, trying SYS V sems)
 		found_lock_method=yes
 endif
 
+## Unit Testing - required extensions
+ifeq (1,$(shell grep -c '^\DEFS+= -DUNIT_TESTS' Makefile.conf))
+DEFS := $(DEFS) -DUNIT_TESTS
+LIBS := $(LIBS) -ltap
+test_src := $(shell find . -wholename "*/test/*\.c" | grep -v "^./modules/")
+test_objs := $(test_src:.c=.o)
+objs := $(objs) $(test_objs)
+endif
 
 endif  # ifeq ($(makefile_defs, 1)

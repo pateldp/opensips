@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		<emphasis>RabbitMQ</emphasis>
@@ -20,7 +20,7 @@
 	</para>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -46,9 +46,9 @@
 	
 	</section>
 	
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 		<title>Exported Parameters</title>
-		<section>
+		<section id="param_server_id" xreflabel="server_id">
 		<title><varname>server_id</varname> (string)</title>
 		<para>
 			Specify configuration for a RabbitMQ server. It contains a set
@@ -145,9 +145,9 @@ heartbeat = 5")
 	</section>
 	
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 		<title>Exported Functions</title>
-		<section>
+		<section id="func_rabbitmq_publish" xreflabel="rabbitmq_publish()">
 			<title>
 				<function moreinfo="none">rabbitmq_publish(server_id, routing_key, message 
 					[, [content_type [, headers, headers_vals]]])</function>
@@ -173,38 +173,38 @@ heartbeat = 5")
 			<itemizedlist>
 				<listitem>
 					<para>
-						<emphasis>server_id</emphasis> - the id of the RabbitMQ server.
+						<emphasis>server_id</emphasis> (string) - the id of the RabbitMQ server.
 						Must be one of the parameters defined in the
 						<emphasis>server_id</emphasis> modparam.
 					</para>
 				</listitem>
 				<listitem>
 					<para>
-						<emphasis>routing_key</emphasis> - routing key used to
+						<emphasis>routing_key</emphasis> (string) - routing key used to
 						deliver the AMQP message.
 					</para>
 				</listitem>
 				<listitem>
 					<para>
-						<emphasis>message</emphasis> - the body of the message.
+						<emphasis>message</emphasis> (string) - the body of the message.
 					</para>
 				</listitem>
 				<listitem>
 					<para>
-						<emphasis>content_type</emphasis> (optional) - content type
+						<emphasis>content_type</emphasis> (string, optional) - content type
 						of the message sent. By default it is <emphasis>none</emphasis>.
 					</para>
 				</listitem>
 				<listitem>
 					<para>
-						<emphasis>headers</emphasis> (optional) - an AVP containing
+						<emphasis>headers</emphasis> (string, optional) - an AVP containing
 						the names of the headers within the AMQP message. If set,
 						<emphasis>headers_vals</emphasis> parameter must also be specified.
 					</para>
 				</listitem>
 				<listitem>
 					<para>
-						<emphasis>headers_vals</emphasis> (optional) - an AVP containing
+						<emphasis>headers_vals</emphasis> (string, optional) - an AVP containing
 						the corresponding values of the AMQP headers. If set,
 						<emphasis>headers</emphasis> parameter must also be specified.
 					</para>
@@ -223,7 +223,7 @@ heartbeat = 5")
 	$avp(hdr_value) = $fU;
 	$avp(hdr_name) = "callee";
 	$avp(hdr_value) = $rU;
-	rabbitmq_publish("ID2", "call", "$rb", , "$avp(hdr_name)", "$avp(hdr_value)");
+	rabbitmq_publish("ID2", "call", $rb, , $avp(hdr_name), $avp(hdr_value));
 	...
 	</programlisting>
 			</example>

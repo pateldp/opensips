@@ -19,7 +19,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  *
  */
 
@@ -32,12 +32,14 @@
 #include "../../error.h"
 #include "../../dprint.h"
 #include "../../config.h"
+#include "../../mod_fix.h"
 #include "../../pvar.h"
 #include "../../aaa/aaa.h"
 #include "../../mem/mem.h"
 #include "../../ut.h"
 #include "authaaa_mod.h"
 #include "authorize.h"
+#include "checks.h"
 
 
 aaa_map attrs[A_MAX];
@@ -48,14 +50,14 @@ aaa_prot proto;
 auth_api_t auth_api;
 
 static int mod_init(void);         /* Module initialization function */
-static int auth_fixup(void** param, int param_no); /* char* -> str* */
-
+static int cfg_validate(void);
 
 /*
  * Module parameter variables
  */
 static char* aaa_proto_url = NULL;
-static int service_type = -1;
+static int auth_service_type = -1;
+static int check_service_type = -1;
 
 int use_ruri_flag = -1;
 char *use_ruri_flag_str = 0;
@@ -63,38 +65,56 @@ char *use_ruri_flag_str = 0;
 /*
  * Exported functions
  */
-static cmd_export_t cmds[] = {
-	{"aaa_www_authorize", (cmd_function)aaa_www_authorize,   1, auth_fixup,
-			0, REQUEST_ROUTE},
-	{"aaa_www_authorize", (cmd_function)aaa_www_authorize,   2, auth_fixup,
-			0, REQUEST_ROUTE},
-	{"aaa_proxy_authorize", (cmd_function)aaa_proxy_authorize_1, 1, auth_fixup,
-			0, REQUEST_ROUTE},
-	{"aaa_proxy_authorize", (cmd_function)aaa_proxy_authorize_2, 2, auth_fixup,
-			0, REQUEST_ROUTE},
-	{0, 0, 0, 0, 0, 0}
-};
 
+static cmd_export_t cmds[] = {
+	{"aaa_www_authorize", (cmd_function)aaa_www_authorize, {
+		{CMD_PARAM_STR,0,0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE},
+	{"aaa_proxy_authorize", (cmd_function)aaa_proxy_authorize, {
+		{CMD_PARAM_STR,0,0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE},
+	{"aaa_does_uri_exist", (cmd_function)aaa_does_uri_exist, {
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE|LOCAL_ROUTE},
+	{"aaa_does_uri_user_exist", (cmd_function)w_aaa_does_uri_user_exist, {
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE|LOCAL_ROUTE},
+	{0,0,{{0,0,0}},0}
+};
 
 /*
  * Exported parameters
  */
 static param_export_t params[] = {
-	{"aaa_url",  	 STR_PARAM, &aaa_proto_url   },
-	{"service_type",     INT_PARAM, &service_type        },
-	{"use_ruri_flag",    STR_PARAM, &use_ruri_flag_str   },
-	{"use_ruri_flag",    INT_PARAM, &use_ruri_flag       },
+	{"aaa_url",            STR_PARAM, &aaa_proto_url       },
+	{"auth_service_type",  INT_PARAM, &auth_service_type   },
+	{"check_service_type", INT_PARAM, &check_service_type  },
+	{"use_ruri_flag",      STR_PARAM, &use_ruri_flag_str   },
 	{0, 0, 0}
 };
 
+/* create a dependency to "auth" module if any of the digest auth 
+ * functions are used from the script - we do a small trick here and
+ * hook on the 'aaa_url' mandatory  param to run the check, even if the
+ * param value is not involved in the test */
+static module_dependency_t *get_deps_aaa_url(param_export_t *param)
+{
+	if (is_script_func_used("aaa_www_authorize", -1) ||
+	is_script_func_used("aaa_proxy_authorize", -1) )
+		return alloc_module_dep(MOD_TYPE_DEFAULT, "auth", DEP_ABORT);
+
+	return NULL;
+}
+
 static dep_export_t deps = {
 	{ /* OpenSIPS module dependencies */
-		{ MOD_TYPE_DEFAULT, "auth", DEP_ABORT },
 		{ MOD_TYPE_AAA,     NULL,   DEP_WARN  },
 		{ MOD_TYPE_NULL, NULL, 0 },
 	},
 	{ /* modparam dependencies */
-		{ NULL, NULL },
+		{ "aaa_url", get_deps_aaa_url },
 	},
 };
 
@@ -106,6 +126,7 @@ struct module_exports exports = {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,  /* module version */
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,       /* Exported functions */
 	0,          /* Exported async functions */
@@ -113,12 +134,13 @@ struct module_exports exports = {
 	0,          /* exported statistics */
 	0,          /* exported MI functions */
 	0,          /* exported pseudo-variables */
-	0,			/* exported transformations */
+	0,          /* exported transformations */
 	0,          /* extra processes */
 	mod_init,   /* module initialization function */
 	0,          /* response function */
 	0,          /* destroy function */
-	0           /* child initialization function */
+	0,          /* child initialization function */
+	cfg_validate/* reload confirm function */
 };
 
 
@@ -138,6 +160,7 @@ static int mod_init(void)
 	memset(vals, 0, sizeof(vals));
 	attrs[A_SERVICE_TYPE].name			= "Service-Type";
 	attrs[A_SIP_URI_USER].name			= "Sip-URI-User";
+	attrs[A_SIP_URI_HOST].name			= "SIP-URI-Host";
 	attrs[A_DIGEST_RESPONSE].name		= "Digest-Response";
 	attrs[A_DIGEST_ALGORITHM].name		= "Digest-Algorithm";
 	attrs[A_DIGEST_BODY_DIGEST].name	= "Digest-Body-Digest";
@@ -154,8 +177,8 @@ static int mod_init(void)
 	attrs[A_SIP_AVP].name				= "SIP-AVP";
 	attrs[A_ACCT_SESSION_ID].name		= "Acct-Session-Id";
 	vals[V_SIP_SESSION].name			= "Sip-Session";
+	vals[V_CALL_CHECK].name				= "Call-Check";
 
-	fix_flag_name(use_ruri_flag_str, use_ruri_flag);
 	use_ruri_flag = get_flag_id_by_name(FLAG_TYPE_MSG, use_ruri_flag_str);
 
 	if (!aaa_proto_url) {
@@ -182,69 +205,44 @@ static int mod_init(void)
 		attrs[A_CISCO_AVPAIR].name = NULL;
 	}
 
-	bind_auth = (bind_auth_t)find_export("bind_auth", 0, 0);
-	if (!bind_auth) {
-		LM_ERR("unable to find bind_auth function. Check if you load the auth module.\n");
-		return -1;
-	}
+	if (is_script_func_used("aaa_www_authorize", -1) ||
+	is_script_func_used("aaa_proxy_authorize", -1) ) {
 
-	if (bind_auth(&auth_api) < 0) {
-		LM_ERR("cannot bind to auth module\n");
-		return -4;
+		bind_auth = (bind_auth_t)find_export("bind_auth", 0);
+		if (!bind_auth) {
+			LM_ERR("unable to find bind_auth function. Check if you "
+				"loaded the auth module.\n");
+			return -1;
+		}
+
+		if (bind_auth(&auth_api) < 0) {
+			LM_ERR("cannot bind to auth module\n");
+			return -4;
+		}
 	}
 
 	INIT_AV(proto, conn, attrs, A_MAX, vals, V_MAX, "auth_aaa", -5, -6);
 
-	if (service_type != -1) {
-		vals[V_SIP_SESSION].value = service_type;
-	}
+	if (auth_service_type != -1)
+		vals[V_SIP_SESSION].value = auth_service_type;
+	if (check_service_type != -1)
+		vals[V_CALL_CHECK].value = check_service_type;
 
 	return 0;
 }
 
 
-/*
- * Convert char* parameter to pv_elem_t* parameter
- */
-static int auth_fixup(void** param, int param_no)
+static int cfg_validate(void)
 {
-	pv_elem_t *model;
-	str s;
-	pv_spec_t *sp;
+	/* if auth API already loaded, it is fine */
+	if (auth_api.pre_auth)
+		return 1;
 
-	if (param_no == 1) { /* realm (string that may contain pvars) */
-		s.s = (char*)*param;
-		if (s.s==0 || s.s[0]==0) {
-			model = 0;
-		} else {
-			s.len = strlen(s.s);
-			if (pv_parse_format(&s,&model)<0) {
-				LM_ERR("pv_parse_format failed\n");
-				return E_OUT_OF_MEM;
-			}
-		}
-		*param = (void*)model;
-	}
-
-	if (param_no == 2) { /* URI user (a pvar) */
-		sp = (pv_spec_t*)pkg_malloc(sizeof(pv_spec_t));
-		if (sp == 0) {
-			LM_ERR("no pkg memory left\n");
-			return -1;
-		}
-		s.s = (char*)*param;
-		s.len = strlen(s.s);
-		if (pv_parse_spec(&s, sp) == 0) {
-			LM_ERR("parsing of pseudo variable %s failed!\n", (char*)*param);
-			pkg_free(sp);
-			return -1;
-		}
-		if (sp->type == PVT_NULL) {
-			LM_ERR("bad pseudo variable\n");
-			pkg_free(sp);
-			return -1;
-		}
-		*param = (void*)sp;
+	if (is_script_func_used("aaa_www_authorize", -1) ||
+	is_script_func_used("aaa_proxy_authorize", -1) ) {
+		LM_ERR("aaa_xxx_authorize() was found, but module started without "
+			"auth support/binding, better restart\n");
+		return 0;
 	}
 
 	return 0;

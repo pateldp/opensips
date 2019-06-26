@@ -1,18 +1,4 @@
 Regex Module
-
-Iñaki Baz Castillo
-
-   <ibc@aliax.net>
-
-Edited by
-
-Iñaki Baz Castillo
-
-   <ibc@aliax.net>
-
-   Copyright © 2009 Iñaki Baz Castillo
-   Revision History
-   Revision $Revision: 5901 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -47,6 +33,22 @@ Iñaki Baz Castillo
         1.6. Installation and Running
 
               1.6.1. File format
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -213,9 +215,9 @@ modparam("regex", "pcre_extended", 1)
    Returns TRUE if it matches, FALSE otherwise.
 
    Meaning of the parameters is as follows:
-     * string - String or pseudo-variable to compare.
-     * pcre_regex - Regular expression to be compiled in a PCRE
-       object. It can be a string or pseudo-variable.
+     * string - String to compare.
+     * pcre_regex (string) - Regular expression to be compiled in
+       a PCRE object.
 
    NOTE: To use the "end of line" symbol '$' in the pcre_regex
    parameter use '$$'.
@@ -232,8 +234,8 @@ if (pcre_match("$ua", "(?i)^twinkle")) {
 
    Example 1.9.  pcre_match usage (using "end of line" symbol)
 ...
-if (pcre_match("$rU", "^user[1234]$$")) {  # Will be converted to "^user
-[1234]$"
+if (pcre_match($rU, "^user[1234]$$")) {  # Will be converted to "^user[1
+234]$"
     xlog("L_INFO", "RURI username matches\n");
 }
 ...
@@ -246,8 +248,8 @@ if (pcre_match("$rU", "^user[1234]$$")) {  # Will be converted to "^user
    number group. Returns TRUE if it matches, FALSE otherwise.
 
    Meaning of the parameters is as follows:
-     * string - String or pseudo-variable to compare.
-     * group - Number of group to use in the operation. If not
+     * string - String to compare.
+     * group (int) - group to use in the operation. If not
        specified then 0 (the first group) is used.
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
@@ -255,7 +257,7 @@ if (pcre_match("$rU", "^user[1234]$$")) {  # Will be converted to "^user
 
    Example 1.10.  pcre_match_group usage
 ...
-if (pcre_match_group("$rU", "2")) {
+if (pcre_match_group($rU, 2)) {
     xlog("L_INFO", "RURI username matches group 2\n");
 }
 ...
@@ -273,8 +275,7 @@ if (pcre_match_group("$rU", "2")) {
    Parameters: none
 
    MI FIFO Command Format:
-:regex_reload:_reply_fifo_file_
-_empty_line_
+opensips-cli -x mi regex_reload
 
 1.6. Installation and Running
 
@@ -374,3 +375,65 @@ group 1: ((^ccc)|(^ddd))
 ([0-9]{9})
 ( #abcde)
 ( qwerty)
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Iñaki Baz Castillo 14 3 1242 2
+   2. Liviu Chircu (@liviuchircu) 12 10 25 42
+   3. Razvan Crainea (@razvancrainea) 11 9 39 23
+   4. Vlad Patrascu (@rvlad-patrascu) 9 6 63 88
+   5. Bogdan-Andrei Iancu (@bogdan-iancu) 8 6 12 7
+   6. Sergio Gutierrez 3 1 19 1
+   7. Ovidiu Sas (@ovidiusas) 3 1 13 11
+   8. Anca Vamanu 3 1 6 3
+   9. Marius Zbihlei 2 1 2 0
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                     Name                   Commit Activity
+   1. Razvan Crainea (@razvancrainea)     Sep 2011 - May 2019
+   2. Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   3. Bogdan-Andrei Iancu (@bogdan-iancu) Feb 2009 - Apr 2019
+   4. Liviu Chircu (@liviuchircu)         Mar 2014 - Nov 2018
+   5. Ovidiu Sas (@ovidiusas)             Jan 2013 - Jan 2013
+   6. Marius Zbihlei                      Sep 2010 - Sep 2010
+   7. Iñaki Baz Castillo                  Feb 2009 - Jul 2010
+   8. Anca Vamanu                         Sep 2009 - Sep 2009
+   9. Sergio Gutierrez                    Feb 2009 - Feb 2009
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Razvan Crainea
+   (@razvancrainea), Liviu Chircu (@liviuchircu), Bogdan-Andrei
+   Iancu (@bogdan-iancu), Iñaki Baz Castillo.
+
+   Documentation Copyrights:
+
+   Copyright © 2009 Iñaki Baz Castillo

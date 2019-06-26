@@ -165,13 +165,16 @@ int rlsubs_table_restore();
 void rlsubs_table_update(unsigned int ticks,void *param);
 int add_rls_event(modparam_t type, void* val);
 int parse_xcap_root(void);
-static struct mi_root* mi_update_subscriptions(struct mi_root* cmd, void* param);
+mi_response_t *mi_update_subscriptions(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 
-static cmd_export_t cmds[]=
-{
-	{"rls_handle_subscribe",     (cmd_function)rls_handle_subscribe, 0, 0,               0, REQUEST_ROUTE},
-	{"rls_handle_notify",        (cmd_function)rls_handle_notify,    0, 0,               0, REQUEST_ROUTE},
-	{0, 0, 0, 0, 0, 0 }
+
+static cmd_export_t cmds[]={
+	{"rls_handle_subscribe",     (cmd_function)rls_handle_subscribe, {{0,0,0}},
+		REQUEST_ROUTE},
+	{"rls_handle_notify",        (cmd_function)rls_handle_notify, {{0,0,0}},
+		REQUEST_ROUTE},
+	{0,0,{{0,0,0}},0}
 };
 
 static param_export_t params[]={
@@ -191,8 +194,11 @@ static param_export_t params[]={
 };
 
 static mi_export_t mi_cmds[] = {
-	{ "rls_update_subscriptions", 0, mi_update_subscriptions, 0,  0,  0},
-	{  0, 0, 0, 0,  0, 0}
+	{ "rls_update_subscriptions", 0, 0, 0, {
+		{mi_update_subscriptions, {"presentity_uri", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
 
 static dep_export_t deps = {
@@ -215,6 +221,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,           /* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,            /* dlopen flags */
+	0,				            /* load function */
 	&deps,                      /* OpenSIPS module dependencies */
 	cmds,                       /* exported functions */
 	0,                          /* exported async functions */
@@ -227,7 +234,8 @@ struct module_exports exports= {
 	mod_init,                   /* module initialization function */
 	(response_function) 0,      /* response handling function */
 	(destroy_function) destroy, /* destroy function */
-	child_init                  /* per-child init function */
+	child_init,                 /* per-child init function */
+	0                           /* reload confirm function */
 };
 
 /**
@@ -259,7 +267,7 @@ static int mod_init(void)
 		presence_server.len= strlen(presence_server.s);
 
         /* load XCAP API */
-        bind_xcap = (bind_xcap_t)find_export("bind_xcap", 1, 0);
+        bind_xcap = (bind_xcap_t)find_export("bind_xcap", 0);
         if (!bind_xcap)
         {
                 LM_ERR("Can't bind xcap\n");
@@ -305,7 +313,7 @@ static int mod_init(void)
 		LM_ERR("can't load tm functions\n");
 		return -1;
 	}
-	bind_presence= (bind_presence_t)find_export("bind_presence", 1,0);
+	bind_presence= (bind_presence_t)find_export("bind_presence",0);
 	if (!bind_presence)
 	{
 		LM_ERR("Can't bind presence\n");
@@ -396,7 +404,7 @@ static int mod_init(void)
 
 	/* bind libxml wrapper functions */
 
-	if((bind_libxml=(bind_libxml_t)find_export("bind_libxml_api", 1, 0))== NULL)
+	if((bind_libxml=(bind_libxml_t)find_export("bind_libxml_api", 0))== NULL)
 	{
 		LM_ERR("can't import bind_libxml_api\n");
 		return -1;
@@ -419,7 +427,7 @@ static int mod_init(void)
 	}
 
 	/* bind pua */
-	bind_pua= (bind_pua_t)find_export("bind_pua", 1,0);
+	bind_pua= (bind_pua_t)find_export("bind_pua",0);
 	if (!bind_pua)
 	{
 		LM_ERR("Can't bind pua\n");
@@ -455,7 +463,7 @@ static int mod_init(void)
 	if(!rls_integrated_xcap_server)
 	{
 		/* bind xcap */
-		bind_xcap_client = (bind_xcap_client_t)find_export("bind_xcap_client", 1, 0);
+		bind_xcap_client = (bind_xcap_client_t)find_export("bind_xcap_client", 0);
 		if (!bind_xcap_client)
 		{
 			LM_ERR("Can't bind xcap_client\n");
@@ -858,33 +866,21 @@ done:
                 xmlFreeDoc(doc);
 }
 
-
-static struct mi_root* mi_update_subscriptions(struct mi_root* cmd, void* param)
+mi_response_t *mi_update_subscriptions(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_node* node = NULL;
 	struct sip_uri parsed_uri;
 	str uri;
 	int i;
-        subs_t *subs, *subs_copy;
+    subs_t *subs, *subs_copy;
 
-	LM_DBG("start\n");
+	if (get_mi_string_param(params, "presentity_uri", &uri.s, &uri.len) < 0)
+		return init_mi_param_error();
 
-	node = cmd->node.kids;
-	if(node == NULL)
-		return init_mi_tree(404, "No parameters", 13);
-
-	/* Get presentity URI */
-	uri = node->value;
 	if(uri.s == NULL || uri.len== 0)
 	{
 		LM_ERR( "empty uri\n");
-		return init_mi_tree(404, "Empty presentity URI", 20);
-	}
-
-	if(node->next!= NULL)
-	{
-		LM_ERR( "Too many parameters\n");
-		return init_mi_tree(400, "Too many parameters", 19);
+		return init_mi_error(404, MI_SSTR("Empty presentity URI"));
 	}
 
 	if (parse_uri(uri.s, uri.len, &parsed_uri) < 0)
@@ -937,7 +933,7 @@ static struct mi_root* mi_update_subscriptions(struct mi_root* cmd, void* param)
 		lock_release(&rls_table[i].lock);
 	}
 
-	return init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
+	return init_mi_result_ok();
 }
 
 

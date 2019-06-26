@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		The B2BUA implementation in OpenSIPS is separated in two layers:
@@ -37,7 +37,7 @@
 	</para>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -66,9 +66,9 @@
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 		<title>Exported Parameters</title>
-	<section>
+	<section id="param_hash_size" xreflabel="hash_size">
 		<title><varname>hash_size</varname> (int)</title>
 		<para>
 			The size of the hash table that stores the scenario instatiation entities.
@@ -88,7 +88,7 @@ modparam("b2b_logic", "hash_size", 10)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_script_scenario" xreflabel="script_scenario">
 		<title><varname>script_scenario</varname> (str)</title>
 		<para>
 			This parameter should be set with the path of a document
@@ -108,7 +108,7 @@ modparam("b2b_logic", "script_scenario", "/usr/local/opensips/scripts/b2b_prepai
 		</example>
 	</section>
 
-	<section>
+	<section id="param_extern_scenario" xreflabel="extern_scenario">
 		<title><varname>extern_scenario</varname> (str)</title>
 		<para>
 			This parameter should be set with the path of a document
@@ -127,7 +127,7 @@ modparam("b2b_logic", "extern_scenario", "/usr/local/opensips/scripts/b2b_market
 		</example>
 	</section>
 
-	<section>
+	<section id="param_cleanup_period" xreflabel="cleanup_period">
 		<title><varname>cleanup_period</varname> (int)</title>
 		<para>
 			The time interval at which to search for an hanged b2b context.
@@ -149,7 +149,7 @@ modparam("b2b_logic", "cleanup_period", 60)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_custom_headers_regexp" xreflabel="custom_headers_regexp">
 		<title><varname>custom_headers_regexp</varname> (str)</title>
 		<para>
 		Regexp to search SIP header by names that should be passed
@@ -193,7 +193,7 @@ modparam("b2b_logic", "custom_headers_regexp", "/^x-/i")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_custom_headers" xreflabel="custom_headers">
 		<title><varname>custom_headers</varname> (str)</title>
 		<para>
 		A list of SIP header names delimited by ';' that should be passed
@@ -226,7 +226,7 @@ modparam("b2b_logic", "custom_headers", "User-Agent;Date")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_use_init_sdp" xreflabel="use_init_sdp">
 		<title><varname>use_init_sdp</varname> (int)</title>
 		<para>
 		This parameter modifies the behaviour of the B2BUA when bridging
@@ -251,7 +251,7 @@ modparam("b2b_logic", "use_init_sdp", 1)
 	</programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_db_url" xreflabel="db_url">
 		<title><varname>db_url</varname> (str)</title>
 		<para>
 			Database URL.
@@ -265,7 +265,7 @@ modparam("b2b_logic", "db_url", "mysql://opensips:opensipsrw@127.0.0.1/opensips"
 	</programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_update_period" xreflabel="update_period">
 		<title><varname>update_period</varname> (int)</title>
 		<para>
 			The time interval at which to update the info in database.
@@ -282,7 +282,7 @@ modparam("b2b_logic", "update_period", 60)
 	</programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_max_duration" xreflabel="max_duration">
 		<title><varname>max_duration</varname> (int)</title>
 		<para>
 			The maximum duration of a call.
@@ -301,7 +301,7 @@ modparam("b2b_logic", "max_duration", 7200)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_b2bl_from_spec_param" xreflabel="b2bl_from_spec_param">
 		<title><varname>b2bl_from_spec_param</varname> (string)</title>
 		<para>
 			The name of the pseudo variable for storing the new
@@ -329,7 +329,7 @@ route{
 		</example>
 	</section>
 
-	<section>
+	<section id="param_server_address" xreflabel="server_address">
 		<title><varname>server_address</varname> (str)</title>
 		<para>
 			The IP address of the machine that will be used as Contact in
@@ -349,7 +349,7 @@ modparam("b2b_logic", "server_address", "sip:sa@10.10.10.10:5060")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_init_callid_hdr" xreflabel="init_callid_hdr">
 		<title><varname>init_callid_hdr</varname> (str)</title>
 		<para>
 			The module offers the possibility to insert the original callid in a header
@@ -365,7 +365,7 @@ modparam("b2b_logic", "init_callid_hdr", "Init-CallID")
 	</programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_db_mode" xreflabel="db_mode">
 		<title><varname>db_mode</varname> (int)</title>
 		<para>
 			The B2B modules have support for the 3 type of database storage
@@ -390,7 +390,7 @@ modparam("b2b_logic", "db_mode", 1)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_db_table" xreflabel="db_table">
 		<title><varname>db_table</varname> (str)</title>
 		<para>
 			Name of the database table to be used
@@ -408,7 +408,7 @@ modparam("b2b_logic", "db_table", "some_table_name")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_b2bl_th_init_timeout" xreflabel="b2bl_th_init_timeout">
 		<title><varname>b2bl_th_init_timeout</varname> (int)</title>
 		<para>
 			Call setup timeout for topology hiding scenario.
@@ -428,11 +428,12 @@ modparam("b2b_logic", "b2bl_th_init_timeout", 60)
 
 	</section>
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 		<title>Exported Functions</title>
-	<section>
+	<section id="func_b2b_init_request" xreflabel="b2b_init_request()">
 		<title>
-		<function moreinfo="none">b2b_init_request</function>
+		<function moreinfo="none">b2b_init_request(flags, [scenario_param1],
+			[scenario_param2], [scenario_param3], [scenario_param4])</function>
 		</title>
 		<para>
 			This is the function that must be called by the script writer
@@ -445,26 +446,41 @@ modparam("b2b_logic", "b2bl_th_init_timeout", 60)
 			This is defined in the XML document as an attribute of the root node
 			or "top hiding" for internal topology hiding scenario.
 			It can be passed as "scenario" or "scenario_name/flags".
-		</para>
-		<para>Meaning of the flags is as follows:</para>
-		<itemizedlist>
-			<listitem><para>
-			<emphasis>t[nn]</emphasis> -  Call setup timeout for topology hiding scenario.
-			Example: t300.
-			</para></listitem>
-			<listitem><para>
-			<emphasis>a</emphasis> -  Transparent authentication. In this mode b2b passes your 401
-			or 407 authentication request to destination server.
-			</para></listitem>
-			<listitem><para>
-			<emphasis>p</emphasis> -  Preserve To: header.
-			</para></listitem>
-		</itemizedlist>
-		<para>
 			Then it can take at most 4 other parameters that represent the parameters for
 			the xml scenario. The expected number of parameters is also specified as an attribute
 			in the root node of the XML scenario.
 		</para>
+		<para>Parameters:</para>
+		<itemizedlist>
+			<listitem><para>
+				<emphasis>flags (string)</emphasis> - meaning of the flags is as follows:
+				<itemizedlist>
+					<listitem><para>
+					<emphasis>t[nn]</emphasis> -  Call setup timeout for topology hiding scenario.
+					Example: t300.
+					</para></listitem>
+					<listitem><para>
+					<emphasis>a</emphasis> -  Transparent authentication. In this mode b2b passes your 401
+					or 407 authentication request to destination server.
+					</para></listitem>
+					<listitem><para>
+					<emphasis>p</emphasis> -  Preserve To: header.
+					</para></listitem>
+				</itemizedlist>
+			</para></listitem>
+			<listitem><para>
+				<emphasis>scenario_param1 (string, optional)</emphasis>
+			</para></listitem>
+			<listitem><para>
+				<emphasis>scenario_param2 (string, optional)</emphasis>
+			</para></listitem>
+			<listitem><para>
+				<emphasis>scenario_param3 (string, optional)</emphasis>
+			</para></listitem>
+			<listitem><para>
+				<emphasis>scenario_param4 (string, optional)</emphasis>
+			</para></listitem>
+		</itemizedlist>
 	<note><para>
 		If you have a multi interface setup and want to chance the outbound interface,
 		it is mandatory to use the "force_send_socket()" core function before passing
@@ -482,7 +498,7 @@ if(is_method("INVITE") &amp;&amp; !has_totag() &amp;&amp; prepaid_user())
 	</programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_b2b_bridge_request" xreflabel="b2b_bridge_request()">
 		<title>
 		<function moreinfo="none">b2b_bridge_request(b2bl_key,entity_no)</function>
 		</title>
@@ -493,11 +509,12 @@ if(is_method("INVITE") &amp;&amp; !has_totag() &amp;&amp; prepaid_user())
 		<para>Parameters:</para>
 		<itemizedlist>
 			<listitem><para>
-				<emphasis>b2bl_key</emphasis> - a pseudo-variable that
-				contains the b2b_logic key
+				<emphasis>b2bl_key (string)</emphasis> - a string that
+				contains the b2b_logic key. The key can also be in the form
+				of <emphasis>callid;from-tag;to-tag</emphasis>.
 			</para></listitem>
 			<listitem><para>
-				<emphasis>entity_no</emphasis> - a pseudo-variable that
+				<emphasis>entity_no (int)</emphasis> - an integer that
 				holds the entity of the entity/participant to bridge.
 			</para></listitem>
 		</itemizedlist>
@@ -516,7 +533,7 @@ route[b2b_request]
       # the Call-ID carries the B2B key ID
       if (is_method("BYE") {
          $var(entity) = 1;
-         b2b_bridge_request("$ci","$var(entity)");
+         b2b_bridge_request($ci,$var(entity));
       }
    }
    ...
@@ -528,14 +545,14 @@ route[b2b_request]
 
 </section>
 
-<section>
+<section id="exported_mi_functions" xreflabel="Exported MI Functions">
 	<title>Exported MI Functions</title>
-	<section>
+	<section id="mi_b2b_trigger_scenario" xreflabel="b2b_trigger_scenario">
 		<title>
 		<function moreinfo="none">b2b_trigger_scenario</function>
 		</title>
 		<para>
-		This command instantiated a B2B scenario.
+		This command instantiates a B2B scenario.
 		</para>
 		<para>
 		Name: <emphasis>b2b_trigger_scenario</emphasis>
@@ -543,27 +560,22 @@ route[b2b_request]
 		<para>Parameters:</para>
 		<itemizedlist>
 			<listitem>
-				<para>senario_id : the id of the scenario to be instantiated.
+				<para><emphasis>senario_id</emphasis> : the id of the scenario to be instantiated.
 				</para>
 			</listitem>
 			<listitem>
-				<para>scenario parameters - it can take 4 more parameters that are scenario parameters</para>
+				<para><emphasis>scenario_params</emphasis> - array of at least 2 scenario parameters</para>
 			</listitem>
 		</itemizedlist>
 		<para>
 		MI FIFO Command Format:
 		</para>
 	<programlisting  format="linespecific">
-	:b2b_trigger_scenario:fifo_reply
-	marketing
-	sip:bob@opensips.org
-	sip:322@opensips.org:5070
-	sip:alice@opensips.org
-	_empty_line_
+	opensips-cli -x mi b2b_trigger_scenario marketing sip:bob@opensips.org sip:322@opensips.org:5070 sip:alice@opensips.org
 		</programlisting>
 	</section>
 
-	<section>
+	<section id="mi_b2b_bridge" xreflabel="b2b_bridge">
 		<title>
 		<function moreinfo="none">b2b_bridge</function>
 		</title>
@@ -571,7 +583,7 @@ route[b2b_request]
 			This command can be used by an external application to tell B2BUA to bridge a
 			call party from an on going dialog to another destination. By default the caller
 			is bridged to the new uri and BYE is set to the callee. You can instead bridge
-			the callee if you send 1 as the third parameter. Also, if a fourth parameter is 
+			the callee if you send 1 as the third parameter.
 		</para>
 		<para>
 		Name: <emphasis>b2b_bridge</emphasis>
@@ -579,20 +591,19 @@ route[b2b_request]
 		<para>Parameters:</para>
 		<itemizedlist>
 			<listitem>
-				<para>dialog-id : the id of the dialog. If you set the module parameter dialog-id
-				the server will include the dialogid in the generated Invites as the content of a
-				header with name 'Dialog-ID'.
+				<para><emphasis>dialog_id</emphasis> : the <emphasis>b2b_logic key</emphasis>, or the
+				<emphasis>callid;from-tag;to-tag</emphasis> of the ongoing dialog.
 				</para>
 			</listitem>
 			<listitem>
-				<para>new uri - the uri of the new destination</para>
+				<para><emphasis>new_uri</emphasis> - the uri of the new destination</para>
 			</listitem>
 			<listitem>
-				<para>flag to specify that the callee must be bridged to the new destination.
-					It is optional. If not present the caller will be bridged.</para>
+				<para><emphasis>flag</emphasis> (optional) - used to specify that the callee must be bridged to the new destination. If not present the caller will be bridged. Possible values are
+				'0' or '1'.</para>
 			</listitem>
 			<listitem>
-				<para>provisional media uri - the uri of a media server able to play 
+				<para><emphasis>prov_media_uri</emphasis> (optional) - the uri of a media server able to play 
 					provisional media starting from the beginning of the bridging scenario
 					to the end of it. It is optional. If not present, no other entity will be
 					envolved in the bridging scenario</para>
@@ -600,18 +611,15 @@ route[b2b_request]
 		</itemizedlist>
 		<para>MI FIFO Command Format:</para>
 	<programlisting  format="linespecific">
-	:b2b_bridge:fifo_reply
-	1020.30
-	sip:alice@opensips.org
-	_empty_line_
+	opensips-cli -x mi b2b_bridge 1020.30 sip:alice@opensips.org
 	</programlisting>
-		<para>opensipsctl Command Format:</para>
+		<para>opensips-cli Command Format:</para>
 	<programlisting  format="linespecific">
-	opensipsctl b2b_bridge 1020.30 sip:alice@opensips.org
+	opensips-cli -x mi b2b_bridge 1020.30 sip:alice@opensips.org
 	</programlisting>
 	</section>
 
-	<section>
+	<section id="mi_b2b_list" xreflabel="b2b_list">
 		<title>
 		<function moreinfo="none">b2b_list</function>
 		</title>
@@ -626,12 +634,7 @@ route[b2b_request]
 		</itemizedlist>
 		<para>MI FIFO Command Format:</para>
 	<programlisting  format="linespecific">
-	:b2b_list:_reply_fifo_file_
-	_empty_line_
-	</programlisting>
-		<para>opensipsctl Command Format:</para>
-	<programlisting  format="linespecific">
-	opensipsctl fifo b2b_list
+	opensips-cli -x mi b2b_list
 	</programlisting>
 	</section>
 

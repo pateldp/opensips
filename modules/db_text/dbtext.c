@@ -41,8 +41,14 @@
 static int mod_init(void);
 static void destroy(void);
 
-static struct mi_root* mi_dbt_dump(struct mi_root* cmd, void* param);
-static struct mi_root* mi_dbt_reload(struct mi_root* cmd, void* param);
+static mi_response_t *mi_dbt_dump(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_dbt_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_dbt_reload_1(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_dbt_reload_2(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 
 /*
  * Module parameter variables
@@ -55,10 +61,8 @@ int dbt_bind_api(const str* mod, db_func_t *dbb);
  * Exported functions
  */
 static cmd_export_t cmds[] = {
-	{"db_bind_api",    (cmd_function)dbt_bind_api,   0, 0, 0, 0},
-	{0, 0, 0, 0, 0, 0}
+	{"db_bind_api", (cmd_function)dbt_bind_api, {{0,0,0}}, 0},
 };
-
 
 /*
  * Exported parameters
@@ -71,9 +75,17 @@ static param_export_t params[] = {
 
 /** MI commands */
 static mi_export_t mi_cmds[] = {
-	{"dbt_dump", 0, mi_dbt_dump, 0, 0, 0},
-	{"dbt_reload", 0, mi_dbt_reload, 0, 0, 0},
-	{0,          0,           0, 0, 0, 0}
+	{"dbt_dump", 0, 0, 0, {
+		{mi_dbt_dump, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{"dbt_reload", 0, 0, 0, {
+		{mi_dbt_reload, {0}},
+		{mi_dbt_reload_1, {"db_name", 0}},
+		{mi_dbt_reload_2, {"db_name", "table_name", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
 
 struct module_exports exports = {
@@ -81,6 +93,7 @@ struct module_exports exports = {
 	MOD_TYPE_SQLDB,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	cmds,     /* Exported functions */
 	NULL,     /* Exported async functions */
@@ -93,7 +106,8 @@ struct module_exports exports = {
 	mod_init, /* module initialization function */
 	NULL,     /* response function*/
 	destroy,  /* destroy function */
-	NULL      /* per-child init function */
+	NULL,     /* per-child init function */
+	NULL      /* reload confirm function */
 };
 
 
@@ -134,42 +148,63 @@ int dbt_bind_api(const str* mod, db_func_t *dbb)
 	return 0;
 }
 
-static struct mi_root* mi_dbt_dump(struct mi_root* cmd, void* param)
+static mi_response_t *mi_dbt_dump(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root *rpl_tree;
-
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==NULL) return NULL;
-	if (dbt_cache_print(0)!=0) {
-		free_mi_tree(rpl_tree);
+	if (dbt_cache_print(0)!=0)
 		return NULL;
-	}
-	return rpl_tree;
+
+	return init_mi_result_ok();
 }
 
-static struct mi_root* mi_dbt_reload(struct mi_root* cmd, void* param)
+static mi_response_t *mi_dbt_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_node *node;
-	str *dbname, *name;
 	int res;
 
-	dbname = name = NULL;
-	if( (node = cmd->node.kids) ) {
-		dbname = &(node->value);
-
-		if( (node = node->next) ) {
-			name = &(node->value);
-
-			if( node->next )
-				return init_mi_tree(400, MI_SSTR(MI_MISSING_PARM_S));
-		}
-	}
-
-	if( (res = dbt_cache_reload(dbname, name)) >= 0 ) {
-		return init_mi_tree(200, MI_SSTR(MI_OK_S));
+	if( (res = dbt_cache_reload(NULL, NULL)) >= 0 ) {
+		return init_mi_result_ok();
 	} else if( res == -1 ) {
-		return init_mi_tree(400, MI_SSTR(MI_BAD_PARM_S));
+		return init_mi_error(400, MI_SSTR("Bad parameter value"));
 	} else {
-		return init_mi_tree(500, MI_SSTR(MI_INTERNAL_ERR_S));
+		return init_mi_error(500, MI_SSTR("Internal error"));
+	}
+}
+
+static mi_response_t *mi_dbt_reload_1(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	str dbname;
+	int res;
+
+	if (get_mi_string_param(params, "db_name", &dbname.s, &dbname.len) < 0)
+		return init_mi_param_error();
+
+	if( (res = dbt_cache_reload(&dbname, NULL)) >= 0 ) {
+		return init_mi_result_ok();
+	} else if( res == -1 ) {
+		return init_mi_error(400, MI_SSTR("Bad parameter value"));
+	} else {
+		return init_mi_error(500, MI_SSTR("Internal error"));
+	}
+}
+
+static mi_response_t *mi_dbt_reload_2(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	str dbname, name;
+	int res;
+
+	if (get_mi_string_param(params, "db_name", &dbname.s, &dbname.len) < 0)
+		return init_mi_param_error();
+	if (get_mi_string_param(params, "table_name", &name.s, &name.len) < 0)
+		return init_mi_param_error();
+
+	if ( (res = dbt_cache_reload(&dbname, &name)) >= 0 ) {
+		return init_mi_result_ok();
+	} else if( res == -1 ) {
+		return init_mi_error(400, MI_SSTR("Bad parameter value"));
+	} else {
+		return init_mi_error(500, MI_SSTR("Internal error"));
 	}
 }

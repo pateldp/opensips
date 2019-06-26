@@ -54,7 +54,8 @@
 static int mod_init(void);
 static int child_init(int);
 void destroy(void);
-struct mi_root* refreshXcapDoc(struct mi_root* cmd, void* param);
+mi_response_t *refreshXcapDoc(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 int get_auid_flag(str auid);
 xcap_callback_t* xcapcb_list= NULL;
 int periodical_query= 1;
@@ -91,13 +92,16 @@ static param_export_t params[]={
 
 static cmd_export_t  cmds[]=
 {
-	{"bind_xcap_client",  (cmd_function)bind_xcap_client,  1,    0, 0,        0},
-	{    0,                     0,           0,    0, 0,        0}
+	{"bind_xcap_client",  (cmd_function)bind_xcap_client,  {{0, 0, 0}},        0},
+	{ 0, 0, {{0, 0, 0}}, 0}
 };
 
 static mi_export_t mi_cmds[] = {
-	{ "refreshXcapDoc", 0, refreshXcapDoc,      0,  0,  0},
-	{ 0,                0, 0,                  0,  0,  0}
+	{ "refreshXcapDoc", 0, 0, 0, {
+		{refreshXcapDoc, {"doc_uri", "port", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
 
 static dep_export_t deps = {
@@ -117,6 +121,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,			/* dlopen flags */
+	0,							/* load function */
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,  						/* exported functions */
 	0,  						/* exported async functions */
@@ -129,7 +134,8 @@ struct module_exports exports= {
 	mod_init,					/* module initialization function */
 	(response_function) 0,      /* response handling function */
 	(destroy_function) destroy, /* destroy function */
-	child_init                  /* per-child init function */
+	child_init,                 /* per-child init function */
+	0                           /* reload confirm function */
 };
 
 /**
@@ -141,7 +147,7 @@ static int mod_init(void)
 	xcap_api_t xcap_api;
 
         /* load XCAP API */
-        bind_xcap = (bind_xcap_t)find_export("bind_xcap", 1, 0);
+        bind_xcap = (bind_xcap_t)find_export("bind_xcap", 0);
         if (!bind_xcap)
         {
                 LM_ERR("Can't bind xcap\n");
@@ -380,43 +386,28 @@ int parse_doc_url(str doc_url, char** serv_addr, xcap_doc_sel_t* doc_sel)
  *			<xcap_port>
  * */
 
-struct mi_root* refreshXcapDoc(struct mi_root* cmd, void* param)
+mi_response_t *refreshXcapDoc(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_node* node= NULL;
 	str doc_url;
 	xcap_doc_sel_t doc_sel;
 	char* serv_addr;
 	str stream= {0, 0};
 	int type;
-	unsigned int xcap_port;
+	int xcap_port;
 	char* etag= NULL;
 
-	node = cmd->node.kids;
-	if(node == NULL)
-		return 0;
+	if (get_mi_string_param(params, "doc_uri", &doc_url.s, &doc_url.len) < 0)
+		return init_mi_param_error();
 
-	doc_url = node->value;
 	if(doc_url.s == NULL || doc_url.len== 0)
 	{
 		LM_ERR("empty uri\n");
-		return init_mi_tree(404, "Empty document URL", 20);
-	}
-	node= node->next;
-	if(node== NULL)
-		return 0;
-	if(node->value.s== NULL || node->value.len== 0)
-	{
-		LM_ERR("port number\n");
-		return init_mi_tree(404, "Empty document URL", 20);
-	}
-	if(str2int(&node->value, &xcap_port)< 0)
-	{
-		LM_ERR("while converting string to int\n");
-		goto error;
+		return init_mi_error(404, MI_SSTR("Empty document URL"));
 	}
 
-	if(node->next!= NULL)
-		return 0;
+	if (get_mi_int_param(params, "port", &xcap_port) < 0)
+		return init_mi_param_error();
 
 	/* send GET HTTP request to the server */
 	stream.s = send_http_get(doc_url.s, xcap_port, NULL, 0, &etag, &stream.len);
@@ -444,7 +435,7 @@ struct mi_root* refreshXcapDoc(struct mi_root* cmd, void* param)
 	run_xcap_update_cb(type, doc_sel.xid, stream.s);
 	pkg_free(stream.s);
 
-	return init_mi_tree(200, "OK", 2);
+	return init_mi_result_ok();
 
 error:
 	if(stream.s)

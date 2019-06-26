@@ -100,7 +100,7 @@ int onreply_avp_mode = 0;
 /* disable the 6xx fork-blocking - default no (as per RFC3261) */
 int disable_6xx_block = 0;
 
-/* flag for marching minor branches */
+/* flag for marking minor branches */
 int minor_branch_flag = -1;
 char *minor_branch_flag_str = 0;
 
@@ -259,16 +259,13 @@ inline static int update_totag_set(struct cell *t, struct sip_msg *ok)
 			return 1;
 		}
 	}
+
 	/* that's a new to-tag -- record it */
-#ifndef HP_MALLOC
 	shm_lock();
-	n=(struct totag_elem*) shm_malloc_unsafe(sizeof(struct totag_elem));
-	s=(char *)shm_malloc_unsafe(tag->len);
+	n = shm_malloc_bulk(sizeof *n);
+	s = shm_malloc_bulk(tag->len);
 	shm_unlock();
-#else
-	n=(struct totag_elem*) shm_malloc(sizeof(struct totag_elem));
-	s=(char *)shm_malloc(tag->len);
-#endif
+
 	if (!s || !n) {
 		LM_ERR("no more share memory \n");
 		if (n) shm_free(n);
@@ -310,6 +307,9 @@ static int send_ack(struct sip_msg* rpl, struct cell *trans, int branch)
 		goto error;
 	}
 
+	if (trans->uac[branch].br_flags & tcp_no_new_conn_bflag)
+		tcp_no_new_conn = 1;
+
 	if(SEND_PR_BUFFER(&trans->uac[branch].request, ack_buf.s, ack_buf.len)==0){
 		/* successfully sent out */
 		if ( has_tran_tmcbs( trans, TMCB_MSG_SENT_OUT) ) {
@@ -318,6 +318,8 @@ static int send_ack(struct sip_msg* rpl, struct cell *trans, int branch)
 				trans, trans->uas.request, 0, 0);
 		}
 	}
+
+	tcp_no_new_conn = 0;
 
 	shm_free(ack_buf.s);
 
@@ -333,7 +335,7 @@ static int _reply_light( struct cell *trans, char* buf, unsigned int len,
 {
 	struct retr_buf *rb;
 	unsigned int buf_len;
-	branch_bm_t cancel_bitmap;
+	branch_bm_t cancel_bitmap = 0;
 	str cb_s;
 
 	if (!buf)
@@ -349,14 +351,14 @@ static int _reply_light( struct cell *trans, char* buf, unsigned int len,
 		goto error;
 	}
 
-	cancel_bitmap=0;
 	if (lock) LOCK_REPLIES( trans );
-	if ( is_invite(trans) ) which_cancel(trans, &cancel_bitmap );
 	if (trans->uas.status>=200) {
 		LM_ERR("failed to generate %d reply when a final %d was sent out\n",
 				code, trans->uas.status);
 		goto error2;
 	}
+	if ( is_invite(trans) && code>=200 )
+		which_cancel(trans, &cancel_bitmap );
 
 
 	rb = & trans->uas.response;
@@ -364,7 +366,7 @@ static int _reply_light( struct cell *trans, char* buf, unsigned int len,
 
 	trans->uas.status = code;
 	buf_len = rb->buffer.s ? len : len + REPLY_OVERBUFFER_LEN;
-	rb->buffer.s = (char*)shm_resize( rb->buffer.s, buf_len );
+	rb->buffer.s = shm_realloc( rb->buffer.s, buf_len );
 	/* puts the reply's buffer to uas.response */
 	if (! rb->buffer.s ) {
 			LM_ERR("failed to allocate shmem buffer\n");
@@ -423,6 +425,9 @@ static int _reply_light( struct cell *trans, char* buf, unsigned int len,
 		LM_CRIT("send_sock is NULL\n");
 	}
 
+	if(trans->uas.request && trans->uas.request->flags&tcp_no_new_conn_rplflag)
+		tcp_no_new_conn = 1;
+
 	if ( SEND_PR_BUFFER( rb, buf, len )==0 ) {
 		LM_DBG("reply sent out. buf=%p: %.9s..., "
 			"shmem=%p: %.9s\n", buf, buf, rb->buffer.s, rb->buffer.s );
@@ -436,6 +441,8 @@ static int _reply_light( struct cell *trans, char* buf, unsigned int len,
 		}
 		stats_trans_rpl( code, 1 /*local*/ );
 	}
+
+	tcp_no_new_conn = 0;
 
 	/* run the POST send callbacks */
 	if (code>=200&&!is_local(trans)&&has_tran_tmcbs(trans,TMCB_RESPONSE_OUT)){
@@ -498,7 +505,7 @@ static int _reply( struct cell *trans, struct sip_msg* p_msg,
 	if (code>=180 && p_msg->to
 				&& (get_to(p_msg)->tag_value.s==0
 			    || get_to(p_msg)->tag_value.len==0)) {
-		calc_crc_suffix( p_msg, tm_tag_suffix );
+		calc_tag_suffix( p_msg, tm_tag_suffix );
 		buf = build_res_buf_from_sip_req(code,text, &tm_tag, p_msg, &len, &bm);
 		return _reply_light( trans, buf, len, code,
 			tm_tag.s, TOTAG_VALUE_LEN, lock, &bm);
@@ -594,7 +601,7 @@ static inline int run_failure_handlers(struct cell *t)
 		on_failure = t->on_negative;
 		t->on_negative=0;
 		/* run a reply_route action if some was marked */
-		run_top_route(failure_rlist[on_failure].a, &faked_req);
+		run_top_route(sroutes->failure[on_failure].a, &faked_req);
 	}
 
 	/* restore original environment and free the fake msg */
@@ -673,13 +680,13 @@ static inline int do_dns_failover(struct cell *t)
 		if (t->uas.request==NULL) {
 			LM_ERR("cloning failed\n");
 			free_sip_msg(req);
+			pkg_free(req);
 			return -1;
 		}
 		t->uas.end_request = ((char*)t->uas.request) + sip_msg_len;
 		/* free the actual SIP message, keep the clone only */
 		free_sip_msg(req);
-		/* the sip_msg structure is static in buf_to_sip_msg,
-		   so no need to free it */
+		pkg_free(req);
 	}
 	shmem_msg = t->uas.request;
 
@@ -768,6 +775,12 @@ static inline int t_pick_branch( struct cell *t, int *res_code, int *do_cancel)
 	cancelled = was_cancelled(t);
 	*do_cancel = 0;
 	for ( b=t->first_branch; b<t->nr_of_outgoings ; b++ ) {
+		/* skip PHONY branches if the transaction was canceled by UAC;
+		 * a phony branch is used just to force the transaction to wait for
+		 * more branches, but if canceled, it makes no sense to wait anymore */
+		if ( (t->uac[b].flags & T_UAC_IS_PHONY) &&
+		(t->flags & T_WAS_CANCELLED_FLAG) )
+			continue;
 		/* skip 'empty branches' */
 		if (!t->uac[b].request.buffer.s) continue;
 		/* there is still an unfinished UAC transaction; wait now! */
@@ -790,6 +803,20 @@ static inline int t_pick_branch( struct cell *t, int *res_code, int *do_cancel)
 
 	*res_code=lowest_s;
 	return lowest_b;
+}
+
+
+/* Quick and harmless test to see if the transaction still has 
+   pending branches */
+static inline int tran_is_completed( struct cell *t )
+{
+	int i;
+
+	for( i=t->first_branch ; i<t->nr_of_outgoings ; i++ )
+		if ( t->uac[i].last_received<200 )
+			return 0;
+
+	return 1;
 }
 
 
@@ -820,6 +847,31 @@ static enum rps t_should_relay_response( struct cell *Trans , int new_code,
 	   out
 	*/
 	LM_DBG("T_code=%d, new_code=%d\n", Trans->uas.status,new_code);
+
+	/* a final reply after 200 OK on a transaction with multi branch 200 OK */
+	if ( is_invite(Trans) && new_code>=200
+	&& Trans->flags&T_MULTI_200OK_FLAG
+	&& Trans->uas.status>=200 && Trans->uas.status<300) {
+		*should_store=0;
+		picked_branch=-1;
+		Trans->uac[branch].last_received=new_code;
+		if (new_code>=300) {
+			/* negative reply, we simply discard (no relay, no save) */
+			*should_relay = -1;
+			return RPS_DISCARDED;
+		}
+		/* 2xx reply - is this the last branch to complete?? */
+		if (tran_is_completed(Trans)) {
+			/* last branch gets also a 200OK, no more pending branches */
+			*should_relay = branch;
+			return RPS_COMPLETED;
+		} else {
+			/* 200 OK, but still having ongoing branches */
+			*should_relay = branch;
+			return RPS_RELAY;
+		}
+	}
+
 	inv_through=new_code>=200 && new_code<300 && is_invite(Trans);
 	/* if final response sent out, allow only INVITE 2xx  */
 	if ( Trans->uas.status >= 200 ) {
@@ -847,7 +899,7 @@ static enum rps t_should_relay_response( struct cell *Trans , int new_code,
 #ifdef EXTRA_DEBUG
 		/* don't report on retransmissions */
 		if (Trans->uac[branch].last_received==new_code) {
-			LM_DBG("final reply retransmission\n");
+			LM_DBG("final rely retransmission\n");
 		} else
 		/* if you FR-timed-out, faked a local 408 and 487 came, don't
 		 * report on it either */
@@ -972,6 +1024,14 @@ static enum rps t_should_relay_response( struct cell *Trans , int new_code,
 		*should_store=0;
 		*should_relay= new_code==100? -1 : branch;
 		if (new_code>=200 ) {
+			/* if a a multi-200OK transaction, prevent the transaction
+			   completion if we still have pending branches */
+			if (Trans->flags&T_MULTI_200OK_FLAG) {
+				if (tran_is_completed(Trans))
+					return RPS_COMPLETED;
+				else
+					return RPS_RELAY;
+			}
 			which_cancel( Trans, cancel_bitmap );
 			return RPS_COMPLETED;
 		} else return RPS_PROVISIONAL;
@@ -1019,6 +1079,9 @@ int t_retransmit_reply( struct cell *t )
 	UNLOCK_REPLIES( t );
 
 	/* send the buffer out */
+	if (t->uas.request && t->uas.request->flags & tcp_no_new_conn_rplflag)
+		tcp_no_new_conn = 1;
+
 	if (SEND_PR_BUFFER( & t->uas.response, b, len )==0) {
 		/* success */
 		LM_DBG("buf=%p: %.9s..., shmem=%p: %.9s\n",b, b,
@@ -1031,6 +1094,9 @@ int t_retransmit_reply( struct cell *t )
 					NULL, FAKED_REPLY, t->uas.status);
 		}
 	}
+
+	tcp_no_new_conn = 0;
+
 	return 1;
 
 error:
@@ -1182,7 +1248,7 @@ enum rps relay_reply( struct cell *t, struct sip_msg *p_msg, int branch,
 			if (relayed_code>=180 && t->uas.request->to
 					&& (get_to(t->uas.request)->tag_value.s==0
 					|| get_to(t->uas.request)->tag_value.len==0)) {
-				calc_crc_suffix( t->uas.request, tm_tag_suffix );
+				calc_tag_suffix( t->uas.request, tm_tag_suffix );
 				buf = build_res_buf_from_sip_req(
 						relayed_code,
 						&text,
@@ -1223,7 +1289,7 @@ enum rps relay_reply( struct cell *t, struct sip_msg *p_msg, int branch,
 		      larger messages are likely to follow and we will be
 		      able to reuse the memory frag
 		*/
-		uas_rb->buffer.s = (char*)shm_resize( uas_rb->buffer.s, res_len +
+		uas_rb->buffer.s = shm_realloc( uas_rb->buffer.s, res_len +
 			(msg_status<200 ?  REPLY_OVERBUFFER_LEN : 0));
 		if (!uas_rb->buffer.s) {
 			LM_ERR("no more share memory\n");
@@ -1272,6 +1338,10 @@ enum rps relay_reply( struct cell *t, struct sip_msg *p_msg, int branch,
 			run_trans_callbacks_locked(TMCB_RESPONSE_PRE_OUT,t,t->uas.request,
 				relayed_msg, relayed_code);
 		}
+
+		if (t->uas.request && t->uas.request->flags & tcp_no_new_conn_rplflag)
+			tcp_no_new_conn = 1;
+
 		/* send it out*/
 		if (SEND_PR_BUFFER( uas_rb, buf, res_len)==0) {
 			/* success */
@@ -1286,6 +1356,8 @@ enum rps relay_reply( struct cell *t, struct sip_msg *p_msg, int branch,
 					NULL, relayed_msg, relayed_code);
 			}
 		}
+
+		tcp_no_new_conn = 0;
 
 		/* run the POST sending out callback */
 		if (!totag_retr && has_tran_tmcbs(t, TMCB_RESPONSE_OUT) ) {
@@ -1447,6 +1519,11 @@ int reply_received( struct sip_msg  *p_msg )
 				reset_timer( &uac->local_cancel.fr_timer);
 		}
 		LM_DBG("reply to local CANCEL processed\n");
+
+		if (has_tran_tmcbs( t, TMCB_MSG_MATCHED_IN) )
+			run_trans_callbacks( TMCB_MSG_MATCHED_IN, t, 0,
+				p_msg, p_msg->REPLY_STATUS);
+
 		goto done;
 	}
 
@@ -1470,6 +1547,14 @@ int reply_received( struct sip_msg  *p_msg )
 
 	_tm_branch_index = branch;
 
+	if (has_tran_tmcbs( t, TMCB_MSG_MATCHED_IN) )
+		run_trans_callbacks( TMCB_MSG_MATCHED_IN, t, 0,
+			p_msg, p_msg->REPLY_STATUS);
+
+	if (!is_local(t))
+		run_trans_callbacks( TMCB_RESPONSE_IN, t, t->uas.request, p_msg,
+			p_msg->REPLY_STATUS);
+
 	/* processing of on_reply block */
 	has_reply_route = (t->on_reply) || (t->uac[branch].on_reply);
 	if (has_reply_route) {
@@ -1486,7 +1571,7 @@ int reply_received( struct sip_msg  *p_msg )
 		setb0flags( p_msg, t->uac[branch].br_flags);
 		/* run block - first per branch and then global one */
 		if ( t->uac[branch].on_reply &&
-		(run_top_route(onreply_rlist[t->uac[branch].on_reply].a,p_msg)
+		(run_top_route(sroutes->onreply[t->uac[branch].on_reply].a,p_msg)
 		&ACT_FL_DROP) && (msg_status<200) ) {
 			if (onreply_avp_mode) {
 				UNLOCK_REPLIES( t );
@@ -1495,7 +1580,7 @@ int reply_received( struct sip_msg  *p_msg )
 			LM_DBG("dropping provisional reply %d\n", msg_status);
 			goto done;
 		}
-		if ( t->on_reply && (run_top_route(onreply_rlist[t->on_reply].a,p_msg)
+		if(t->on_reply && (run_top_route(sroutes->onreply[t->on_reply].a,p_msg)
 		&ACT_FL_DROP) && (msg_status<200) ) {
 			if (onreply_avp_mode) {
 				UNLOCK_REPLIES( t );
@@ -1596,43 +1681,11 @@ not_found:
 	return 1;
 }
 
-int w_t_reply_body(struct sip_msg* msg, str* code, str *text,
-								str *body)
+int w_t_reply_body(struct sip_msg* msg, unsigned int* code, str *text,
+				str *body)
 {
 	struct cell *t;
 	int r;
-	str code_s;
-	unsigned int code_i;
-	str body_s;
-
-	if(body==0)
-	{
-		LM_ERR("Wrong argument, body must not be NULL\n");
-		return -1;
-	}
-
-	if(((pv_elem_p)code)->spec.getf!=NULL) {
-		if(pv_printf_s(msg, (pv_elem_p)code, &code_s)!=0)
-			return -1;
-		if(str2int(&code_s, &code_i)!=0 || code_i<100 || code_i>699)
-			return -1;
-	} else {
-		code_i = ((pv_elem_p)code)->spec.pvp.pvn.u.isname.name.n;
-	}
-
-	if(((pv_elem_p)text)->spec.getf!=NULL) {
-		if(pv_printf_s(msg, (pv_elem_p)text, &code_s)!=0 || code_s.len <=0)
-			return -1;
-	} else {
-		code_s = ((pv_elem_p)text)->text;
-	}
-
-	if(((pv_elem_p)body)->spec.getf!=NULL) {
-		if(pv_printf_s(msg, (pv_elem_p)body, &body_s)!=0 || body_s.len <=0)
-			return -1;
-	} else {
-		body_s = ((pv_elem_p)body)->text;
-	}
 
 	t=get_t();
 	if ( t==0 || t==T_UNDEFINED ) {
@@ -1650,8 +1703,10 @@ int w_t_reply_body(struct sip_msg* msg, str* code, str *text,
 			return -1;
 		}
 		t=get_t();
+	} else {
+		update_cloned_msg_from_msg( t->uas.request, msg);
 	}
-	return t_reply_with_body(t, code_i, &code_s, &body_s, 0, 0);
+	return t_reply_with_body(t, *code, text, body, 0, 0);
 }
 
 
@@ -1698,7 +1753,7 @@ int t_reply_with_body( struct cell *trans, unsigned int code, str *text,
 	else
 	if (code>=180 && p_msg->to && (get_to(p_msg)->tag_value.s==0
 			|| get_to(p_msg)->tag_value.len==0)) {
-		calc_crc_suffix( p_msg, tm_tag_suffix );
+		calc_tag_suffix( p_msg, tm_tag_suffix );
 		rpl.s = build_res_buf_from_sip_req(code,text, &tm_tag, p_msg,
 				(unsigned int*)&rpl.len, &bm);
 		to_tag_rpl.s = tm_tag.s;

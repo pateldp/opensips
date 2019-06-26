@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		The <acronym>Statistics</acronym> module is a wrapper over the internal
@@ -26,13 +26,13 @@
 		separator (e.g. <emphasis role='bold'>$stat(method:invite)</emphasis> or
 <emphasis role='bold'>update_stat("packets:$var(ptype)", "+1")</emphasis>).
 		In order for this to work, the groups must be defined prior to OpenSIPS startup
-		using the <emphasis role='bold'><xref linkend="modparam-stat-groups"/></emphasis>
+		using the <emphasis role='bold'><xref linkend="param_stat_groups"/></emphasis>
 		module parameter.
 	</para>
 	<para>
 		The module allows easy iteration over the statistics of a group using
-		the <emphasis role='bold'><xref linkend="modfunc-stat-iter-init"/></emphasis>
-		and <emphasis role='bold'><xref linkend="modfunc-stat-iter-next"/></emphasis>
+		the <emphasis role='bold'><xref linkend="func_stat_iter_init"/></emphasis>
+		and <emphasis role='bold'><xref linkend="func_stat_iter_next"/></emphasis>
 		functions.
 	</para>
 	<para>
@@ -41,7 +41,7 @@
 	</para>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -72,9 +72,9 @@
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_variable" xreflabel="variable">
 		<title><varname>variable</varname> (string)</title>
 		<para>
 		Name of a new statistic variable. The name may be followed by additional
@@ -95,7 +95,7 @@ modparam("statistics", "variable", "active_calls/no_reset")
 </programlisting>
 		</example>
 	</section>
-	<section id="modparam-stat-groups" xreflabel="stat_groups">
+	<section id="param_stat_groups" xreflabel="stat_groups">
 		<title><varname>stat_groups</varname> (string)</title>
 		<para>
 		A comma-separated values string, specifying the statistic groups that
@@ -112,9 +112,9 @@ modparam("statistics", "stat_groups", "method, packet, response")
 
 	</section>
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_update_stat" xreflabel="update_stat()">
 		<title>
 		<function moreinfo="none">update_stat(variable, value)</function>
 		</title>
@@ -124,13 +124,12 @@ modparam("statistics", "stat_groups", "method, packet, response")
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>variable</emphasis> - variable to be updated
-			(it can be a string or a pseudovariable);
+			<para><emphasis>variable</emphasis> (string) - variable to be updated;
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>value</emphasis> - value to update with; it may be
-			also negative; variables (holding integer values) are also allowed.
+			<para><emphasis>value</emphasis> (int) - value to update with; it may be
+			also negative.
 			</para>
 		</listitem>
 		</itemizedlist>
@@ -142,16 +141,16 @@ modparam("statistics", "stat_groups", "method, packet, response")
 		<title><function>update_stat</function> usage</title>
 		<programlisting format="linespecific">
 ...
-update_stat("register_counter", "+1");
+update_stat("register_counter", 1);
 ...
 $var(a_calls) = "active_calls";
-update_stat("$var(a_calls)", "-1");
+update_stat($var(a_calls), -1);
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section>
+	<section id="func_reset_stat" xreflabel="reset_stat()">
 		<title>
 		<function moreinfo="none">reset_stat(variable)</function>
 		</title>
@@ -161,8 +160,7 @@ update_stat("$var(a_calls)", "-1");
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>variable</emphasis> - variable to be reset-ed
-			(it can be a string or a pseudovariable).
+			<para><emphasis>variable</emphasis> (string) - variable to be reset-ed
 			</para>
 		</listitem>
 		</itemizedlist>
@@ -177,12 +175,12 @@ update_stat("$var(a_calls)", "-1");
 reset_stat("register_counter");
 ...
 $var(reg_counter) = "register_counter";
-update_stat("$var(reg_counter)");
+update_stat($var(reg_counter));
 ...
 </programlisting>
 		</example>
 	</section>
-	<section id="modfunc-stat-iter-init" xreflabel="stat_iter_init()">
+	<section id="func_stat_iter_init" xreflabel="stat_iter_init()">
 		<title>
 		<function moreinfo="none">stat_iter_init(group, iter)</function>
 		</title>
@@ -193,12 +191,12 @@ update_stat("$var(reg_counter)");
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>group</emphasis> - string
+			<para><emphasis>group</emphasis> (string)
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>iter</emphasis> - string (internally matched
-				to a corresponding iterator)
+			<para><emphasis>iter</emphasis> (string) - internally matched
+				to a corresponding iterator
 			</para>
 		</listitem>
 		</itemizedlist>
@@ -215,7 +213,7 @@ stat_iter_init("packet", "iter");
 </programlisting>
 		</example>
 	</section>
-	<section id="modfunc-stat-iter-next" xreflabel="stat_iter_next()">
+	<section id="func_stat_iter_next" xreflabel="stat_iter_next()">
 		<title>
 		<function moreinfo="none">stat_iter_next(name, val, iter)</function>
 		</title>
@@ -227,16 +225,16 @@ stat_iter_init("packet", "iter");
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>name</emphasis> - script variable
+			<para><emphasis>name</emphasis> (var)
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>val</emphasis> - script variable
+			<para><emphasis>val</emphasis> (var)
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>iter</emphasis> - string (internally matched
-				to a corresponding iterator)
+			<para><emphasis>iter</emphasis> (string) - internally matched
+				to a corresponding iterator
 			</para>
 		</listitem>
 		</itemizedlist>
@@ -248,9 +246,11 @@ stat_iter_init("packet", "iter");
 		<title><function>stat_iter_next</function> usage</title>
 		<programlisting format="linespecific">
 ...
-stat_iter_init("packet", "iter");
-while (stat_iter_next("$var(k)", "$var(v)", "iter")) {
-	...
+# periodically clear packet-related data
+timer_route [clear_packet_stats, 7200] {
+	stat_iter_init("packet", "iter");
+	while (stat_iter_next($var(stat), $var(val), "iter"))
+		reset_stat("packet:$var(stat)");
 }
 ...
 </programlisting>
@@ -258,10 +258,10 @@ while (stat_iter_next("$var(k)", "$var(v)", "iter")) {
 	</section>
 	</section>
 
-	<section>
-	<title>Exported pseudo-variables</title>
+	<section id="exported_pseudo_variables">
+	<title>Exported Pseudo-Variables</title>
 
-		<section>
+		<section id="pv_stat" xreflabel="$stat">
 			<title><varname>$stat</varname></title>
 			<para>
 			Allows "get" or "reset" operations on the given statistics.

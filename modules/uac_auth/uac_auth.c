@@ -54,10 +54,9 @@ unsigned short pwd_avp_type=0;
 
 
 /** Exported functions */
-static cmd_export_t cmds[]=
-{
-	{"load_uac_auth", (cmd_function)uac_auth_bind, 1,  0,  0,  0},
-	{0,0,0,0,0,0}
+static cmd_export_t cmds[] = {
+	{"load_uac_auth", (cmd_function)uac_auth_bind, {{0,0,0}},0},
+	{0,0,{{0,0,0}},0}
 };
 
 /** Exported parameters */
@@ -76,6 +75,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,		/* module version */
 	DEFAULT_DLFLAGS,	/* dlopen flags */
+	0,					/* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	cmds,				/* exported functions */
 	0,					/* exported async functions */
@@ -88,7 +88,8 @@ struct module_exports exports= {
 	mod_init,			/* module initialization function */
 	(response_function) NULL,	/* response handling function */
 	(destroy_function) mod_destroy,	/* destroy function */
-	NULL				/* per-child init function */
+	NULL,				/* per-child init function */
+	NULL				/* reload confirm function */
 };
 
 
@@ -118,7 +119,7 @@ static int mod_init(void)
 	/* parse the auth AVP spesc, if any */
 	if ( auth_username_avp || auth_password_avp || auth_realm_avp) {
 		if (!auth_username_avp || !auth_password_avp || !auth_realm_avp) {
-			LM_ERR("partial definition of auth AVP!");
+			LM_ERR("partial definition of auth AVP!\n");
 			return -1;
 		}
 		if ( parse_auth_avp(auth_realm_avp, &realm_spec, "realm")<0

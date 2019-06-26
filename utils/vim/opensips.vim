@@ -48,7 +48,7 @@ syn keyword osGlobalParam tcp_keepcount tcp_keepidle tcp_keepinterval
 syn keyword osGlobalParam open_files_limit mcast_loopback mcast_ttl tos
 syn keyword osGlobalParam max_while_loops disable_stateless_fwd db_default_url
 syn keyword osGlobalParam disable_503_translation import_file server_header
-syn keyword osGlobalParam tcp_max_msg_time abort_on_assert
+syn keyword osGlobalParam tcp_max_msg_time abort_on_assert anycast
 
 " String constants
 syn match	osSpecial	contained 	display "\\\(x\x\+\|\o\{1,3}\|.\|$\)"
@@ -62,11 +62,10 @@ syn region	osVarIndex	contained	start="\[" end="]" contains=osNumber,osVarNamed,
 
 " OpenSIPS variables
 "	TODO: fix me with full list of OS vars (for better validation!)
-syn region	osVarCon	contained matchgroup=varHi start="[a-zA-Z_0-9]\+(" end=")"
-
+syn region	osVarCon	contained matchgroup=varHi start="[a-zA-Z_.0-9]\+(" end=")"
 syn region	osVar		matchgroup=varHi start="\$(" end=")" contains=osVarCtx,osVarCon,osTransfm,osVarIndex
-syn region	osVarNamed	matchgroup=varHi start="\$[a-zA-Z_0-9]\+(" end=")"
-syn match	osVarNamedS	/\$[a-zA-Z_0-9]\+[^a-zA-Z_0-9(]/me=e-1,he=e-1
+syn region	osVarNamed	matchgroup=varHi start="\$[a-zA-Z_.0-9]\+(" end=")"
+syn match	osVarNamedS	/\$[a-zA-Z_.0-9]\+[^a-zA-Z_0-9(]/me=e-1,he=e-1
 
 syn region	osString	start=+"+ skip=+\\\\\|\\"+ end=+"+ extend contains=osSpecial,osVar,osVarNamed,osVarNamedS
 

@@ -1,16 +1,4 @@
 lua Module
-
-Arnaud Chong
-
-Edited by
-
-Eric Gouyer
-
-Eric Gouyer
-
-Arnaud Chong
-
-   Copyright © 2006-2011
      __________________________________________________________
 
    Table of Contents
@@ -37,6 +25,10 @@ Arnaud Chong
 
               1.6.1. lua_exec(func, [param])
               1.6.2. lua_meminfo()
+
+        1.7. Exported MI Functions
+
+              1.7.1. watch
 
    2. OpenSIPS Lua API
 
@@ -65,6 +57,22 @@ Arnaud Chong
               2.1.21. AVP_destroy(msg, name)
               2.1.22. pseudoVar(msg, variable)
               2.1.23. add_lump_rpl
+
+   3. Contributors
+
+        3.1. By Commit Statistics
+        3.2. By Commit Activity
+
+   4. Documentation
+
+        4.1. Contributors
+
+   List of Tables
+
+   3.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   3.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -184,6 +192,11 @@ modparam("lua", "luafilename", "/etc/opensips/opensips.lua")
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
    ONREPLY_ROUTE and BRANCH_ROUTE.
 
+   Parameters:
+     * func (string) - Lua function name
+     * param (string, optional) - Parameter to be passed to the
+       Lua function.
+
    Example 1.2. lua_exec() usage
 ...
 if (lua_exec("mongo_alias")) {
@@ -194,6 +207,19 @@ if (lua_exec("mongo_alias")) {
 1.6.2. lua_meminfo()
 
    Logs informations about memory.
+
+1.7. Exported MI Functions
+
+1.7.1.  watch
+
+   Name: watch
+
+   Parameters: none
+     * action (optional) - 'add' or 'delete'
+     * extension (optional) - required if action is provided
+
+   MI FIFO Command Format:
+  opensips-cli -x mi watch
 
 Chapter 2. OpenSIPS Lua API
 
@@ -303,3 +329,64 @@ Chapter 2. OpenSIPS Lua API
 2.1.23. add_lump_rpl
 
    Add header to the reply.
+
+Chapter 3. Contributors
+
+3.1. By Commit Statistics
+
+   Table 3.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Arnaud Chong + Eric Gouyer 35 1 4335 0
+   2. Razvan Crainea (@razvancrainea) 22 17 146 137
+   3. Vlad Patrascu (@rvlad-patrascu) 15 9 213 208
+   4. Liviu Chircu (@liviuchircu) 13 10 15 63
+   5. Bogdan-Andrei Iancu (@bogdan-iancu) 6 4 5 2
+   6. Vlad Paiu (@vladpaiu) 5 3 7 9
+   7. Julián Moreno Patiño 3 1 1 1
+   8. Peter Lemenkov (@lemenkov) 3 1 1 1
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+3.2. By Commit Activity
+
+   Table 3.2. Most recently active contributors^(1) to this module
+                     Name                   Commit Activity
+   1. Vlad Patrascu (@rvlad-patrascu)     May 2017 - May 2019
+   2. Razvan Crainea (@razvancrainea)     Feb 2012 - May 2019
+   3. Bogdan-Andrei Iancu (@bogdan-iancu) May 2014 - Apr 2019
+   4. Liviu Chircu (@liviuchircu)         Mar 2014 - Mar 2019
+   5. Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   6. Julián Moreno Patiño                Feb 2016 - Feb 2016
+   7. Vlad Paiu (@vladpaiu)               Feb 2012 - Jun 2012
+   8. Arnaud Chong + Eric Gouyer          Dec 2011 - Dec 2011
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 4. Documentation
+
+4.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Razvan Crainea
+   (@razvancrainea), Peter Lemenkov (@lemenkov), Liviu Chircu
+   (@liviuchircu), Vlad Paiu (@vladpaiu), Arnaud Chong + Eric
+   Gouyer.
+
+   Documentation Copyrights:
+
+   Copyright © 2006-2011 Arnaud Chong, Eric Gouyer

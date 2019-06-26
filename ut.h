@@ -43,6 +43,14 @@
 #include "mem/mem.h"
 #include "mem/shm_mem.h"
 
+typedef struct _int_str_t {
+	union {
+		int i;
+		str s;
+	};
+	unsigned char is_str;
+} int_str_t;
+
 struct sip_msg;
 
 /* zero-string wrapper */
@@ -90,6 +98,66 @@ struct sip_msg;
 
 #define  translate_pointer( _new_buf , _org_buf , _p) \
 	( (_p)?(_new_buf + (_p-_org_buf)):(0) )
+
+#define TIMEVAL_MS_DIFF(_tva, _tvb) \
+	((((_tvb).tv_sec * 1000000UL + (_tvb).tv_usec) - \
+	 ((_tva).tv_sec * 1000000UL + (_tva).tv_usec)) / 1000UL)
+
+/**
+ * _add_last() - Walk the @next_member field of any struct and append last.
+ * @what: Pointer to the struct that is to be appended.
+ * @where: Pointer to the list that is to be appended to.
+ * @next_member: The name of the member used to link to the next ones.
+ *
+ * If the list @where is NULL, @what will be assigned to it.
+ */
+#define _add_last(what, where, next_member) \
+	do { \
+		if (!(where)) { \
+			(where) = (what); \
+		} else { \
+			typeof(where) __wit = (where); \
+			while (__wit->next_member) \
+				__wit = __wit->next_member; \
+			__wit->next_member = (what); \
+		} \
+	} while (0)
+
+/**
+ * add_last() - Walk the "->next" field of any struct and append last.
+ * @what: Pointer to the struct that is to be appended.
+ * @where: Pointer to the list that is to be appended to.
+ *
+ * If the list @where is NULL, @what will be assigned to it.
+ */
+#define add_last(what, where) \
+	_add_last(what, where, next)
+
+/**
+ * pkg_free_all() - pkg_free() each element of the given list.
+ * @things: Pointer to the list that is to be freed in succession.
+ *
+ * The list is walked using "->next".
+ */
+#define pkg_free_all(things) \
+	do { \
+		typeof(things) pos; \
+		while (things) \
+			{ pos = (things); (things) = (things)->next; pkg_free(pos); } \
+	} while (0)
+
+/**
+ * shm_free_all() - shm_free() each element of the given list.
+ * @things: Pointer to the list that is to be freed in succession.
+ *
+ * The list is walked using "->next".
+ */
+#define shm_free_all(things) \
+	do { \
+		typeof(things) pos; \
+		while (things) \
+			{ pos = (things); (things) = (things)->next; shm_free(pos); } \
+	} while (0)
 
 #define via_len(_via) \
 	((_via)->bsize-((_via)->name.s-\
@@ -189,10 +257,14 @@ static inline char* int2bstr(uint64_t l, char *s, int* len)
 
 /* INTeger-TO-STRing : convers a 64-bit integer to a string
  * returns a pointer to a static buffer containing l in asciiz & sets len */
-extern char int2str_buf[INT2STR_MAX_LEN];
+#define INT2STR_BUF_NO    7
+extern char int2str_buf[INT2STR_BUF_NO][INT2STR_MAX_LEN];
 static inline char* int2str(uint64_t l, int* len)
 {
-	return int2bstr( l, int2str_buf, len);
+	static unsigned int it = 0;
+
+	if ((++it)==INT2STR_BUF_NO) it = 0;
+	return int2bstr( l, int2str_buf[it], len);
 }
 
 
@@ -243,22 +315,21 @@ static inline char* q_memrchr(char* p, int c, unsigned int size)
 }
 
 
-inline static int reverse_hex2int( char *c, int len )
+inline static int reverse_hex2int( char *c, int len, unsigned int *r)
 {
 	char *pc;
-	int r;
 	char mychar;
 
-	r=0;
+	*r=0;
 	for (pc=c+len-1; len>0; pc--, len--) {
-		r <<= 4 ;
+		(*r) <<= 4 ;
 		mychar=*pc;
-		if ( mychar >='0' && mychar <='9') r+=mychar -'0';
-		else if (mychar >='a' && mychar <='f') r+=mychar -'a'+10;
-		else if (mychar  >='A' && mychar <='F') r+=mychar -'A'+10;
+		if ( mychar >='0' && mychar <='9') (*r)+=mychar -'0';
+		else if (mychar >='a' && mychar <='f') (*r)+=mychar -'a'+10;
+		else if (mychar  >='A' && mychar <='F') (*r)+=mychar -'A'+10;
 		else return -1;
 	}
-	return r;
+	return 0;
 }
 
 inline static int int2reverse_hex( char **c, int *size, unsigned int nr )
@@ -286,24 +357,23 @@ inline static int int2reverse_hex( char **c, int *size, unsigned int nr )
 /* if unsafe requested when first non numerical character shall be
  * met the number shall be returned; avoid giving the
  * exact len of the number */
-inline static int64_t reverse_hex2int64( char *c, int len, int unsafe)
+inline static int reverse_hex2int64( char *c, int len, int unsafe, uint64_t *r)
 {
 	char *pc;
-	int64_t r;
 	char mychar;
 
-	r=0;
+	*r=0;
 	for (pc=c+len-1; len>0; pc--, len--) {
-		r <<= 4 ;
+		(*r) <<= 4 ;
 		mychar=*pc;
-		if ( mychar >='0' && mychar <='9') r+=mychar -'0';
-		else if (mychar >='a' && mychar <='f') r+=mychar -'a'+10;
-		else if (mychar  >='A' && mychar <='F') r+=mychar -'A'+10;
+		if ( mychar >='0' && mychar <='9') (*r)+=mychar -'0';
+		else if (mychar >='a' && mychar <='f') (*r)+=mychar -'a'+10;
+		else if (mychar  >='A' && mychar <='F') (*r)+=mychar -'A'+10;
 		else if (unsafe)
-			return r;
+			return 0;
 		else return -1;
 	}
-	return r;
+	return 0;
 }
 
 inline static int64_t int64_2reverse_hex( char **c, int *size, uint64_t nr )
@@ -482,6 +552,28 @@ error:
 	return -1;
 }
 
+static inline void unescape_crlf(str *in_out)
+{
+	char *p, *lim = in_out->s + in_out->len;
+
+	if (ZSTR(*in_out))
+		return;
+
+	for (p = in_out->s; p < lim; p++) {
+		if (*p == '\\' && p + 1 < lim) {
+			if (*(p + 1) == 'r') {
+				*p = '\r';
+				memmove(p + 1, p + 2, lim - (p + 2));
+				in_out->len--;
+			} else if (*(p + 1) == 'n') {
+				*p = '\n';
+				memmove(p + 1, p + 2, lim - (p + 2));
+				in_out->len--;
+			}
+		}
+	}
+}
+
 
 /*
  * Convert a string to lower case
@@ -495,6 +587,28 @@ static inline void strlower(str* _s)
 	}
 }
 
+/*
+ * Convert a str into a short integer
+ */
+static inline int str2short(str* _s, unsigned short *_r)
+{
+	int i;
+
+	if (_s==0 || _s->s == 0 || _s->len == 0 || _r == 0)
+		return -1;
+
+	*_r = 0;
+	for(i = 0; i < _s->len; i++) {
+		if ((_s->s[i] >= '0') && (_s->s[i] <= '9')) {
+			*_r *= 10;
+			*_r += _s->s[i] - '0';
+		} else {
+			return -1;
+		}
+	}
+
+	return 0;
+}
 
 /*
  * Convert a str into integer
@@ -600,6 +714,7 @@ static inline int shm_str_dup(str* dst, const str* src)
 	dst->s = shm_malloc(src->len);
 	if (!dst->s) {
 		LM_ERR("no shared memory left\n");
+		dst->len = 0;
 		return -1;
 	}
 
@@ -608,20 +723,46 @@ static inline int shm_str_dup(str* dst, const str* src)
 	return 0;
 }
 
+
 /*
  * Make a copy of an str structure using shm_malloc
  *	  + an additional '\0' byte, so you can make use of dst->s
  */
 static inline int shm_nt_str_dup(str* dst, const str* src)
 {
-	if (!src || !src->s)
-		return -1;
-
-	memset(dst, 0, sizeof *dst);
+	if (!src->s) {
+		memset(dst, 0, sizeof *dst);
+		return 0;
+	}
 
 	dst->s = shm_malloc(src->len + 1);
 	if (!dst->s) {
 		LM_ERR("no shared memory left\n");
+		dst->len = 0;
+		return -1;
+	}
+
+	memcpy(dst->s, src->s, src->len);
+	dst->len = src->len;
+	dst->s[dst->len] = '\0';
+	return 0;
+}
+
+/*
+ * Make a copy of an str structure using pkg_malloc
+ *	  + an additional '\0' byte, so you can make use of dst->s
+ */
+static inline int pkg_nt_str_dup(str* dst, const str* src)
+{
+	if (!src->s) {
+		memset(dst, 0, sizeof *dst);
+		return 0;
+	}
+
+	dst->s = pkg_malloc(src->len + 1);
+	if (!dst->s) {
+		LM_ERR("no private memory left\n");
+		dst->len = 0;
 		return -1;
 	}
 
@@ -647,8 +788,12 @@ static inline char *shm_strdup(const char *str)
 	return rval;
 }
 
-/* Extend the given buffer only if needed */
-static inline int shm_str_resize(str *in, int size)
+/*
+ * Ensure the given (str *) points to an SHM buffer of at least "size" bytes
+ *
+ * Return: 0 on success, -1 on failure
+ */
+static inline int shm_str_extend(str *in, int size)
 {
 	char *p;
 
@@ -666,15 +811,49 @@ static inline int shm_str_resize(str *in, int size)
 	return 0;
 }
 
+
+/*
+ * Ensure "dst" matches the content of "src" without leaking memory
+ *
+ * Note: if you just want to dup a string, use "shm_str_dup()" instead
+ */
+static inline int shm_str_sync(str* dst, const str* src)
+{
+	if (ZSTRP(src)) {
+		if (dst->s)
+			shm_free(dst->s);
+		memset(dst, 0, sizeof *dst);
+		return 0;
+	}
+
+	if (shm_str_extend(dst, src->len) != 0) {
+		LM_ERR("oom\n");
+		return -1;
+	}
+
+	memcpy(dst->s, src->s, src->len);
+	dst->len = src->len;
+	return 0;
+}
+
+
+static inline void shm_str_clean(str* dst)
+{
+	if (dst->s)
+		shm_free(dst->s);
+	memset(dst, 0, sizeof *dst);
+}
+
+
 /*
  * Make a copy of a str structure using pkg_malloc
  */
 static inline int pkg_str_dup(str* dst, const str* src)
 {
 	dst->s = pkg_malloc(src->len);
-	if (dst->s==NULL)
-	{
+	if (!dst->s) {
 		LM_ERR("no private memory left\n");
+		dst->len = 0;
 		return -1;
 	}
 
@@ -700,7 +879,7 @@ static inline char *pkg_strdup(const char *str)
 }
 
 /* Extend the given buffer only if needed */
-static inline int pkg_str_resize(str *in, int size)
+static inline int pkg_str_extend(str *in, int size)
 {
 	char *p;
 
@@ -731,14 +910,15 @@ static inline int str_strcmp(const str *stra, const str *strb)
 	if(stra==NULL || strb==NULL || stra->s ==NULL || strb->s==NULL
 	|| stra->len<0 || strb->len<0)
 	{
-		LM_ERR("bad parameters\n");
+#ifdef EXTRA_DEBUG
+		LM_DBG("bad parameters\n");
+#endif
 		return -2;
 	}
 
 	alen = stra->len;
 	blen = strb->len;
 	minlen = (alen < blen ? alen : blen);
-
 
 	for (i = 0; i < minlen; i++) {
 		const char a = stra->s[i];
@@ -748,6 +928,7 @@ static inline int str_strcmp(const str *stra, const str *strb)
 		if (a > b)
 			return 1;
 	}
+
 	if (alen < blen)
 		return -1;
 	else if (alen > blen)
@@ -766,16 +947,14 @@ static inline char* str_strstr(const str *stra, const str *strb)
 
 	if (stra==NULL || strb==NULL || stra->s==NULL || strb->s==NULL
 			|| stra->len<=0 || strb->len<=0) {
-		LM_ERR("bad parameters\n");
+#ifdef EXTRA_DEBUG
+		LM_DBG("bad parameters\n");
+#endif
 		return NULL;
 	}
 
-	if (strb->len > stra->len) {
-		LM_ERR("string to find should be smaller than the string"
-				"to search into\n");
+	if (strb->len > stra->len)
 		return NULL;
-	}
-
 
 	len=0;
 	while (stra->len-len >= strb->len){
@@ -810,7 +989,9 @@ static inline int str_strncasecmp(const str *stra, const str *strb, int n)
 	if(stra==NULL || strb==NULL || stra->s ==NULL || strb->s==NULL
 	|| stra->len<0 || strb->len<0)
 	{
-		LM_ERR("bad parameters\n");
+#ifdef EXTRA_DEBUG
+		LM_DBG("bad parameters\n");
+#endif
 		return -2;
 	}
 
@@ -845,7 +1026,9 @@ static inline int str_strcasecmp(const str *stra, const str *strb)
 	if(stra==NULL || strb==NULL || stra->s ==NULL || strb->s==NULL
 	|| stra->len<0 || strb->len<0)
 	{
-		LM_ERR("bad parameters\n");
+#ifdef EXTRA_DEBUG
+		LM_DBG("bad parameters\n");
+#endif
 		return -2;
 	}
 	alen = stra->len;
@@ -870,16 +1053,34 @@ static inline int str_strcasecmp(const str *stra, const str *strb)
 
 #define start_expire_timer(begin,threshold) \
 	do { \
-		if ((threshold))	\
+		if (threshold)	\
 			gettimeofday(&(begin), NULL); \
 	} while(0) \
 
-#define stop_expire_timer(begin,threshold,func_info,extra_s,extra_len,tcp) \
+#define __stop_expire_timer(begin,threshold,func_info, \
+                           extra_s,extra_len,tcp,_slow_stat) \
 	do { \
-		if ((threshold)) \
-			log_expiry(get_time_diff(&(begin)),(threshold),(func_info),(extra_s),(extra_len),tcp); \
+		int __usdiff__ = get_time_diff(&(begin)); \
+		if ((threshold) && __usdiff__ > (threshold)) { \
+			log_expiry(__usdiff__,(threshold),(func_info), \
+			           (extra_s),(extra_len),tcp); \
+			if (_slow_stat) \
+				inc_stat(_slow_stat); \
+		} \
 	} while(0)
 
+#define stop_expire_timer(begin,threshold,func_info,extra_s,extra_len,tcp) \
+	__stop_expire_timer(begin,threshold,func_info, \
+	                   extra_s,extra_len,tcp,(stat_var *)NULL)
+
+#define _stop_expire_timer(begin,threshold,func_info,extra_s,extra_len,tcp, \
+							slow, total) \
+	do { \
+		__stop_expire_timer(begin,threshold,func_info, \
+							extra_s,extra_len,tcp,slow); \
+		if (total) \
+			inc_stat(total); \
+	} while (0)
 
 
 int tcp_timeout_con_get;

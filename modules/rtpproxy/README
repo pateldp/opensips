@@ -1,20 +1,4 @@
 rtpproxy Module
-
-Maxim Sobolev
-
-   Sippy Software, Inc.
-
-Edited by
-
-Maxim Sobolev
-
-Bogdan-Andrei Iancu
-
-Razvan Crainea
-
-   Copyright © 2003-2008 Sippy Software, Inc.
-
-   Copyright © 2005 Voice Sistem SRL
      __________________________________________________________
 
    Table of Contents
@@ -47,36 +31,37 @@ Razvan Crainea
 
         1.6. Exported Functions
 
-              1.6.1. rtpproxy_engage([flags [, ip_address [,
-                      set_id [, sock_pvar]]]])
+              1.6.1. rtpproxy_engage([[flags][, [ip_address][,
+                      [set_id][, [sock_var][, ret_var]]]]])
 
-              1.6.2. rtpproxy_offer([flags [, ip_address [, set_id
-                      [, sock_pvar]]]])
+              1.6.2. rtpproxy_offer([[flags][, [ip_address][,
+                      [set_id][, [sock_var][, ret_var]]]])
 
-              1.6.3. rtpproxy_answer([flags [, ip_address [,
-                      set_id [, sock_pvar]]]])
+              1.6.3. rtpproxy_answer([[flags][, [ip_address][,
+                      [set_id][, [sock_var][, ret_var]]]]])
 
-              1.6.4. rtpproxy_unforce([set_id [, sock_pvar]])
-              1.6.5. rtpproxy_stream2uac(prompt_name, count [,
-                      set_id [, sock_pvar]]),
-                      rtpproxy_stream2uas(prompt_name, count [,
-                      set_id [, sock_pvar]])
+              1.6.4. rtpproxy_unforce([[set_id][, sock_var]])
+              1.6.5. rtpproxy_stream2uac(prompt_name, count[,
+                      [set_id][, sock_var]]),
+                      rtpproxy_stream2uas(prompt_name, count[,
+                      [set_id][, sock_var]])
 
-              1.6.6. rtpproxy_stop_stream2uac([set_id [,
-                      sock_pvar]]),
-                      rtpproxy_stop_stream2uas([set_id [,
-                      sock_pvar]])
+              1.6.6. rtpproxy_stop_stream2uac([[set_id][,
+                      sock_var]]),
+                      rtpproxy_stop_stream2uas([[set_id][,
+                      sock_var]])
 
-              1.6.7. rtpproxy_start_recording([set_id [, sock_pvar
-                      [, flags [, destination [, mediastream]]]]])
+              1.6.7. rtpproxy_start_recording([[set_id][,
+                      [sock_var][, [flags][, [destination][,
+                      mediastream]]]]])
 
-              1.6.8. rtpproxy_stats(up_pvar, down_pvar, sent_pvar,
-                      fail_pvar [, set_id [, sock_pvar]])
+              1.6.8. rtpproxy_stats(up_pvar, down_var, sent_var,
+                      fail_var[, [set_id][, sock_var]])
 
-              1.6.9. rtpproxy_all_stats(stats_avp [, set_id [,
-                      sock_pvar]])
+              1.6.9. rtpproxy_all_stats(stats_avp[, [set_id][,
+                      sock_var]])
 
-        1.7. MI Commands
+        1.7. Exported MI Functions
 
               1.7.1. rtpproxy_enable
               1.7.2. rtpproxy_show
@@ -87,6 +72,21 @@ Razvan Crainea
               1.8.1. E_RTPPROXY_STATUS
 
    2. Frequently Asked Questions
+   3. Contributors
+
+        3.1. By Commit Statistics
+        3.2. By Commit Activity
+
+   4. Documentation
+
+        4.1. Contributors
+
+   List of Tables
+
+   3.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   3.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -240,6 +240,12 @@ Chapter 1. Admin Guide
    Definition of socket(s) used to connect to (a set) RTPProxy. It
    may specify a UNIX socket or an IPv4/IPv6 UDP socket.
 
+   The definition also supports to specify a different IP that
+   will be advertised instead of the one returned by RTPProxy.
+   This is useful when having multiple RTPProxy servers that are
+   located behind NAT, and listen only on private intefaces, but
+   need to advertise a public one.
+
    Default value is “NONE” (disabled).
 
    Example 1.1. Set rtpproxy_sock parameter
@@ -254,6 +260,8 @@ modparam("rtpproxy", "rtpproxy_sock",
         "1 == udp:localhost:12221 udp:localhost:12222")
 modparam("rtpproxy", "rtpproxy_sock",
         "2 == udp:localhost:12225")
+modparam("rtpproxy", "rtpproxy_sock",
+        "2 == udp:localhost:12225|8.8.8.8")
 ...
 
 1.5.2. rtpproxy_disable_tout (integer)
@@ -416,8 +424,8 @@ modparam("rtpproxy", "rtpp_notify_socket", "/tmp/rtpproxy.unix")
 
 1.6. Exported Functions
 
-1.6.1.  rtpproxy_engage([flags [, ip_address [, set_id [,
-sock_pvar]]]])
+1.6.1.  rtpproxy_engage([[flags][, [ip_address][, [set_id][,
+[sock_var][, ret_var]]]]])
 
    Rewrites SDP body to ensure that media is passed through an RTP
    proxy. It uses the dialog module facilities to keep track when
@@ -429,13 +437,17 @@ sock_pvar]]]])
    configuration), so you might face an undefined behavior.
 
    Meaning of the parameters is as follows:
-     * flags(optional) - flags to turn on some features.
+     * flags(string, optional) - flags to turn on some features.
           + a - flags that UA from which message is received
             doesn't support symmetric RTP.
           + l - force “lookup”, that is, only rewrite SDP when
             corresponding session is already exists in the RTP
             proxy. By default is on when the session is to be
             completed (reply in non-swap or ACK in swap mode).
+          + k - only create RTPProxy session, but do not modify
+            the SDP body. This is useful when you only want to
+            inject some media, but do not want to engage RTPProxy
+            in the entire call.
           + i/e - when RTPProxy is used in bridge mode, these
             flags are used to indicate the direction of the media
             flow for the current request/reply. 'i' refers to the
@@ -491,11 +503,17 @@ sock_pvar]]]])
             significantly reducing bandwith overhead for low
             bitrate codecs, for example with G.729 going from 10ms
             to 100ms saves two thirds of the network bandwith.
-     * ip_address(optional) - new SDP IP address.
-     * set_id(optional) - the set used for this call.
-     * sock_pvar(optional) - pvar used to store the RTPProxy
-       socket chosen for this call. Note that the variable will
-       only be populated in the initial request.
+     * ip_address(string, optional) - new SDP IP address.
+     * set_id(int, optional) - the set used for this call.
+     * sock_var(var, optional) - variable used to store the
+       RTPProxy socket chosen for this call. Note that the
+       variable will only be populated in the initial request.
+     * ret_var(var, optional) - variable used to print the IP and
+       port the RTPProxy server is using for this call. This is
+       useful especially when using the rtp_cluster, which can
+       advertise multiple servers behind it. The format of the
+       value returned is IP:port. Note that the variable will only
+       be populated in the initial request.
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
    BRANCH_ROUTE.
@@ -504,7 +522,7 @@ sock_pvar]]]])
 ...
 if (is_method("INVITE") && has_totag()) {
         if ($var(setid) != 0) {
-                rtpproxy_engage(,,"$var(setid)", "$var(proxy)");
+                rtpproxy_engage(,,$var(setid), $var(proxy));
                 xlog("SCRIPT: RTPProxy server used is $var(proxy)\n");
         } else {
                 rtpproxy_engage();
@@ -513,8 +531,8 @@ if (is_method("INVITE") && has_totag()) {
 }
 ...
 
-1.6.2.  rtpproxy_offer([flags [, ip_address [, set_id [,
-sock_pvar]]]])
+1.6.2.  rtpproxy_offer([[flags][, [ip_address][, [set_id][,
+[sock_var][, ret_var]]]])
 
    Rewrites SDP body to ensure that media is passed through an RTP
    proxy. To be invoked on INVITE for the cases the SDPs are in
@@ -559,8 +577,8 @@ onreply_route[2]
 ...
 }
 
-1.6.3.  rtpproxy_answer([flags [, ip_address [, set_id [,
-sock_pvar]]]])
+1.6.3.  rtpproxy_answer([[flags][, [ip_address][, [set_id][,
+[sock_var][, ret_var]]]]])
 
    Rewrites SDP body to ensure that media is passed through an RTP
    proxy. To be invoked on 200 OK for the cases the SDPs are in
@@ -576,14 +594,14 @@ sock_pvar]]]])
 
    See rtpproxy_offer() function example above for example.
 
-1.6.4.  rtpproxy_unforce([set_id [, sock_pvar]])
+1.6.4.  rtpproxy_unforce([[set_id][, sock_var]])
 
    Tears down the RTPProxy session for the current call.
 
    Meaning of the parameters is as follows:
-     * set_id(optional) - the set used for this call.
-     * sock_pvar(optional) - pvar used to store the RTPProxy
-       socket chosen for this call.
+     * set_id(int, optional) - the set used for this call.
+     * sock_var(var, optional) - variable used to store the
+       RTPProxy socket chosen for this call.
 
    This function can be used from REQUEST_ROUTE, ONREPLY_ROUTE,
    FAILURE_ROUTE, BRANCH_ROUTE.
@@ -593,9 +611,9 @@ sock_pvar]]]])
 rtpproxy_unforce();
 ...
 
-1.6.5.  rtpproxy_stream2uac(prompt_name, count [, set_id [,
-sock_pvar]]), rtpproxy_stream2uas(prompt_name, count [, set_id [,
-sock_pvar]])
+1.6.5.  rtpproxy_stream2uac(prompt_name, count[, [set_id][,
+sock_var]]), rtpproxy_stream2uas(prompt_name, count[, [set_id][,
+sock_var]])
 
    Instruct the RTPproxy to stream prompt/announcement pre-encoded
    with the makeann command from the RTPproxy distribution. The
@@ -621,32 +639,32 @@ sock_pvar]])
    This function can be used from REQUEST_ROUTE, ONREPLY_ROUTE.
 
    Meaning of the parameters is as follows:
-     * prompt_name - name of the prompt to stream. Should be
-       either absolute pathname or pathname relative to the
+     * prompt_name (string) - name of the prompt to stream. Should
+       be either absolute pathname or pathname relative to the
        directory where RTPproxy runs.
-     * count - number of times the prompt should be repeated. The
-       value of -1 means that it will be streaming in loop
-       indefinitely, until appropriate rtpproxy_stop_stream2xxx is
-       issued.
-     * set_id(optional) - the set used for this call.
-     * sock_pvar(optional) - pvar used to store the RTPProxy
-       socket chosen for this call.
+     * count (int) - number of times the prompt should be
+       repeated. The value of -1 means that it will be streaming
+       in loop indefinitely, until appropriate
+       rtpproxy_stop_stream2xxx is issued.
+     * set_id(int, optional) - the set used for this call.
+     * sock_var(var, optional) - variable used to store the
+       RTPProxy socket chosen for this call.
 
    Example 1.17. rtpproxy_stream2xxx usage
 ...
     if (is_method("INVITE")) {
         rtpproxy_offer();
         if ($rb=~ "0\.0\.0\.0") {
-            rtpproxy_stream2uas("/var/rtpproxy/prompts/music_on_hold", "
--1");
+            rtpproxy_stream2uas("/var/rtpproxy/prompts/music_on_hold", -
+1);
         } else {
             rtpproxy_stop_stream2uas();
         };
     };
 ...
 
-1.6.6.  rtpproxy_stop_stream2uac([set_id [, sock_pvar]]),
-rtpproxy_stop_stream2uas([set_id [, sock_pvar]])
+1.6.6.  rtpproxy_stop_stream2uac([[set_id][, sock_var]]),
+rtpproxy_stop_stream2uas([[set_id][, sock_var]])
 
    Stop streaming of announcement/prompt/MOH started previously by
    the respective rtpproxy_stream2xxx. The uac/uas suffix selects
@@ -654,37 +672,37 @@ rtpproxy_stop_stream2uas([set_id [, sock_pvar]])
    be stopped - UAC or UAS.
 
    Meaning of the parameters is as follows:
-     * set_id(optional) - the set used for this call.
-     * sock_pvar(optional) - pvar used to store the RTPProxy
-       socket chosen for this call.
+     * set_id(int, optional) - the set used for this call.
+     * sock_var(var, optional) - variable used to store the
+       RTPProxy socket chosen for this call.
 
    These functions can be used from REQUEST_ROUTE, ONREPLY_ROUTE.
 
-1.6.7.  rtpproxy_start_recording([set_id [, sock_pvar [, flags [,
-destination [, mediastream]]]]])
+1.6.7.  rtpproxy_start_recording([[set_id][, [sock_var][, [flags][,
+[destination][, mediastream]]]]])
 
    This command will send a signal to the RTP-Proxy to record the
    RTP stream on the RTP-Proxy.
 
    Meaning of the parameters is as follows:
-     * set_id(optional) - the set used for this call.
-     * sock_pvar(optional) - pvar used to store the RTPProxy
-       socket chosen for this call.
-     * flags(optional) - a list of flags passed to RTPProxy for
-       the recording. Currently only s is supported, and it
-       indicates that RTPProxy should record both audio legs in a
-       single file. Note that this feature is available starting
-       with RTPProxy 2.0.
-     * destination(optional) - the destination of the recording.
-       If it has the udp:IP:port format, RTPProxy sends the RTP
-       stream to that IP:port remote destination. Otherwise,
-       destination represents the name of the file in the
-       recording directory.
-     * mediastream(optional) - this parameter is only used if the
-       destination is specified, and represents the index of media
-       stream to record/copy, starting from 1. If this parameter
-       is missing, OpenSIPS instructs RTPProxy to copy all the
-       streams.
+     * set_id(int, optional) - the set used for this call.
+     * sock_var(var, optional) - variable used to store the
+       RTPProxy socket chosen for this call.
+     * flags(string, optional) - a list of flags passed to
+       RTPProxy for the recording. Currently only s is supported,
+       and it indicates that RTPProxy should record both audio
+       legs in a single file. Note that this feature is available
+       starting with RTPProxy 2.0.
+     * destination(string, optional) - the destination of the
+       recording. If it has the udp:IP:port format, RTPProxy sends
+       the RTP stream to that IP:port remote destination.
+       Otherwise, destination represents the name of the file in
+       the recording directory.
+     * mediastream(int, optional) - this parameter is only used if
+       the destination is specified, and represents the index of
+       media stream to record/copy, starting from 1. If this
+       parameter is missing, OpenSIPS instructs RTPProxy to copy
+       all the streams.
 
    This function can be used from REQUEST_ROUTE and ONREPLY_ROUTE.
 
@@ -696,38 +714,38 @@ rtpproxy_start_recording();
 rtpproxy_start_recording(,,,"udp:127.0.0.1:60000");
 
 # copy only first RTP stream (audio stream)
-rtpproxy_start_recording(,,,"udp:127.0.0.1:60000", "1");
+rtpproxy_start_recording(,,,"udp:127.0.0.1:60000", 1);
 ...
 
-1.6.8.  rtpproxy_stats(up_pvar, down_pvar, sent_pvar, fail_pvar [,
-set_id [, sock_pvar]])
+1.6.8.  rtpproxy_stats(up_pvar, down_var, sent_var, fail_var[,
+[set_id][, sock_var]])
 
    This command gathers call RTP statistics from RTP-Proxy.
 
    Meaning of the parameters is as follows:
-     * up_pvar - the pseudo-variable used to return the packets
-       sent by upstream for this call.
-     * down_pvar - the pseudo-variable used to return the packets
+     * up_var (var) - the variable used to return the packets sent
+       by upstream for this call.
+     * down_var (var) - the variable used to return the packets
        sent by downstream for this call.
-     * sent_pvar - the pseudo-variable used to return the total
+     * sent_var (var) - the variable used to return the total
        number of packets sent for this call.
-     * up_pvar - the pseudo-variable used to return the number of
+     * up_var (var) - the variable used to return the number of
        failed packets for this call.
-     * set_id(optional) - the set used for this call.
-     * sock_pvar(optional) - pvar used to store the RTPProxy
-       socket chosen for this call.
+     * set_id(int, optional) - the set used for this call.
+     * sock_var(var, optional) - variable used to store the
+       RTPProxy socket chosen for this call.
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
    ONREPLY_ROUTE, BRANCH_ROUTE and LOCAL_ROUTE.
 
    Example 1.19. rtpproxy_stats usage
 ...
-rtpproxy_stats("$var(up)","$var(down)","$var(sent)","$var(fail)");
+rtpproxy_stats($var(up),$var(down),$var(sent),$var(fail));
 xlog("RTP statistics for $ci: up=$var(up) down=$var(down) sent=$var(sent
 ) fail=$var(fail)\n");
 ...
 
-1.6.9.  rtpproxy_all_stats(stats_avp [, set_id [, sock_pvar]])
+1.6.9.  rtpproxy_all_stats(stats_avp[, [set_id][, sock_var]])
 
    This command gathers all RTP statistics available from
    RTP-Proxy. All the returned values stored in an AVP that can be
@@ -737,12 +755,12 @@ xlog("RTP statistics for $ci: up=$var(up) down=$var(down) sent=$var(sent
    realease.
 
    Meaning of the parameters is as follows:
-     * stats_avp - an AVP where the statistics will be stored.
-       This AVP can be further indexed to get a specific
+     * stats_avp (var) - an AVP where the statistics will be
+       stored. This AVP can be further indexed to get a specific
        statistic.
-     * set_id(optional) - the set used for this call.
-     * sock_pvar(optional) - pvar used to store the RTPProxy
-       socket chosen for this call.
+     * set_id(int, optional) - the set used for this call.
+     * sock_var(var, optional) - variable used to store the
+       RTPProxy socket chosen for this call.
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
    ONREPLY_ROUTE, BRANCH_ROUTE and LOCAL_ROUTE.
@@ -761,26 +779,23 @@ xlog("RTP statistics for $ci: up=$var(up) down=$var(down) sent=$var(sent
 
    Example 1.20. rtpproxy_all_stats usage
 ...
-rtpproxy_all_stats("$avp(stats)");
+rtpproxy_all_stats($avp(stats));
 xlog("RTP statistics for $ci: dropped=$(avp(stats)[4])\n");
 ...
 
-1.7. MI Commands
+1.7. Exported MI Functions
 
 1.7.1. rtpproxy_enable
 
-   Enables a rtp proxy if parameter value is greater than 0.
-   Disables it if a zero value is given.
+   Enables/Disables a rtp proxy.
 
-   The first parameter is the rtp proxy url (exactly as defined in
-   the config file).
-
-   The next parameter (optional) is the rtpproxy set ID (used for
-   better indentification of the rtpproxy instance to be enabled,
-   for example when a rtpproxy is used in multiple sets).
-
-   The last parameter must be a number in decimal representing the
-   new enabled/disabled state.
+   Parameters:
+     * url - the rtp proxy url (exactly as defined in the config
+       file).
+     * setid (optional) - the rtpproxy set ID (used for better
+       indentification of the rtpproxy instance to be enabled, for
+       example when a rtpproxy is used in multiple sets).
+     * enable - 1 - enable, 0 - disable. the config file).
 
    NOTE: if a rtpproxy is defined multiple times (in the same or
    different set), all its instances will be enables/disabled IF
@@ -789,9 +804,9 @@ xlog("RTP statistics for $ci: dropped=$(avp(stats)[4])\n");
    Example 1.21.  rtpproxy_enable usage
 ...
 ## disable a RTPProxy by URL only
-$ opensipsctl fifo rtpproxy_enable udp:192.168.2.133:8081 0
+$ opensips-cli -x mi rtpproxy_enable udp:192.168.2.133:8081 0
 ## disable a RTPProxy by URL and set ID (3)
-$ opensipsctl fifo rtpproxy_enable udp:192.168.2.133:8081 3 0
+$ opensips-cli -x mi rtpproxy_enable udp:192.168.2.133:8081 3 0
 ...
 
 1.7.2. rtpproxy_show
@@ -803,7 +818,7 @@ $ opensipsctl fifo rtpproxy_enable udp:192.168.2.133:8081 3 0
 
    Example 1.22.  rtpproxy_show usage
 ...
-$ opensipsctl fifo rtpproxy_show
+$ opensips-cli -x mi rtpproxy_show
 ...
 
 1.7.3. rtpproxy_reload
@@ -817,7 +832,7 @@ $ opensipsctl fifo rtpproxy_show
 
    Example 1.23.  rtpproxy_reload usage
 ...
-$ opensipsctl fifo rtpproxy_reload
+$ opensips-cli -x mi rtpproxy_reload
 ...
 
 1.8. Exported Events
@@ -836,38 +851,115 @@ Chapter 2. Frequently Asked Questions
 
    2.1.
 
-   What happened with “rtpproxy_disable” parameter?
+       What happened with “rtpproxy_disable” parameter?
 
-   It was removed as it became obsolete - now “rtpproxy_sock” can
-   take empty value to disable the rtpproxy functionality.
+       It was removed as it became obsolete - now “rtpproxy_sock” can
+       take empty value to disable the rtpproxy functionality.
 
    2.2.
 
-   Where can I find more about OpenSIPS?
+       Where can I find more about OpenSIPS?
 
-   Take a look at http://www.opensips.org/.
+       Take a look at http://www.opensips.org/.
 
    2.3.
 
-   Where can I post a question about this module?
+       Where can I post a question about this module?
 
-   First at all check if your question was already answered on one
-   of our mailing lists:
-     * User Mailing List -
-       http://lists.opensips.org/cgi-bin/mailman/listinfo/users
-     * Developer Mailing List -
-       http://lists.opensips.org/cgi-bin/mailman/listinfo/devel
+       First at all check if your question was already answered on one
+       of our mailing lists:
+         * User Mailing List -
+           http://lists.opensips.org/cgi-bin/mailman/listinfo/users
+         * Developer Mailing List -
+           http://lists.opensips.org/cgi-bin/mailman/listinfo/devel
 
-   E-mails regarding any stable OpenSIPS release should be sent to
-   <users@lists.opensips.org> and e-mails regarding development
-   versions should be sent to <devel@lists.opensips.org>.
+       E-mails regarding any stable OpenSIPS release should be sent to
+       <users@lists.opensips.org> and e-mails regarding development
+       versions should be sent to <devel@lists.opensips.org>.
 
-   If you want to keep the mail private, send it to
-   <users@lists.opensips.org>.
+       If you want to keep the mail private, send it to
+       <users@lists.opensips.org>.
 
    2.4.
 
-   How can I report a bug?
+       How can I report a bug?
 
-   Please follow the guidelines provided at:
-   https://github.com/OpenSIPS/opensips/issues.
+       Please follow the guidelines provided at:
+       https://github.com/OpenSIPS/opensips/issues.
+
+Chapter 3. Contributors
+
+3.1. By Commit Statistics
+
+   Table 3.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Razvan Crainea (@razvancrainea) 154 101 3245 1509
+   2. Maksym Sobolyev (@sobomax) 40 3 4527 3
+   3. Vlad Patrascu (@rvlad-patrascu) 23 7 361 698
+   4. Bogdan-Andrei Iancu (@bogdan-iancu) 22 19 115 108
+   5. Liviu Chircu (@liviuchircu) 21 16 91 183
+   6. Vlad Paiu (@vladpaiu) 6 4 15 9
+   7. Peter Lemenkov (@lemenkov) 5 3 60 9
+   8. Ovidiu Sas (@ovidiusas) 5 3 15 11
+   9. Ryan Bullock (@rrb3942) 4 2 68 9
+   10. Dave Sidwell (@davesidwell) 4 2 8 2
+
+   All remaining contributors: Ezequiel Lovelle, Christophe Sollet
+   (@csollet), Anca Vamanu, Mikko Lehto, Dan Pascu (@danpascu),
+   Walter Doekes (@wdoekes), Dusan Klinec, Julián Moreno Patiño.
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+3.2. By Commit Activity
+
+   Table 3.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Razvan Crainea (@razvancrainea)     Mar 2011 - May 2019
+   2.  Dan Pascu (@danpascu)               May 2019 - May 2019
+   3.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   4.  Bogdan-Andrei Iancu (@bogdan-iancu) Mar 2011 - Apr 2019
+   5.  Ryan Bullock (@rrb3942)             Mar 2013 - Jan 2019
+   6.  Liviu Chircu (@liviuchircu)         Jul 2012 - Nov 2018
+   7.  Peter Lemenkov (@lemenkov)          Dec 2011 - Jun 2018
+   8.  Ovidiu Sas (@ovidiusas)             Mar 2011 - Feb 2018
+   9.  Maksym Sobolyev (@sobomax)          Mar 2011 - Jul 2017
+   10. Julián Moreno Patiño                Feb 2016 - Feb 2016
+
+   All remaining contributors: Vlad Paiu (@vladpaiu), Dusan
+   Klinec, Dave Sidwell (@davesidwell), Ezequiel Lovelle, Mikko
+   Lehto, Walter Doekes (@wdoekes), Christophe Sollet (@csollet),
+   Anca Vamanu.
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 4. Documentation
+
+4.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Razvan Crainea
+   (@razvancrainea), Liviu Chircu (@liviuchircu), Peter Lemenkov
+   (@lemenkov), Julián Moreno Patiño, Bogdan-Andrei Iancu
+   (@bogdan-iancu), Mikko Lehto, Ryan Bullock (@rrb3942), Maksym
+   Sobolyev (@sobomax), Ovidiu Sas (@ovidiusas).
+
+   Documentation Copyrights:
+
+   Copyright © 2005 Voice Sistem SRL
+
+   Copyright © 2003-2008 Sippy Software, Inc.

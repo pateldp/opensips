@@ -42,20 +42,9 @@
 /*! \brief
  * Process REGISTER request and save it's contacts
  */
-int save(struct sip_msg* _m, char* _d, char* _cflags, char* _s);
+int save(struct sip_msg* _m, void* _d, str* _f, str* _s, str* _owtag);
 
-int w_remove_2(struct sip_msg *msg, char *udomain, char *aor_gp);
-int w_remove_3(struct sip_msg *msg, char *udomain, char *aor_gp, char *domain_gp);
-/**
- * _remove - Delete an entire AOR entry or one or more of its Contacts
- * Parameter format: delete(domain, AOR[, Contact URI or plain hostname])
- *
- * @domain:      logical domain name (usually name of location table)
- * @aor_gp:      address-of-record as a SIP URI (plain string or pvar)
- * @contact_gp:  contact to be deleted or domain in front of multiple contacts
- *
- * @return:      1 on success, negative on failure
- */
-int _remove(struct sip_msg *msg, char *udomain, char *aor_gp, char *contact_value_gp, char *uri_gp);
+int _remove(struct sip_msg *msg, void *udomain, str *aor_gp, str *contact_gp,
+            str *next_hop_gp, str *sip_instance);
 
 #endif /* SAVE_H */

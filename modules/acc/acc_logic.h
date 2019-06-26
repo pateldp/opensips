@@ -58,24 +58,12 @@
 #define DO_ACC_MISSED_STR "missed"
 #define DO_ACC_FAILED_STR "failed"
 
-/* flags on the seventh byte - generic flags for all accounting types */
-/* this flag signals to the transaction that the context was moved
- * into dialog and shall be freed from there; tm should never free it */
-#define ACC_DIALOG_CONTEXT (((unsigned long long)1<<(8*6)) * (1<<0))
 /* if cdr engine is used then we have some extra work to do in
  * do_accounting function, and we need to do this only once; since
  * it is not necessary that the user
  * sets the cdr flag from first do_accounting call, we need to know
  * when cdr engine is activated */
 #define ACC_CDR_REGISTERED (((unsigned long long)1<<(8*6)) * (1<<1))
-/* flag to signal the processing context no to free the accounting context
- * the accounting context shall be freed by upper layers(TM, DIALOG) */
-#define ACC_PROCESSING_CTX_NO_FREE (((unsigned long long)1<<(8*6)) * (1<<2))
-/* flag to help make the difference between context created, but do_accounting
- * never called(flags value is 0) and do_accounting called, but value of the
- * flags changed using drop_accounting meaning that all callbacks are
- * registered and we don't have to register them twice */
-#define ACC_FLAGS_RESET    (((unsigned long long)1<<(8*6)) * (1<<3))
 /*
  * this flag will help to know if we entered at least once
  * in the dialog callbacks
@@ -85,12 +73,6 @@
  * is valid
  */
 #define ACC_DLG_CB_USED (((unsigned long long)1<<(8*6)) * (1<<4))
-/*
- * flag to signal that the callback for missed calls has been registered;
- * this way if the missed calls flag is set twice, we won't register the
- * callback twice
- */
-#define ACC_TMCB_MISSED_REGISTERED (((unsigned long long)1<<(8*6)) * (1<<5))
 
 #define ACC_MASK_REF_BYTE (((unsigned long long)(0xFF)<<(8*7))
 
@@ -112,7 +94,7 @@
 #define ACC_PUT_TM_FLAGS(_t, _ptr) \
 	tmb.t_ctx_put_ptr(_t, acc_tm_flags_ctx_idx, _ptr)
 
-#define ACC_GET_CTX \
+#define ACC_GET_CTX() \
 	(acc_ctx_t *)context_get_ptr(CONTEXT_GLOBAL, current_processing_ctx, \
 			acc_flags_ctx_idx)
 
@@ -165,6 +147,7 @@ typedef struct extra_value {
 
 typedef struct acc_ctx {
 	gen_lock_t lock;
+	int ref_no;
 
 	/* array of values; will have the same length as tags array */
 	extra_value_t* extra_values;
@@ -185,30 +168,29 @@ typedef struct acc_ctx {
 
 int init_acc_ctx(acc_ctx_t** ctx_p);
 
-int w_acc_log_request(struct sip_msg *rq, pv_elem_t* comment, char *foo);
+int w_acc_log_request(struct sip_msg *rq, str* comment);
 
-int w_acc_aaa_request(struct sip_msg *rq, pv_elem_t* comment, char *foo);
+int w_acc_aaa_request(struct sip_msg *rq, str* comment);
 
-int w_acc_db_request(struct sip_msg *rq, pv_elem_t* comment, char *table);
+int w_acc_db_request(struct sip_msg *rq, str* comment, str *table);
 
-int acc_pvel_to_acc_param(struct sip_msg *rq, pv_elem_t* pv_el, struct acc_param* accp);
+int acc_comm_to_acc_param(struct sip_msg *rq, str* comm, struct acc_param* accp);
 
 void acc_loaded_callback(struct dlg_cell *dlg, int type,
 			struct dlg_cb_params *_params);
 
-int w_acc_evi_request(struct sip_msg *rq, pv_elem_t* comment, char *foo);
+int w_acc_evi_request(struct sip_msg *rq, str* comment);
 
 
-int do_acc_fixup(void** param, int param_no);
+int do_acc_fixup_type(void **param);
+int do_acc_fixup_flags(void **param);
+int do_acc_fixup_free_ival(void **param);
 
+int w_do_acc(struct sip_msg* msg, unsigned long long *type,
+			unsigned long long *flags, str *table_name);
 
-int w_do_acc_1(struct sip_msg* msg, char* type);
-int w_do_acc_2(struct sip_msg* msg, char* type, char* flags);
-int w_do_acc_3(struct sip_msg* msg, char* type_p, char* flags_p, char* table_p);
-
-int w_drop_acc_0(struct sip_msg* msg);
-int w_drop_acc_1(struct sip_msg* msg, char* type);
-int w_drop_acc_2(struct sip_msg* msg, char* type, char* flags);
+int w_drop_acc(struct sip_msg* msg, unsigned long long *type,
+			unsigned long long *flags);
 
 int w_new_leg(struct sip_msg* msg);
 
@@ -217,6 +199,7 @@ int w_new_leg(struct sip_msg* msg);
  * transaction context
  */
 acc_ctx_t* try_fetch_ctx(void);
+void unref_acc_ctx(void *);
 void free_global_acc_ctx(acc_ctx_t* ctx);
 void free_processing_acc_ctx(void* param);
 

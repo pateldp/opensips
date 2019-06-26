@@ -130,76 +130,64 @@ void free_cell( struct cell* dead_cell )
 
 	release_cell_lock( dead_cell );
 
-	tm_shm_lock();
+	shm_lock();
 
 	/* UA Server */
 	if ( dead_cell->uas.request )
 		free_cloned_msg_unsafe( dead_cell->uas.request );
 
 	if ( dead_cell->uas.response.buffer.s )
-		tm_shm_free_unsafe( dead_cell->uas.response.buffer.s );
+		shm_free_bulk( dead_cell->uas.response.buffer.s );
 
 	/* UA Clients */
 	for ( i =0 ; i<dead_cell->nr_of_outgoings;  i++ )
 	{
 		/* retransmission buffer */
 		if ( (b=dead_cell->uac[i].request.buffer.s) )
-			tm_shm_free_unsafe( b );
+			shm_free_bulk( b );
 		b=dead_cell->uac[i].local_cancel.buffer.s;
 		if (b!=0 && b!=BUSY_BUFFER)
-			tm_shm_free_unsafe( b );
+			shm_free_bulk( b );
 		rpl=dead_cell->uac[i].reply;
 		if (rpl && rpl!=FAKED_REPLY && rpl->msg_flags&FL_SHM_CLONE) {
 			free_cloned_msg_unsafe( rpl );
 		}
 		if ( (p=dead_cell->uac[i].proxy)!=NULL ) {
 			if ( p->host.h_addr_list )
-				tm_shm_free_unsafe( p->host.h_addr_list );
+				shm_free_bulk( p->host.h_addr_list );
 			if ( p->dn ) {
 				if ( p->dn->kids )
-					tm_shm_free_unsafe( p->dn->kids );
-				tm_shm_free_unsafe( p->dn );
+					shm_free_bulk( p->dn->kids );
+				shm_free_bulk( p->dn );
 			}
-			tm_shm_free_unsafe(p);
+			shm_free_bulk(p);
 		}
-		if (dead_cell->uac[i].path_vec.s) {
-			tm_shm_free_unsafe(dead_cell->uac[i].path_vec.s);
-		}
-		if (dead_cell->uac[i].adv_address.s) {
-			tm_shm_free_unsafe(dead_cell->uac[i].adv_address.s);
-		}
-		if (dead_cell->uac[i].adv_port.s) {
-			tm_shm_free_unsafe(dead_cell->uac[i].adv_port.s);
-		}
-		if (dead_cell->uac[i].duri.s) {
-			tm_shm_free_unsafe(dead_cell->uac[i].duri.s);
-		}
-		if (dead_cell->uac[i].user_avps) {
-			tm_destroy_avp_list_unsafe( &dead_cell->uac[i].user_avps);
-		}
+
+		_clean_branch(dead_cell->uac[i],
+					shm_free_bulk, destroy_avp_list_bulk);
 	}
 
 	/* collected to tags */
 	tt=dead_cell->fwded_totags;
 	while(tt) {
 		foo=tt->next;
-		tm_shm_free_unsafe(tt->tag.s);
-		tm_shm_free_unsafe(tt);
+		shm_free_bulk(tt->tag.s);
+		shm_free_bulk(tt);
 		tt=foo;
 	}
 
 	/* free the avp list */
 	if (dead_cell->user_avps)
-		tm_destroy_avp_list_unsafe( &dead_cell->user_avps );
+		destroy_avp_list_bulk( &dead_cell->user_avps );
 
 	/* extra hdrs */
 	if ( dead_cell->extra_hdrs.s )
-		tm_shm_free_unsafe( dead_cell->extra_hdrs.s );
+		shm_free_bulk( dead_cell->extra_hdrs.s );
 
 	/* the cell's body */
-	tm_shm_free_unsafe( dead_cell );
+	shm_free_bulk( dead_cell );
 
-	tm_shm_unlock();
+	shm_unlock();
 }
 
 
@@ -238,23 +226,9 @@ static inline void init_synonym_id( struct cell *t )
 static inline void init_branches(struct cell *t, unsigned int set)
 {
 	unsigned int i;
-	struct ua_client *uac;
 
-	for(i=0;i<MAX_BRANCHES;i++)
-	{
-		uac=&t->uac[i];
-		uac->request.my_T = t;
-		uac->request.branch = i;
-#ifdef EXTRA_DEBUG
-		uac->request.fr_timer.tg = TG_FR;
-		uac->request.retr_timer.tg = TG_RT;
-#endif
-		uac->request.fr_timer.set = set;
-		uac->request.retr_timer.set = set;
-		uac->local_cancel.fr_timer.set = set;
-		uac->local_cancel.retr_timer.set = set;
-		uac->local_cancel=uac->request;
-	}
+	for (i=0; i<MAX_BRANCHES; i++)
+		init_branch(&t->uac[i], i, set, t);
 }
 
 

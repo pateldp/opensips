@@ -30,6 +30,7 @@
 #include "dlg_timer.h"
 #include "dlg_hash.h"
 #include "dlg_req_within.h"
+#include "dlg_replication.h"
 
 struct dlg_timer *d_timer = 0;
 dlg_timer_handler timer_hdl = 0;
@@ -696,6 +697,37 @@ void get_timeout_dlgs(struct dlg_ping_list **expired,
 	*expired = exp;
 }
 
+int dlg_handle_seq_reply(struct dlg_cell *dlg, struct sip_msg* rpl,
+		int statuscode, int leg)
+{
+	LM_DBG("Status Code received =  [%d]\n", statuscode);
+
+	if (rpl == FAKED_REPLY || statuscode == 408) {
+		/* timeout occurred, nothing else to do now
+		 * next time timer fires, it will detect ping reply was not received
+		 */
+		LM_INFO("terminating dialog ( due to timeout ) "
+					"with callid = [%.*s] \n",dlg->callid.len,dlg->callid.s);
+		dlg->legs[leg].reply_received = DLG_PING_FAIL;
+		return -1;
+	}
+
+	if (statuscode == 481)
+	{
+		/* call/transaction does not exist
+		 * terminate the dialog */
+		LM_INFO("terminating dialog ( due to 481 ) "
+				"with callid = [%.*s] \n",dlg->callid.len,dlg->callid.s);
+
+		dlg->legs[leg].reply_received = DLG_PING_FAIL;
+		return -1;
+	}
+
+	dlg->legs[leg].reply_received = DLG_PING_SUCCESS;
+	return 0;
+}
+
+
 void reply_from_caller(struct cell* t, int type, struct tmcb_params* ps)
 {
 	struct sip_msg *rpl;
@@ -717,30 +749,7 @@ void reply_from_caller(struct cell* t, int type, struct tmcb_params* ps)
 	statuscode = ps->code;
 	dlg = *(ps->param);
 
-	LM_DBG("Status Code received =  [%d]\n", statuscode);
-
-	if (rpl == FAKED_REPLY || statuscode == 408) {
-		/* timeout occurred, nothing else to do now
-		 * next time timer fires, it will detect ping reply was not received
-		 */
-		LM_INFO("terminating dialog ( due to timeout ) "
-					"with callid = [%.*s] \n",dlg->callid.len,dlg->callid.s);
-		dlg->legs[DLG_CALLER_LEG].reply_received = DLG_PING_FAIL;
-		return;
-	}
-
-	if (statuscode == 481)
-	{
-		/* call/transaction does not exist
-		 * terminate the dialog */
-		LM_INFO("terminating dialog ( due to 481 ) "
-				"with callid = [%.*s] \n",dlg->callid.len,dlg->callid.s);
-
-		dlg->legs[DLG_CALLER_LEG].reply_received = DLG_PING_FAIL;
-		return;
-	}
-
-	dlg->legs[DLG_CALLER_LEG].reply_received = DLG_PING_SUCCESS;
+	dlg_handle_seq_reply(dlg, rpl, statuscode, DLG_CALLER_LEG);
 }
 
 void reinvite_reply_from_caller(struct cell* t, int type, struct tmcb_params* ps)
@@ -764,30 +773,7 @@ void reinvite_reply_from_caller(struct cell* t, int type, struct tmcb_params* ps
 	statuscode = ps->code;
 	dlg = *(ps->param);
 
-	LM_DBG("Status Code received =  [%d]\n", statuscode);
-
-	if (rpl == FAKED_REPLY || statuscode == 408) {
-		/* timeout occurred, nothing else to do now
-		 * next time timer fires, it will detect ping reply was not received
-		 */
-		LM_INFO("terminating dialog ( due to timeout ) "
-					"with callid = [%.*s] \n",dlg->callid.len,dlg->callid.s);
-		dlg->legs[DLG_CALLER_LEG].reinvite_confirmed = DLG_PING_FAIL;
-		return;
-	}
-
-	if (statuscode == 481)
-	{
-		/* call/transaction does not exist
-		 * terminate the dialog */
-		LM_INFO("terminating dialog ( due to 481 ) "
-				"with callid = [%.*s] \n",dlg->callid.len,dlg->callid.s);
-
-		dlg->legs[DLG_CALLER_LEG].reinvite_confirmed = DLG_PING_FAIL;
-		return;
-	}
-
-	dlg->legs[DLG_CALLER_LEG].reinvite_confirmed = DLG_PING_SUCCESS;
+	dlg_handle_seq_reply(dlg, rpl, statuscode, DLG_CALLER_LEG);
 }
 
 /* Duplicate code for the sake of quickly knowing where the reply came from,
@@ -813,29 +799,7 @@ void reply_from_callee(struct cell* t, int type, struct tmcb_params* ps)
 	statuscode = ps->code;
 	dlg = *(ps->param);
 
-	LM_DBG("Status Code received =  [%d]\n", statuscode);
-
-	if (rpl == FAKED_REPLY || statuscode == 408) {
-		/* timeout occurred, nothing else to do now
-		 * next time timer fires, it will detect ping reply was not received
-		 */
-		LM_INFO("terminating dialog ( due to timeout ) "
-					"with callid = [%.*s] \n",dlg->callid.len,dlg->callid.s);
-		dlg->legs[callee_idx(dlg)].reply_received = DLG_PING_FAIL;
-		return;
-	}
-
-	if (statuscode == 481)
-	{
-		/* call/transaction does not exist
-		 * terminate the dialog */
-		LM_INFO("terminating dialog ( due to 481 ) "
-				"with callid = [%.*s] \n",dlg->callid.len,dlg->callid.s);
-		dlg->legs[callee_idx(dlg)].reply_received = DLG_PING_FAIL;
-		return;
-	}
-
-	dlg->legs[callee_idx(dlg)].reply_received = DLG_PING_SUCCESS;
+	dlg_handle_seq_reply(dlg, rpl, statuscode, callee_idx(dlg));
 }
 
 /* Duplicate code for the sake of quickly knowing where the reply came from,
@@ -861,29 +825,7 @@ void reinvite_reply_from_callee(struct cell* t, int type, struct tmcb_params* ps
 	statuscode = ps->code;
 	dlg = *(ps->param);
 
-	LM_DBG("Status Code received =  [%d]\n", statuscode);
-
-	if (rpl == FAKED_REPLY || statuscode == 408) {
-		/* timeout occurred, nothing else to do now
-		 * next time timer fires, it will detect ping reply was not received
-		 */
-		LM_INFO("terminating dialog ( due to timeout ) "
-					"with callid = [%.*s] \n",dlg->callid.len,dlg->callid.s);
-		dlg->legs[callee_idx(dlg)].reinvite_confirmed = DLG_PING_FAIL;
-		return;
-	}
-
-	if (statuscode == 481)
-	{
-		/* call/transaction does not exist
-		 * terminate the dialog */
-		LM_INFO("terminating dialog ( due to 481 ) "
-				"with callid = [%.*s] \n",dlg->callid.len,dlg->callid.s);
-		dlg->legs[callee_idx(dlg)].reinvite_confirmed = DLG_PING_FAIL;
-		return;
-	}
-
-	dlg->legs[callee_idx(dlg)].reinvite_confirmed = DLG_PING_SUCCESS;
+	dlg_handle_seq_reply(dlg, rpl, statuscode, callee_idx(dlg));
 }
 
 void unref_dlg_cb(void *dlg)
@@ -910,7 +852,7 @@ void dlg_options_routine(unsigned int ticks , void * attr)
 		init_dlg_term_reason(dlg,"Ping Timeout",sizeof("Ping Timeout")-1);
 		/* FIXME - maybe better not to send BYE both ways as we know for
 		 * sure one end in down . */
-		dlg_end_dlg(dlg,0);
+		dlg_end_dlg(dlg,0,1);
 
 		/* no longer reffed in list */
 		unref_dlg(dlg,1);
@@ -942,6 +884,11 @@ void dlg_options_routine(unsigned int ticks , void * attr)
 
 		dlg = it->dlg;
 		next=it->next;
+
+		if (dialog_repl_cluster && get_shtag_state(dlg) == SHTAG_STATE_BACKUP) {
+			it = next;
+			continue;
+		}
 
 		/* do not ping ended dialogs - we might have missed them earlier or
 		 * might have terminated in the mean time - we'll clean them up on
@@ -978,21 +925,13 @@ void dlg_options_routine(unsigned int ticks , void * attr)
 	tcp_no_new_conn = 0;
 }
 
-#define CONTACT_STR_START "Contact: <"
-#define CONTACT_STR_START_LEN (sizeof(CONTACT_STR_START)-1)
-
-#define HEADERS_STR_END_NOCRLF "Content-Type: application/sdp\r\n"
-#define HEADERS_STR_END_NOCRLF_LEN (sizeof(HEADERS_STR_END_NOCRLF)-1)
-
-#define HEADERS_STR_END ">\r\nContent-Type: application/sdp\r\n"
-#define HEADERS_STR_END_LEN (sizeof(HEADERS_STR_END)-1)
-
 void dlg_reinvite_routine(unsigned int ticks , void * attr)
 {
+	static str content_type = str_init("application/sdp");
 	struct dlg_ping_list *expired,*to_be_deleted,*it,*curr,*next;
 	struct dlg_cell *dlg;
 	str extra_headers;
-	char *p;
+	str *sdp;
 	int current_ticks;
 
 	get_timeout_dlgs(&expired,&to_be_deleted,1);
@@ -1008,7 +947,7 @@ void dlg_reinvite_routine(unsigned int ticks , void * attr)
 		init_dlg_term_reason(dlg,"ReINVITE Ping Timeout",sizeof("ReINVITE Ping Timeout")-1);
 		/* FIXME - maybe better not to send BYE both ways as we know for
 		 * sure one end in down . */
-		dlg_end_dlg(dlg,0);
+		dlg_end_dlg(dlg,0,1);
 
 		/* no longer reffed in list */
 		unref_dlg(dlg,1);
@@ -1041,47 +980,30 @@ void dlg_reinvite_routine(unsigned int ticks , void * attr)
 		dlg = it->dlg;
 		next=it->next;
 
+		if (dialog_repl_cluster && get_shtag_state(dlg) == SHTAG_STATE_BACKUP) {
+			it = next;
+			continue;
+		}
+
 		/* do not ping ended dialogs - we might have missed them earlier or
 		 * might have terminated in the mean time - we'll clean them up on
 		 * our next iteration */
 		if (dlg->state != DLG_STATE_DELETED && it->timeout <= current_ticks) {
 			if (dlg->flags & DLG_FLAG_REINVITE_PING_CALLER) {
-				if (dlg->legs[callee_idx(dlg)].th_sent_contact.len)
-					extra_headers.len = 
-					dlg->legs[callee_idx(dlg)].th_sent_contact.len +
-					HEADERS_STR_END_NOCRLF_LEN;
-				else
-					extra_headers.len = CONTACT_STR_START_LEN +
-						dlg->legs[callee_idx(dlg)].contact.len +
-						HEADERS_STR_END_LEN;
-				extra_headers.s = pkg_malloc(extra_headers.len);
-				if (!extra_headers.s) {
+
+				if (!dlg_get_leg_hdrs(dlg, callee_idx(dlg),
+						DLG_CALLER_LEG, &content_type, &extra_headers)) {
 					LM_ERR("No more pkg for extra headers \n");
 					it = it->next;
-					return;
+					continue;
 				}
-						
-				if (dlg->legs[callee_idx(dlg)].th_sent_contact.len) {
-					p = extra_headers.s;
-					memcpy(p,dlg->legs[callee_idx(dlg)].th_sent_contact.s,
-					dlg->legs[callee_idx(dlg)].th_sent_contact.len);
-
-					p+= dlg->legs[callee_idx(dlg)].th_sent_contact.len;
-					memcpy(p,HEADERS_STR_END_NOCRLF,HEADERS_STR_END_NOCRLF_LEN);
-				} else {
-					p = extra_headers.s;
-					memcpy(p,CONTACT_STR_START,CONTACT_STR_START_LEN);
-					p += CONTACT_STR_START_LEN;
-					memcpy(p,dlg->legs[callee_idx(dlg)].contact.s,
-					dlg->legs[callee_idx(dlg)].contact.len);
-
-					p += dlg->legs[callee_idx(dlg)].contact.len;
-					memcpy(p,HEADERS_STR_END,HEADERS_STR_END_LEN);
-				}
+				sdp = (dlg->legs[DLG_CALLER_LEG].out_sdp.s?
+						&dlg->legs[DLG_CALLER_LEG].out_sdp:
+						&dlg->legs[callee_idx(dlg)].in_sdp);
 				
 				ref_dlg(dlg,1);
 				if (send_leg_msg(dlg,&invite_str,callee_idx(dlg),
-				DLG_CALLER_LEG,&extra_headers,&dlg->legs[callee_idx(dlg)].sdp,
+				DLG_CALLER_LEG,&extra_headers,sdp,
 				reinvite_reply_from_caller,dlg,unref_dlg_cb,
 				&dlg->legs[DLG_CALLER_LEG].reinvite_confirmed) < 0) {
 					LM_ERR("failed to ping caller\n");
@@ -1092,43 +1014,20 @@ void dlg_reinvite_routine(unsigned int ticks , void * attr)
 			}
 
 			if (dlg->flags & DLG_FLAG_REINVITE_PING_CALLEE) {
-				if (dlg->legs[DLG_CALLER_LEG].th_sent_contact.len)
-					extra_headers.len = 
-					dlg->legs[DLG_CALLER_LEG].th_sent_contact.len +
-					HEADERS_STR_END_NOCRLF_LEN;
-				else
-					extra_headers.len = CONTACT_STR_START_LEN +
-							dlg->legs[DLG_CALLER_LEG].contact.len +
-							HEADERS_STR_END_LEN;
-				extra_headers.s = pkg_malloc(extra_headers.len);
-				if (!extra_headers.s) {
+
+				if (!dlg_get_leg_hdrs(dlg, DLG_CALLER_LEG,
+						callee_idx(dlg), &content_type, &extra_headers)) {
 					LM_ERR("No more pkg for extra headers \n");
 					it = it->next;
-					return ;
+					continue;
 				}
-						
-				if (dlg->legs[DLG_CALLER_LEG].th_sent_contact.len) {
-					p = extra_headers.s;
-					memcpy(extra_headers.s,
-					dlg->legs[DLG_CALLER_LEG].th_sent_contact.s,
-					dlg->legs[DLG_CALLER_LEG].th_sent_contact.len);
-
-					p+= dlg->legs[DLG_CALLER_LEG].th_sent_contact.len;
-					memcpy(p,HEADERS_STR_END_NOCRLF,HEADERS_STR_END_NOCRLF_LEN);
-				} else {
-					p = extra_headers.s;
-					memcpy(p,CONTACT_STR_START,CONTACT_STR_START_LEN);
-					p += CONTACT_STR_START_LEN;
-					memcpy(p,dlg->legs[DLG_CALLER_LEG].contact.s,
-					dlg->legs[DLG_CALLER_LEG].contact.len);
-
-					p += dlg->legs[DLG_CALLER_LEG].contact.len;
-					memcpy(p,HEADERS_STR_END,HEADERS_STR_END_LEN);
-				}
+				sdp = (dlg->legs[callee_idx(dlg)].out_sdp.s?
+						&dlg->legs[callee_idx(dlg)].out_sdp:
+						&dlg->legs[DLG_CALLER_LEG].in_sdp);
 
 				ref_dlg(dlg,1);
 				if (send_leg_msg(dlg,&invite_str,DLG_CALLER_LEG,
-				callee_idx(dlg),&extra_headers,&dlg->legs[DLG_CALLER_LEG].sdp,reinvite_reply_from_callee,
+				callee_idx(dlg),&extra_headers,sdp,reinvite_reply_from_callee,
 				dlg,unref_dlg_cb,&dlg->legs[callee_idx(dlg)].reinvite_confirmed) < 0) {
 					LM_ERR("failed to ping callee\n");
 					unref_dlg(dlg,1);
@@ -1141,7 +1040,6 @@ void dlg_reinvite_routine(unsigned int ticks , void * attr)
 			detach_ping_node_unsafe(it,1);
 			unsafe_insert_reinvite_ping_timer(it,reinvite_ping_interval);
 		}
-		it = it->next;
 		it = next;
 	}
 

@@ -40,7 +40,6 @@
 #include "../../ut.h"
 #include "../../trim.h"
 #include "../../mem/mem.h"
-#include "../../mod_fix.h"
 
 #include "records.h"
 #include "pidf.h"
@@ -56,16 +55,27 @@ static void mod_destroy(void);
 static int child_init(int rank);
 static int load_script_scenario(modparam_t type, void* val);
 static int load_extern_scenario(modparam_t type, void* val);
-static int fixup_b2b_logic(void** param, int param_no);
-static struct mi_root* mi_trigger_scenario(struct mi_root* cmd, void* param);
-static struct mi_root* mi_b2b_bridge(struct mi_root* cmd, void* param);
-static struct mi_root* mi_b2b_list(struct mi_root* cmd, void* param);
-static struct mi_root* mi_b2b_terminate_call(struct mi_root* cmd, void* param);
+static int fixup_b2b_logic(void** param);
+static int fixup_free_b2b_logic(void** param);
+static mi_response_t *mi_trigger_scenario(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_b2b_bridge_2(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_b2b_bridge_f(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_b2b_bridge_pmu(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_b2b_bridge_4(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_b2b_list(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *mi_b2b_terminate_call(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 static void b2bl_clean(unsigned int ticks, void* param);
 static void b2bl_db_timer_update(unsigned int ticks, void* param);
 int  b2b_init_request(struct sip_msg* msg, str* arg1, str* arg2, str* arg3,
 		str* arg4, str* arg5, str* arg6);
-int  b2b_bridge_request(struct sip_msg* msg, str* arg1, str* arg2);
+int  b2b_bridge_request(struct sip_msg* msg, str *key, int *entity_no);
 
 void b2b_mark_todel( b2bl_tuple_t* tuple);
 
@@ -120,18 +130,20 @@ str server_address = {0, 0};
 int b2bl_db_mode = WRITE_BACK;
 int unsigned b2bl_th_init_timeout = 60;
 
-/** Exported functions */
 static cmd_export_t cmds[]=
 {
-	{"b2b_init_request", (cmd_function)b2b_init_request, 5 , fixup_b2b_logic , 0 , REQUEST_ROUTE},
-	{"b2b_init_request", (cmd_function)b2b_init_request, 4 , fixup_b2b_logic , 0 , REQUEST_ROUTE},
-	{"b2b_init_request", (cmd_function)b2b_init_request, 3 , fixup_b2b_logic , 0 , REQUEST_ROUTE},
-	{"b2b_init_request", (cmd_function)b2b_init_request, 2 , fixup_b2b_logic , 0 , REQUEST_ROUTE},
-	{"b2b_init_request", (cmd_function)b2b_init_request, 1 , fixup_b2b_logic , 0 , REQUEST_ROUTE},
-	{"b2b_init_request", (cmd_function)b2b_init_request, 0 , 0               , 0 , REQUEST_ROUTE},
-	{"b2b_bridge_request",(cmd_function)b2b_bridge_request,2,fixup_pvar_pvar , 0 , REQUEST_ROUTE},
-	{"b2b_logic_bind",   (cmd_function)b2b_logic_bind,   1 , 0,  0,  0},
-	{ 0,                 0,                              0 , 0 , 0,  0}
+	{"b2b_init_request", (cmd_function)b2b_init_request, {
+		{CMD_PARAM_STR, fixup_b2b_logic, fixup_free_b2b_logic},
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE},
+	{"b2b_bridge_request", (cmd_function)b2b_bridge_request,
+		{{CMD_PARAM_STR,0,0}, {CMD_PARAM_INT,0,0}, {0,0,0}},
+		REQUEST_ROUTE},
+	{"b2b_logic_bind", (cmd_function)b2b_logic_bind, {{0,0,0}}, 0},
+	{0,0,{{0,0,0}},0}
 };
 
 /** Exported parameters */
@@ -159,13 +171,27 @@ static param_export_t params[]=
 	{0,                    0,                          0                     }
 };
 
-/** MI commands */
 static mi_export_t mi_cmds[] = {
-	{ "b2b_trigger_scenario", 0, mi_trigger_scenario,   0,  0,  0},
-	{ "b2b_bridge",           0, mi_b2b_bridge,         0,  0,  0},
-	{ "b2b_list",             0, mi_b2b_list,           0,  0,  0},
-	{ "b2b_terminate_call",   0, mi_b2b_terminate_call, 0,  0,  0},
-	{  0,                  0, 0,                        0,  0,  0}
+	{"b2b_trigger_scenario", 0, 0, 0, {
+		{mi_trigger_scenario, {"scenario_id", "scenario_params", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{"b2b_bridge", 0, 0, 0, {
+		{mi_b2b_bridge_2,   {"dialog_id", "new_uri", 0}},
+		{mi_b2b_bridge_f,   {"dialog_id", "new_uri", "flag", 0}},
+		{mi_b2b_bridge_pmu, {"dialog_id", "new_uri", "prov_media_uri", 0}},
+		{mi_b2b_bridge_4,   {"dialog_id", "new_uri", "flag", "prov_media_uri", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{"b2b_list", 0, 0, 0, {
+		{mi_b2b_list, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{"b2b_terminate_call", 0, 0, 0, {
+		{mi_b2b_terminate_call, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
 
 static dep_export_t deps = {
@@ -185,6 +211,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,               /* class of this module */
 	MODULE_VERSION,                 /* module version */
 	DEFAULT_DLFLAGS,                /* dlopen flags */
+	0,				                /* load function */
 	&deps,                          /* OpenSIPS module dependencies */
 	cmds,                           /* exported functions */
 	0,                              /* exported async functions */
@@ -197,7 +224,8 @@ struct module_exports exports= {
 	mod_init,                       /* module initialization function */
 	(response_function) 0,          /* response handling function */
 	(destroy_function) mod_destroy, /* destroy function */
-	child_init                      /* per-child init function */
+	child_init,                     /* per-child init function */
+	0                               /* reload confirm function */
 };
 
 /** Module init function */
@@ -866,101 +894,79 @@ b2b_scenario_t* get_scenario_id(str* sid)
 	return get_scenario_id_list(sid, extern_scenarios);
 }
 
-
-static int fixup_b2b_logic(void** param, int param_no)
+static int fixup_b2b_logic(void** param)
 {
-	pv_elem_t *model;
 	str s;
 	str flags_s;
 	int st;
 	struct b2b_scen_fl *scf;
 
-	if(param_no== 0)
-		return 0;
+	s = *(str*)*param;
 
-	if(*param)
+	scf = prepare_b2b_scen_fl_struct();
+	if (scf == NULL)
 	{
-		s.s = (char*)(*param);
-		s.len = strlen(s.s);
+		LM_ERR("no more pkg memory\n");
+		return -1;
+	}
+	scf->params.init_timeout = b2bl_th_init_timeout;
 
-		if(pv_parse_format(&s, &model)<0)
+	if ( (flags_s.s = q_memchr(s.s,'/',s.len)) != NULL)
+	{
+		flags_s.s++;
+		flags_s.len = s.len - (flags_s.s - s.s);
+		s.len = s.len - flags_s.len - 1;
+
+		/* parse flags */
+		for( st=0 ; st< flags_s.len ; st++ ) {
+			switch (flags_s.s[st])
+			{
+				case 't':
+					scf->params.init_timeout = 0;
+					while (st<flags_s.len-1 && isdigit(flags_s.s[st+1])) {
+						scf->params.init_timeout =
+							scf->params.init_timeout*10 + flags_s.s[st+1] - '0';
+						st++;
+					}
+					break;
+				case 'a':
+					scf->params.flags |= B2BL_FLAG_TRANSPARENT_AUTH;
+					break;
+				case 'p':
+					scf->params.flags |= B2BL_FLAG_TRANSPARENT_TO;
+					break;
+				default:
+					LM_WARN("unknown option `%c'\n", *flags_s.s);
+			}
+		}
+	}
+
+	if(s.len == B2B_TOP_HIDING_SCENARY_LEN &&
+		strncmp(s.s,B2B_TOP_HIDING_SCENARY,B2B_TOP_HIDING_SCENARY_LEN)==0)
+	{
+		scf->scenario = NULL;
+	}
+	else
+	{
+		scf->scenario = get_scenario_id_list(&s, script_scenarios);
+		if (!scf->scenario)
 		{
-			LM_ERR( "wrong format[%s]\n",(char*)(*param));
+			LM_ERR("Wrong Scenary ID. No scenario with this ID [%.*s]\n", s.len, s.s);
 			return E_UNSPEC;
 		}
-
-		/* the first parameter must be the scenario id and possible flags, must be a string */
-		if(param_no == 1)
-		{
-			if(model->spec.type != PVT_NONE )
-			{
-				LM_ERR("The first parameter is not a string\n");
-				return -1;
-			}
-
-			scf = prepare_b2b_scen_fl_struct();
-			if (scf == NULL)
-			{
-				LM_ERR("no more pkg memory\n");
-				return -1;
-			}
-			scf->params.init_timeout = b2bl_th_init_timeout;
-
-			if ( (flags_s.s = strchr(s.s,'/')) != NULL)
-			{
-				s.len = flags_s.s - s.s;
-				flags_s.s++;
-				flags_s.len = strlen(flags_s.s);
-
-				/* parse flags */
-				for( st=0 ; st< flags_s.len ; st++ ) {
-					switch (flags_s.s[st])
-					{
-						case 't':
-							scf->params.init_timeout = 0;
-							while (st<flags_s.len-1 && isdigit(flags_s.s[st+1])) {
-								scf->params.init_timeout =
-									scf->params.init_timeout*10 + flags_s.s[st+1] - '0';
-								st++;
-							}
-							break;
-						case 'a':
-							scf->params.flags |= B2BL_FLAG_TRANSPARENT_AUTH;
-							break;
-						case 'p':
-							scf->params.flags |= B2BL_FLAG_TRANSPARENT_TO;
-							break;
-						default:
-							LM_WARN("unknown option `%c'\n", *flags_s.s);
-					}
-				}
-			}
-
-			if(s.len == B2B_TOP_HIDING_SCENARY_LEN &&
-				strncmp(s.s,B2B_TOP_HIDING_SCENARY,B2B_TOP_HIDING_SCENARY_LEN)==0)
-			{
-				scf->scenario = NULL;
-			}
-			else
-			{
-				scf->scenario = get_scenario_id_list(&s, script_scenarios);
-				if (!scf->scenario)
-				{
-					LM_ERR("Wrong Scenary ID. No scenario with this ID [%.*s]\n", s.len, s.s);
-					return E_UNSPEC;
-				}
-			}
-			*param=(void*)scf;
-			return 0;
-		}
-
-		*param = (void*)model;
-		return 0;
 	}
-	LM_ERR( "null format\n");
-	return E_UNSPEC;
+
+	*param=(void*)scf;
+	return 0;
 }
 
+static int fixup_free_b2b_logic(void** param)
+{
+	if (*param)
+		pkg_free(*param);
+
+	return 0;
+}
 
 struct to_body* get_b2bl_from(struct sip_msg* msg)
 {
@@ -1103,7 +1109,7 @@ str* b2bl_bridge_extern(str* scenario_name, str* args[],
 
 	if(process_bridge_action(0, 0, tuple, xml_node) < 0)
 	{
-		LM_ERR("Failed to process bridge node");
+		LM_ERR("Failed to process bridge node\n");
 		goto error;
 	}
 	lock_release(&b2bl_htable[hash_index].lock);
@@ -1115,127 +1121,67 @@ error:
 	return 0;
 }
 
-static struct mi_root* mi_trigger_scenario(struct mi_root* cmd, void* param)
+mi_response_t *mi_trigger_scenario(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_node* node= NULL;
-	str* args[MAX_SCENARIO_PARAMS];
-	int i = 0;
+	str args[MAX_SCENARIO_PARAMS];
+	str* argsp[MAX_SCENARIO_PARAMS];
 	str scenario_name;
+	int i = 0, no_args;
+	mi_item_t *params_arr;
 
-	node = cmd->node.kids;
-	if(node == NULL)
-		return 0;
+	if (get_mi_string_param(params, "scenario_id",
+		&scenario_name.s, &scenario_name.len) < 0)
+		return init_mi_param_error();
+
+	if (get_mi_array_param(params, "scenario_params", &params_arr, &no_args) < 0)
+		return init_mi_param_error();
 
 	b2bl_caller = CALLER_MI;
-	/* Get scenario ID */
-	scenario_name = node->value;
-	if(scenario_name.s == NULL || scenario_name.len== 0)
-	{
-		LM_ERR("Empty scenario name parameter\n");
-		return init_mi_tree(404, "Empty scenario ID", 16);
-	}
-	node = node->next;
 
-	memset(args, 0, MAX_SCENARIO_PARAMS* sizeof(str*));
-	/* get the other parameters */
-	while(i < MAX_SCENARIO_PARAMS && node)
-	{
-		if(node->value.s == NULL || node->value.len== 0)
-			break;
+	memset(args, 0, MAX_SCENARIO_PARAMS * sizeof(str));
+	memset(argsp, 0, MAX_SCENARIO_PARAMS * sizeof(str*));
 
-		args[i++] = &node->value;
-
-		node = node->next;
+	for (i = 0; i < no_args; i++) {
+		if (get_mi_arr_param_string(params_arr, i,
+			&args[i].s, &args[i].len) < 0)
+			return init_mi_param_error();
+		argsp[i] = &args[i];
 	}
 
-	if(b2bl_bridge_extern(&scenario_name, args, 0, 0) == 0)
+	if(b2bl_bridge_extern(&scenario_name, argsp, 0, 0) == 0)
 	{
 		LM_ERR("Failed to initialize scenario\n");
 		return 0;
 	}
-	return init_mi_tree(200, "OK", 2);
+
+	return init_mi_result_ok();
 }
 
-
-int  b2b_bridge_request(struct sip_msg* msg, str* p1, str* p2)
+int  b2b_bridge_request(struct sip_msg* msg, str *key, int *entity_no)
 {
-	pv_value_t pv_val;
-	str key = {NULL, 0};
-	int entity_no;
-
-	if (p1 && (pv_get_spec_value(msg, (pv_spec_t *)p1, &pv_val) == 0))
-	{
-		if (pv_val.flags & PV_VAL_STR)
-		{
-			LM_DBG("got key:'%.*s'\n", pv_val.rs.len, pv_val.rs.s);
-			key = pv_val.rs;
-		} else {
-			LM_ERR("Unable to get key from PV that is not a string\n");
-			return -1;
-		}
-	} else {
-		LM_ERR("Unable to get key from pv:%p\n", p1);
-		return -1;
-	}
-
-	if (p2 && (pv_get_spec_value(msg, (pv_spec_t *)p2, &pv_val) == 0))
-	{
-		if (pv_val.flags & PV_VAL_INT)
-		{
-			entity_no = pv_val.ri;
-			LM_DBG("got entity_no %d\n", entity_no);
-		}
-		else
-		if (pv_val.flags & PV_VAL_STR) {
-			if(str2int(&(pv_val.rs), (unsigned int*)&entity_no) != 0) {
-				LM_ERR("Unable to get entity_no from pv '%.*s'i\n",
-				pv_val.rs.len, pv_val.rs.s);
-				return -1;
-			}
-		} else {
-			LM_ERR("second pv not a str or int type\n");
-			return -1;
-		}
-	} else {
-		LM_ERR("Unable to get entity from pv:%p\n", p1);
-		return -1;
-	}
-	return b2bl_bridge_msg(msg, &key, entity_no);
+	return b2bl_bridge_msg(msg, key, *entity_no);
 }
 
-static struct mi_root* mi_b2b_terminate_call(struct mi_root* cmd, void* param)
+static mi_response_t *mi_b2b_terminate_call(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_node* node= NULL;
 	str key;
 
-	node = cmd->node.kids;
-	if(node == NULL)
-		return 0;
-
-	/* b2bl_key */
-	key = node->value;
-	if(key.s == NULL || key.len== 0)
-	{
-		LM_ERR("Wrong b2b_logic key parameter\n");
-		return init_mi_tree(404, "Empty b2bl key", 14);
-	}
+	if (get_mi_string_param(params, "key", &key.s, &key.len) < 0)
+		return init_mi_param_error();
 
 	b2bl_terminate_call(&key);
 
-	return init_mi_tree(200, "OK", 2);
+	return init_mi_result_ok();
 }
 
-/*
- * arguments: b2bl_key, new_dest, entity (1 - client)
- * */
-static struct mi_root* mi_b2b_bridge(struct mi_root* cmd, void* param)
+static mi_response_t *mi_b2b_bridge(const mi_params_t *params,
+							int entity_no, str *prov_media)
 {
-	struct mi_node* node= NULL;
 	str key;
 	b2bl_tuple_t* tuple;
 	str new_dest;
-	str prov_media;
-	unsigned int entity_no = 0;
 	b2bl_entity_id_t* entity, *old_entity, *bridging_entity, *prov_entity = 0;
 	struct sip_uri uri;
 	str meth_inv = {INVITE, INVITE_LEN};
@@ -1244,81 +1190,51 @@ static struct mi_root* mi_b2b_bridge(struct mi_root* cmd, void* param)
 	str ok= str_init("ok");
 	b2b_req_data_t req_data;
 	b2b_rpl_data_t rpl_data;
+	int ret;
 
-	node = cmd->node.kids;
-	if(node == NULL)
-		return 0;
+	if (get_mi_string_param(params, "dialog_id", &key.s, &key.len) < 0)
+		return init_mi_param_error();
 
-	/* b2bl_key */
-	key = node->value;
-	if(key.s == NULL || key.len== 0)
-	{
-		LM_ERR("Wrong b2b_logic key parameter\n");
-		return init_mi_tree(404, "Empty b2bl key", 14);
-	}
-
-	/* new destination- must be a valid SIP URI */
-	node = node->next;
-	if(node == NULL)
-		return 0;
-
-	new_dest = node->value;
-	if(new_dest.s == NULL || new_dest.len == 0)
-	{
-		LM_ERR("Empty new dest parameter\n");
-		return init_mi_tree(404, "Empty parameter", 15);
-	}
+	if (get_mi_string_param(params, "new_uri", &new_dest.s, &new_dest.len) < 0)
+		return init_mi_param_error();
 
 	if(parse_uri(new_dest.s, new_dest.len, &uri)< 0)
 	{
 		LM_ERR("Bad argument. Not a valid uri [%.*s]\n", new_dest.len, new_dest.s);
-		return init_mi_tree(404, "Bad parameter", 13);
+		return init_mi_error(404, MI_SSTR("Invalid uri for the new destination"));
 	}
 
-	/* the last parameter is optional, if present and 1 - >
+	/* if 'flag' parameter is 1 - >
 	 * means that destination from the current call must be
 	 * bridged to the new destination */
-	node = node->next;
-	if(node)
-	{
-		if (node->value.len==1)
+	if (entity_no != 0 && entity_no != 1)
+		return init_mi_error(404, MI_SSTR("Invalid 'flag' parameter"));
+
+	if (prov_media) {
+		/* parse new uri */
+		if(parse_uri(prov_media->s, prov_media->len, &uri)< 0)
 		{
-			if(strncmp(node->value.s, "0", 1)==0)
-				entity_no = 0;
-			else if(strncmp(node->value.s, "1", 1)==0)
-				entity_no = 1;
-			else
-				return init_mi_tree(404, "Invalid entity no parameter", 27);
+			LM_ERR("Bad argument. Not a valid provisional media uri [%.*s]\n",
+				   new_dest.len, new_dest.s);
+			return init_mi_error(404, MI_SSTR("Bad 'prov_media_uri' parameter"));
 		}
-		else
-		{
-			return init_mi_tree(404, "Invalid entity no parameter", 27);
-		}
-		node = node->next;
-		if (node)
-		{
-			/* parse new uri */
-			prov_media = node->value;
-			if(parse_uri(node->value.s, node->value.len, &uri)< 0)
-			{
-				LM_ERR("Bad argument. Not a valid provisional media uri [%.*s]\n",
-					   new_dest.len, new_dest.s);
-				return init_mi_tree(404, "Bad parameter", 13);
-			}
-			prov_entity = b2bl_create_new_entity(B2B_CLIENT,
-							0, &prov_media, 0, 0, 0, 0, 0);
-			if (!prov_entity) {
-				LM_ERR("Failed to create new b2b entity\n");
-				goto free;
-			}
-			if (node->next)
-				return init_mi_tree(404, MI_SSTR(MI_MISSING_PARM));
+		prov_entity = b2bl_create_new_entity(B2B_CLIENT,
+						0, prov_media, 0, 0, 0, 0, 0);
+		if (!prov_entity) {
+			LM_ERR("Failed to create new b2b entity\n");
+			goto free;
 		}
 	}
 
-	if(b2bl_parse_key(&key, &hash_index, &local_index) < 0)
+	ret = b2bl_get_tuple_key(&key, &hash_index, &local_index);
+	if(ret < 0)
 	{
-		LM_ERR("Failed to parse key '%.*s'\n", key.len, key.s);
+		if (ret == -1)
+			LM_ERR("Failed to parse key or find an entity [%.*s]\n",
+					key.len, key.s);
+		else
+			LM_ERR("Could not find entity [%.*s]\n",
+					key.len, key.s);
 		goto free;
 	}
 
@@ -1338,6 +1254,14 @@ static struct mi_root* mi_b2b_bridge(struct mi_root* cmd, void* param)
 		goto error;
 	}
 
+	if (!tuple->bridge_entities[entity_no] ||
+	tuple->bridge_entities[entity_no]->disconnected)
+	{
+		LM_ERR("Can not bridge requested entity [%p]\n",
+			tuple->bridge_entities[entity_no]);
+		goto error;
+	}
+
 	bridging_entity = tuple->bridge_entities[entity_no];
 	old_entity = tuple->bridge_entities[(entity_no?0:1)];
 
@@ -1353,6 +1277,16 @@ static struct mi_root* mi_b2b_bridge(struct mi_root* cmd, void* param)
 		b2bl_print_tuple(tuple, L_ERR);
 		goto error;
 	}
+
+	if(bridging_entity->state != B2BL_ENT_CONFIRMED)
+	{
+		LM_ERR("Wrong state for entity ek= [%.*s], tk=[%.*s]\n",
+			bridging_entity->key.len,bridging_entity->key.s,
+			tuple->key->len, tuple->key->s);
+		goto error;
+	}
+
+	b2bl_print_tuple(tuple, L_DBG);
 
 	/* send BYE to old client */
 	if(old_entity->disconnected)
@@ -1404,6 +1338,7 @@ static struct mi_root* mi_b2b_bridge(struct mi_root* cmd, void* param)
 
 	tuple->scenario_state = B2B_BRIDGING_STATE;
 	bridging_entity->state = 0;
+	bridging_entity->sdp_type = B2BL_SDP_LATE;
 
 	memset(&req_data, 0, sizeof(b2b_req_data_t));
 	PREP_REQ_DATA(bridging_entity);
@@ -1412,7 +1347,7 @@ static struct mi_root* mi_b2b_bridge(struct mi_root* cmd, void* param)
 
 	lock_release(&b2bl_htable[hash_index].lock);
 
-	return init_mi_tree(200, "OK", 2);
+	return init_mi_result_ok();
 
 error:
 	if(tuple)
@@ -1424,86 +1359,128 @@ free:
 	return 0;
 }
 
-static inline int internal_mi_print_b2bl_entity_id(struct mi_node *node1, b2bl_entity_id_t *c)
+static mi_response_t *mi_b2b_bridge_2(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	int len;
-	char* p;
-	struct mi_node *node2=NULL;
-	struct mi_attr* attr;
+	return mi_b2b_bridge(params, 0, NULL);
+}
 
+static mi_response_t *mi_b2b_bridge_f(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	int flag;
+
+	if (get_mi_int_param(params, "flag", &flag) < 0)
+		return init_mi_param_error();
+
+	return mi_b2b_bridge(params, flag, NULL);
+}
+
+static mi_response_t *mi_b2b_bridge_pmu(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	str prov_media;
+
+	if (get_mi_string_param(params, "prov_media_uri",
+		&prov_media.s, &prov_media.len) < 0)
+		return init_mi_param_error();
+
+	return mi_b2b_bridge(params, 0, &prov_media);
+}
+
+static mi_response_t *mi_b2b_bridge_4(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	int flag;
+	str prov_media;
+
+	if (get_mi_int_param(params, "flag", &flag) < 0)
+		return init_mi_param_error();
+
+	if (get_mi_string_param(params, "prov_media_uri",
+		&prov_media.s, &prov_media.len) < 0)
+		return init_mi_param_error();
+
+	return mi_b2b_bridge(params, flag, &prov_media);
+}
+
+static inline int internal_mi_print_b2bl_entity_id(mi_item_t *item, b2bl_entity_id_t *c)
+{
 	if (c->scenario_id.s && c->scenario_id.len != 0)
-	{
-		attr = add_mi_attr(node1, MI_DUP_VALUE, "scenario_id", 11,
-				c->scenario_id.s, c->scenario_id.len);
-		if(attr == NULL) goto error;
-	}
+		if (add_mi_string(item, MI_SSTR("scenario_id"),
+			c->scenario_id.s, c->scenario_id.len) < 0)
+			goto error;
+
 	if (c->key.s && c->key.len != 0)
-	{
-		attr = add_mi_attr(node1, MI_DUP_VALUE, "key", 3,
-					c->key.s, c->key.len);
-		if(attr == NULL) goto error;
-	}
-	p = int2str((unsigned long)(c->disconnected), &len);
-	attr = add_mi_attr(node1, MI_DUP_VALUE, "disconnected", 12, p, len);
-	if(attr == NULL) goto error;
-	p = int2str((unsigned long)(c->state), &len);
-	attr = add_mi_attr(node1, MI_DUP_VALUE, "state", 5, p, len);
-	if(attr == NULL) goto error;
-	p = int2str((unsigned long)(c->no), &len);
-	attr = add_mi_attr(node1, MI_DUP_VALUE, "no", 2, p, len);
-	if(attr == NULL) goto error;
-	p = int2str((unsigned long)(c->type), &len);
-	attr = add_mi_attr(node1, MI_DUP_VALUE, "type", 4, p, len);
-	if(attr == NULL) goto error;
+		if (add_mi_string(item, MI_SSTR("key"),
+			c->key.s, c->key.len) < 0)
+			goto error;
+
+	if (add_mi_number(item, MI_SSTR("disconnected"),
+		c->disconnected) < 0)
+		goto error;
+	if (add_mi_number(item, MI_SSTR("state"),
+		c->state) < 0)
+		goto error;
+	if (add_mi_number(item, MI_SSTR("no"),
+		c->no) < 0)
+		goto error;
+	if (add_mi_number(item, MI_SSTR("type"),
+		c->type) < 0)
+		goto error;
 
 	if (c->peer)
 	{
 		if (c->peer->key.s && c->peer->key.len != 0)
-		{
-			attr = add_mi_attr(node1, MI_DUP_VALUE, "peer", 4,
-				c->peer->key.s, c->peer->key.len);
-			if(attr == NULL) goto error;
-		}
+			if (add_mi_string(item, MI_SSTR("peer"),
+				c->peer->key.s, c->peer->key.len) < 0)
+				goto error;
 	}
 
 	if (c->to_uri.s && c->to_uri.len != 0)
-	{
-		node2 = add_mi_node_child(node1, MI_DUP_VALUE, "to_uri", 6,
-						c->to_uri.s, c->to_uri.len);
-		if(node2 == NULL) goto error;
-	}
+		if (add_mi_string(item, MI_SSTR("to_uri"),
+			c->to_uri.s, c->to_uri.len) < 0)
+			goto error;
+
 	if (c->from_uri.s && c->from_uri.len != 0)
-	{
-		node2 = add_mi_node_child(node1, MI_DUP_VALUE, "from_uri", 8,
-						c->from_uri.s, c->from_uri.len);
-		if(node2 == NULL) goto error;
-	}
+		if (add_mi_string(item, MI_SSTR("from_uri"),
+			c->from_uri.s, c->from_uri.len) < 0)
+			goto error;
+
 	if (c->from_dname.s && c->from_dname.len != 0)
-	{
-		node2 = add_mi_node_child(node1, MI_DUP_VALUE, "from_dname", 10,
-						c->from_dname.s, c->from_dname.len);
-		if(node2 == NULL) goto error;
-	}
+		if (add_mi_string(item, MI_SSTR("from_dname"),
+			c->from_dname.s, c->from_dname.len) < 0)
+			goto error;
 
 	return 0;
+
 error:
-	LM_ERR("failed to add node\n");
+	LM_ERR("failed to add mi item\n");
 	return -1;
 }
 
-static struct mi_root* mi_b2b_list(struct mi_root* cmd, void* param)
+static mi_response_t *mi_b2b_list(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	int i, len, index;
-	char* p;
+	int i, index;
 	b2bl_tuple_t* tuple;
-	struct mi_root *rpl_tree;
-	struct mi_node *node=NULL, *node1=NULL, *rpl=NULL, *node_a=NULL;
-	struct mi_attr* attr;
 
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==NULL) return NULL;
-	rpl = &rpl_tree->node;
-	rpl->flags |= MI_IS_ARRAY;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	mi_item_t *tuples_arr, *tuple_item;
+	mi_item_t *servers_arr, *server_item;
+	mi_item_t *clients_arr, *clients_item;
+	mi_item_t *b_entities_arr, *b_entities_item;
+
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return 0;
+
+	tuples_arr = add_mi_array(resp_obj, MI_SSTR("Tuples"));
+	if (!tuples_arr) {
+		free_mi_response(resp);
+		return 0;
+	}
 
 	for(i = 0; i< b2bl_hsize; i++)
 	{
@@ -1511,83 +1488,86 @@ static struct mi_root* mi_b2b_list(struct mi_root* cmd, void* param)
 		tuple = b2bl_htable[i].first;
 		while(tuple)
 		{
-			p = int2str((unsigned long)(tuple->id), &len);
-			node = add_mi_node_child(rpl, MI_DUP_VALUE, "tuple", 5, p, len);
-			if(node == NULL) goto error;
-			attr = add_mi_attr(node, MI_DUP_VALUE, "key", 3,
-					tuple->key->s, tuple->key->len);
-			if(attr == NULL) goto error;
-			p = int2str((unsigned long)(tuple->scenario_state), &len);
-			attr = add_mi_attr(node, MI_DUP_VALUE, "scenario_state", 14, p, len);
-			if(attr == NULL) goto error;
-			p = int2str((unsigned long)(tuple->lifetime), &len);
-			attr = add_mi_attr(node, MI_DUP_VALUE, "lifetime", 8, p, len);
-			if(attr == NULL) goto error;
-			p = int2str((unsigned long)(tuple->db_flag), &len);
-			attr = add_mi_attr(node, MI_DUP_VALUE, "db_flag", 7, p, len);
-			if(attr == NULL) goto error;
+			tuple_item = add_mi_object(tuples_arr, NULL, 0);
+			if (!tuple_item)
+				goto error;
 
-			if (tuple->scenario)
-			{
-				attr = add_mi_attr(node, MI_DUP_VALUE, "scenario", 8,
-						tuple->scenario->id.s, tuple->scenario->id.len);
-				if(attr == NULL) goto error;
-				p = int2str((unsigned long)(tuple->next_scenario_state), &len);
-				attr = add_mi_attr(node, MI_DUP_VALUE, "next_scenario_state", 19,
-						p, len);
-				if(attr == NULL) goto error;
+			if (add_mi_number(tuple_item, MI_SSTR("id"), tuple->id) < 0)
+				goto error;
+			if (add_mi_string(tuple_item, MI_SSTR("key"),
+				tuple->key->s, tuple->key->len) < 0)
+				goto error;
+			if (add_mi_number(tuple_item, MI_SSTR("scenario_state"),
+				tuple->scenario_state) < 0)
+				goto error;
+			if (add_mi_number(tuple_item, MI_SSTR("lifetime"),
+				tuple->lifetime) < 0)
+				goto error;
+			if (add_mi_number(tuple_item, MI_SSTR("db_flag"),
+				tuple->db_flag) < 0)
+				goto error;
+
+			if (tuple->scenario) {
+				if (add_mi_string(tuple_item, MI_SSTR("scenario"),
+					tuple->scenario->id.s, tuple->scenario->id.len) < 0)
+					goto error;
+				if (add_mi_number(tuple_item, MI_SSTR("next_scenario_state"),
+					tuple->next_scenario_state) < 0)
+					goto error;
 			}
 
-			for (node_a=NULL,index=0; index < MAX_B2BL_ENT; index++)
+			servers_arr = add_mi_array(tuple_item, MI_SSTR("SERVERS"));
+			if (!servers_arr)
+				goto error;
+			for (index=0; index < MAX_B2BL_ENT; index++)
 			{
 				if (tuple->servers[index] != NULL)
 				{
-					if (node_a==NULL) {
-						node_a = add_mi_node_child(node, MI_IS_ARRAY,
-							"SERVERS", 7, NULL, 0);
-						if (node_a==NULL) goto error;
-					}
-					p = int2str((unsigned long)(index), &len);
-					node1 = add_mi_node_child(node_a, MI_DUP_VALUE,
-						"server", 6, p, len);
-					if(node1 == NULL) goto error;
-					if (internal_mi_print_b2bl_entity_id(node1,
+					server_item = add_mi_object(servers_arr, NULL, 0);
+					if (!server_item)
+						goto error;
+
+					if (add_mi_number(server_item, MI_SSTR("index"), index) < 0)
+						goto error;
+					if (internal_mi_print_b2bl_entity_id(server_item,
 							tuple->servers[index])!=0)
 						goto error;
 				}
 			}
-			for (node_a=NULL,index=0; index < MAX_B2BL_ENT; index++)
+
+			clients_arr = add_mi_array(tuple_item, MI_SSTR("CLIENTS"));
+			if (!clients_arr)
+				goto error;
+			for (index=0; index < MAX_B2BL_ENT; index++)
 			{
 				if (tuple->clients[index] != NULL)
 				{
-					if (node_a==NULL) {
-						node_a = add_mi_node_child(node, MI_IS_ARRAY,
-							"CLIENTS", 7, NULL, 0);
-						if (node_a==NULL) goto error;
-					}
-					p = int2str((unsigned long)(index), &len);
-					node1 = add_mi_node_child(node_a, MI_DUP_VALUE,
-						"client", 6, p, len);
-					if(node1 == NULL) goto error;
-					if (internal_mi_print_b2bl_entity_id(node1,
+					clients_item = add_mi_object(clients_arr, NULL, 0);
+					if (!clients_item)
+						goto error;
+
+					if (add_mi_number(clients_item, MI_SSTR("index"), index) < 0)
+						goto error;
+					if (internal_mi_print_b2bl_entity_id(clients_item,
 							tuple->clients[index])!=0)
 						goto error;
 				}
 			}
-			for (node_a=NULL,index=0; index < MAX_BRIDGE_ENT; index++)
+
+			b_entities_arr = add_mi_array(tuple_item, MI_SSTR("BRIDGE_ENTITIES"));
+			if (!b_entities_arr)
+				goto error;
+			for (index=0; index < MAX_BRIDGE_ENT; index++)
 			{
 				if (tuple->bridge_entities[index] != NULL)
 				{
-					if (node_a==NULL) {
-						node_a = add_mi_node_child(node, MI_IS_ARRAY,
-							"BRIDGE_ENTITIES", 15, NULL, 0);
-						if (node_a==NULL) goto error;
-					}
-					p = int2str((unsigned long)(index), &len);
-					node1 = add_mi_node_child(node_a, MI_DUP_VALUE,
-							"bridge_entitie", 14, p, len);
-					if(node1 == NULL) goto error;
-					if (internal_mi_print_b2bl_entity_id(node1,
+					b_entities_item = add_mi_object(b_entities_arr, NULL, 0);
+					if (!b_entities_item)
+						goto error;
+
+					if (add_mi_number(b_entities_item, MI_SSTR("index"), index) < 0)
+						goto error;
+					if (internal_mi_print_b2bl_entity_id(b_entities_item,
 							tuple->bridge_entities[index])!=0)
 						goto error;
 				}
@@ -1596,11 +1576,12 @@ static struct mi_root* mi_b2b_list(struct mi_root* cmd, void* param)
 		}
 		lock_release(&b2bl_htable[i].lock);
 	}
-	return rpl_tree;
+
+	return resp;
 error:
 	lock_release(&b2bl_htable[i].lock);
 	LM_ERR("Unable to create reply\n");
-	free_mi_tree(rpl_tree);
+	free_mi_response(resp);
 	return NULL;
 }
 

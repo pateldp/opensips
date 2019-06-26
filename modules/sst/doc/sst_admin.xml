@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 		<title>Overview</title>
 
 		<para>The sst module provides a way to update the
@@ -97,7 +97,7 @@
 
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -133,9 +133,9 @@
 	</para>
 	</section>
 	</section>
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_enable_stats" xreflabel="enable_stats">
 		<title><varname>enable_stats</varname> (integer)</title>
 
 		<para>If the statistics support should be enabled or
@@ -159,7 +159,7 @@ modparam("sst", "enable_stats", 0)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_min_se" xreflabel="min_se">
 		<title><varname>min_se</varname> (integer)</title>
 
 		<para>The value is used to set the proxies MIN-SE
@@ -187,7 +187,7 @@ modparam("sst", "min_se", 2400)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_sst_interval" xreflabel="sst_interval">
 		<title><varname>sst_interval</varname> (integer)</title>
 
 		<para>The sst minimum interval in Session-Expires header if OpenSIPS
@@ -211,7 +211,7 @@ modparam("sst", "sst_interval", 2400)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_reject_to_small" xreflabel="reject_to_small">
 		<title><varname>reject_to_small</varname> (integer)</title>
 
 		<para>In the initial INVITE if the UAC has requested a
@@ -241,8 +241,8 @@ modparam("sst", "reject_to_small", 0)
 </programlisting>
 		</example>
 	</section>
-<section>
-		<title><varname>sst_flag</varname> (string/integer)</title>
+<section id="param_sst_flag" xreflabel="sst_flag">
+		<title><varname>sst_flag</varname> (string)</title>
 		
 		<para>Keeping with OpenSIPS, the module will not do
 		anything to any message unless instructed to do so via
@@ -259,9 +259,6 @@ modparam("sst", "reject_to_small", 0)
 
 		<para>This parameter must be set of the module will
 		not load.</para>
-
-		<para><emphasis>WARNING: </emphasis>Setting INT flags is deprecated!
-		Use quoted strings instead!</para>
 
 		<para>
 		<emphasis>
@@ -287,9 +284,9 @@ route {
 	</section>
 
 	</section>
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_sstCheckMin" xreflabel="sstCheckMin()">
 		<title>
 		<function moreinfo="none">sstCheckMin(send_reply_flag)</function>
 		</title>
@@ -310,7 +307,7 @@ route {
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>min_allowed</emphasis> - The value
+			<para><emphasis>min_allowed</emphasis> (int, optional) - The value
 			to compare the MIN_SE header value to.</para>
 		</listitem>
 		</itemizedlist>
@@ -325,7 +322,7 @@ modparam("sst", "min_se", 2400) # Must be >= 90
 
 route {
   if ($rm=="INVITE") {
-	if (sstCheckMin("1")) {
+	if (sstCheckMin(1)) {
 		xlog("L_ERR", "422 Session Timer Too Small reply sent.\n");
 		exit;
 	}
@@ -339,7 +336,7 @@ route {
 
 route {
   if ($rm=="INVITE") {
-	if (sstCheckMin("0")) {
+	if (sstCheckMin(0)) {
 		xlog("L_ERR", "Session Timer Too Small, dropping request\n");
 		exit;
 	}
@@ -355,9 +352,9 @@ route {
 	</section>
 
 
-	<section>
+	<section id="exported_statistics">
 	<title>Exported Statistics</title>
-	<section>
+	<section id="stat_expired_sst" xreflabel="expired_sst">
 		<title><varname>expired_sst</varname></title>
 		<para>
 		Number of dialogs which got expired session timer.

@@ -47,6 +47,7 @@
 #include "../../hash_func.h"
 #include "../../dset.h"
 #include "../../mem/mem.h"
+#include "../../parser/parse_list_hdr.h"
 #include "t_funcs.h"
 #include "t_fwd.h"
 #include "t_msgbuilder.h"
@@ -176,6 +177,26 @@ static int kill_transaction( struct cell *trans )
 }
 
 
+int tm_has_request_disponsition_no_cancel(struct sip_msg *msg)
+{
+	str RD_hdr_name = {"Request-Disposition",19};
+	str opt = {"no-cancel",9};
+	struct hdr_field *hdr;
+
+	/* be sure all SIP headers are parsed */
+	if (parse_headers(msg, HDR_EOH_F, 0) < 0) {
+		LM_ERR("failed to parse SIP headers while looking for "
+			"Request-Disposition\n");
+		return -1;
+	}
+
+	hdr = get_header_by_name( msg, RD_hdr_name.s, RD_hdr_name.len);
+	if (hdr==NULL)
+		return -1;
+
+	return list_hdr_has_option( hdr, &opt);
+}
+
 
 int t_relay_to( struct sip_msg  *p_msg , struct proxy_l *proxy, int flags)
 {
@@ -226,9 +247,12 @@ int t_relay_to( struct sip_msg  *p_msg , struct proxy_l *proxy, int flags)
 	/* if replication flag is set, mark the transaction as local
 	   so that replies will not be relaied */
 	t=get_t();
-	if (flags&TM_T_REPLY_repl_FLAG) t->flags|=T_IS_LOCAL_FLAG;
-	if (flags&TM_T_REPLY_nodnsfo_FLAG) t->flags|=T_NO_DNS_FAILOVER_FLAG;
-	if (flags&TM_T_REPLY_reason_FLAG) t->flags|=T_CANCEL_REASON_FLAG;
+	if (flags&TM_T_RELAY_repl_FLAG) t->flags|=T_IS_LOCAL_FLAG;
+	if (flags&TM_T_RELAY_nodnsfo_FLAG) t->flags|=T_NO_DNS_FAILOVER_FLAG;
+	if (flags&TM_T_RELAY_reason_FLAG) t->flags|=T_CANCEL_REASON_FLAG;
+	if ((flags&TM_T_RELAY_do_cancel_dis_FLAG) &&
+	tm_has_request_disponsition_no_cancel(p_msg)==0 )
+		t->flags|=T_MULTI_200OK_FLAG;
 
 	/* now go ahead and forward ... */
 	ret=t_forward_nonack( t, p_msg, proxy, 0/*no reset*/, 0/*unlocked*/);
@@ -236,16 +260,16 @@ int t_relay_to( struct sip_msg  *p_msg , struct proxy_l *proxy, int flags)
 		LM_DBG("t_forward_nonack returned error \n");
 		/* we don't want to pass upstream any reply regarding replicating
 		 * a request; replicated branch must stop at us*/
-		if (!(flags&(TM_T_REPLY_repl_FLAG|TM_T_REPLY_noerr_FLAG))) {
-			reply_ret = kill_transaction( t );
-			if (reply_ret>0) {
-				/* we have taken care of all -- do nothing in
-				script */
-				LM_DBG("generation of a stateful reply on error succeeded\n");
-				ret=0;
-			}  else {
-				LM_DBG("generation of a stateful reply on error failed\n");
-			}
+		if (flags & (TM_T_RELAY_repl_FLAG|TM_T_RELAY_noerr_FLAG))
+			goto done;
+
+		reply_ret = kill_transaction( t );
+		if (reply_ret>0) {
+			/* we have taken care of all -- do nothing in script */
+			LM_DBG("generation of a stateful reply on error succeeded\n");
+			ret=0;
+		}  else {
+			LM_DBG("generation of a stateful reply on error failed\n");
 		}
 	} else {
 		LM_DBG("new transaction fwd'ed\n");

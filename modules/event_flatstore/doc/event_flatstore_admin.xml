@@ -4,7 +4,7 @@
 
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		The <emphasis>event_flatstore</emphasis>
@@ -33,7 +33,7 @@
 		</itemizedlist>
 	</para>
 	</section>
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -63,9 +63,9 @@
 			</itemizedlist>
 		</para>
 	</section>
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_max_open_sockets" xreflabel="max_open_sockets">
 		<title><varname>max_open_sockets</varname> (integer)</title>
 		<para>
 			Defines the maximum number of simultaneously opened files by the
@@ -87,7 +87,7 @@ modparam("event_flatstore", "max_open_sockets", 200)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_delimiter" xreflabel="delimiter">
 		<title><varname>delimiter</varname> (string)</title>
 		<para>
 			Sets the separator between the parameters of the event in the logging file.
@@ -106,7 +106,7 @@ modparam("event_flatstore", "delimiter", ";")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_file_permissions" xreflabel="file_permissions">
 		<title><varname>file_permissions</varname> (string)</title>
 		<para>
 			Sets the permissions for the newly created logs. It
@@ -126,17 +126,36 @@ modparam("event_flatstore", "file_permissions", "664")
 </programlisting>
 		</example>
 	</section>
+	<section id="param_suppress_event_name" xreflabel="suppress_event_name">
+		<title><varname>suppress_event_name</varname> (int)</title>
+		<para>
+			Suppresses the name of the event in the log file.
+		</para>
+		<para>
+		<emphasis>
+			Default value is <quote>0/OFF</quote> (the event's name is printed).
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>suppress_event_name</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("event_flatstore", "suppress_event_name", 1)
+...
+</programlisting>
+		</example>
 	</section>
-	<section>
+	</section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
 		<para>
 		No exported functions to be used in the configuration file.
 		</para>
 	</section>
 
-	<section>
+	<section id="exported_mi_functions" xreflabel="Exported MI Functions">
 	<title>Exported MI Functions</title>
-	<section>
+	<section id="mi_evi_flat_rotate" xreflabel="evi_flat_rotate">
 		<title>
 		<function>evi_flat_rotate</function>
 		</title>
@@ -151,8 +170,7 @@ modparam("event_flatstore", "file_permissions", "664")
 		MI FIFO Command Format:
 		</para>
         <programlisting  format="linespecific">
-		:evi_flat_rotate:_path_to_log_file_ 
-		_empty_line_
+		opensips-cli -x mi evi_flat_rotate _path_to_log_file_
 		</programlisting>
 	</section>	
     </section>

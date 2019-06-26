@@ -40,6 +40,9 @@ static int cgr_proc_cmd_reply(struct cgr_conn *c, json_object *jobj,
 		return -2;
 	}
 
+	if (!cgre_compat_mode)
+		return cgrates_set_reply_with_values(jobj);
+
 	switch (json_object_get_type(jobj)) {
 	case json_type_int:
 		val.n = json_object_get_int(jobj);
@@ -78,27 +81,18 @@ static int cgr_proc_cmd_reply(struct cgr_conn *c, json_object *jobj,
 		LM_ERR("cannot set the reply value!\n");
 		return -1;
 	}
+
 	return ret;
 }
 
-int w_cgr_cmd(struct sip_msg* msg, char* cmd_c, char *tag_c)
+int w_cgr_cmd(struct sip_msg* msg, str* cmd, str *tag_c)
 {
 	static struct cgr_msg *cmsg;
 	struct cgr_session *s;
-	str cmd;
 
-	if (!cmd_c) {
-		LM_ERR("command not specified!\n");
-		return -1;
-	}
+	s = cgr_get_sess(cgr_try_get_ctx(), tag_c);
 
-	if (fixup_get_svalue(msg, (gparam_p)cmd_c, &cmd) < 0) {
-		LM_ERR("cannot read the command\n");
-		return -1;
-	}
-	s = cgr_get_sess(cgr_try_get_ctx(), cgr_get_tag(msg, tag_c));
-
-	cmsg = cgr_get_generic_msg(&cmd, s);
+	cmsg = cgr_get_generic_msg(cmd, s);
 	if (!cmsg) {
 		LM_ERR("cannot build the json to send to cgrates\n");
 		return -1;
@@ -107,24 +101,14 @@ int w_cgr_cmd(struct sip_msg* msg, char* cmd_c, char *tag_c)
 	return cgr_handle_cmd(msg, cmsg->msg, cgr_proc_cmd_reply, NULL);
 }
 
-int w_acgr_cmd(struct sip_msg* msg, async_ctx *actx, char* cmd_c, char *tag_c)
+int w_acgr_cmd(struct sip_msg* msg, async_ctx *actx, str* cmd, str *tag_c)
 {
 	static struct cgr_msg *cmsg;
 	struct cgr_session *s;
-	str cmd;
 
-	if (!cmd_c) {
-		LM_ERR("command not specified!\n");
-		return -1;
-	}
+	s = cgr_get_sess(cgr_try_get_ctx(), tag_c);
 
-	if (fixup_get_svalue(msg, (gparam_p)cmd_c, &cmd) < 0) {
-		LM_ERR("cannot read the command\n");
-		return -1;
-	}
-	s = cgr_get_sess(cgr_try_get_ctx(), cgr_get_tag(msg, tag_c));
-
-	cmsg = cgr_get_generic_msg(&cmd, s);
+	cmsg = cgr_get_generic_msg(cmd, s);
 	if (!cmsg) {
 		LM_ERR("cannot build the json to send to cgrates\n");
 		return -1;

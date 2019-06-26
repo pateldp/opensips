@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
+#include "db_postgres.h"
 #include "pg_con.h"
 #include "../../mem/mem.h"
 #include "../../dprint.h"
@@ -26,6 +27,7 @@
 #include <string.h>
 #include <time.h>
 
+#define PSQL_PARAMS_MAX 7
 
 /*
  * Create a new connection structure,
@@ -33,8 +35,18 @@
  */
 struct pg_con* db_postgres_new_connection(struct db_id* id)
 {
+#define PSQL_PARAM(_k, _v) \
+	do { \
+		keywords[p] = (_k); \
+		values[p] = (_v); \
+		p++; \
+	} while (0);
 	struct pg_con* ptr;
+	const char *keywords[PSQL_PARAMS_MAX];
+	const char *values[PSQL_PARAMS_MAX];
 	char *ports;
+	char *dbname;
+	int p = 0, lend, lenp;
 
 	LM_DBG("db_id = %p\n", id);
 
@@ -49,23 +61,64 @@ struct pg_con* db_postgres_new_connection(struct db_id* id)
 				"\n", (unsigned long)sizeof(struct pg_con));
 		return 0;
 	}
-	LM_DBG("%p=pkg_malloc(%lu)\n", ptr, (unsigned long)sizeof(struct pg_con));
+	LM_DBG("%p=pkg_malloc(%zu)\n", ptr, sizeof(struct pg_con));
 
 	memset(ptr, 0, sizeof(struct pg_con));
 	ptr->ref = 1;
 
+	if (id->parameters) {
+		lend = strlen(id->database);
+		lenp = strlen(id->parameters);
+		dbname = pkg_malloc(7 /* "dbname=" */ +
+				lend + 1 /* ? */ + lenp + 1 /* '\0' */);
+		if (!dbname) {
+			LM_ERR("oom for building database name!\n");
+			goto err;
+		}
+		memcpy(dbname, "dbname=", 7);
+		memcpy(dbname + 7, id->database, lend);
+		lend += 7;
+		dbname[lend] = ' ';
+		lend += 1;
+		memcpy(dbname + lend, id->parameters, lenp);
+		dbname[lend + lenp] = '\0';
+		/* convert '&' to spaces */
+		for (; dbname[lend] != '\0'; lend++) {
+			if (dbname[lend] == '&' && lend > 2 &&
+					(dbname[lend-1] != '\\' || (dbname[lend-2] != '\\')))
+				dbname[lend] = ' ';
+		}
+	} else
+		dbname = id->database;
+
 	if (id->port) {
 		ports = int2str(id->port, 0);
 		LM_DBG("opening connection: postgres://xxxx:xxxx@%s:%d/%s\n", ZSW(id->host),
-			id->port, ZSW(id->database));
+			id->port, ZSW(dbname));
+		PSQL_PARAM("port", ports);
 	} else {
 		ports = NULL;
 		LM_DBG("opening connection: postgres://xxxx:xxxx@%s/%s\n", ZSW(id->host),
-			ZSW(id->database));
+			ZSW(dbname));
 	}
 
- 	ptr->con = PQsetdbLogin(id->host, ports, NULL, NULL, id->database, id->username, id->password);
-	LM_DBG("PQsetdbLogin(%p)\n", ptr->con);
+	if (id->host)
+		PSQL_PARAM("host", id->host);
+	if (id->username)
+		PSQL_PARAM("user", id->username);
+	if (id->password)
+		PSQL_PARAM("password", id->password);
+
+	PSQL_PARAM("dbname", dbname);
+
+	/* force the default timeout */
+	if (pq_timeout > 0)
+		PSQL_PARAM("connect_timeout", int2str(pq_timeout, 0));
+	PSQL_PARAM(0, 0);
+
+	ptr->con = PQconnectdbParams(keywords, values, 1);
+	if (dbname != id->database)
+		pkg_free(dbname);
 
 	if( (ptr->con == 0) || (PQstatus(ptr->con) != CONNECTION_OK) )
 	{
@@ -86,8 +139,22 @@ struct pg_con* db_postgres_new_connection(struct db_id* id)
 		pkg_free(ptr);
 	}
 	return 0;
+#undef PSQL_PARAM
 }
 
+/*
+ * Create a new async connection structure,
+ * open the PostgreSQL connection and set reference count to 1
+ */
+struct pg_con* db_postgres_new_async_connection(struct db_id* id)
+{
+	struct pg_con * ret = db_postgres_new_connection(id);
+	if (ret) {
+		PQsetnonblocking(ret->con, 1);
+	}
+
+	return ret;
+}
 
 /*
  * Close the connection and release memory

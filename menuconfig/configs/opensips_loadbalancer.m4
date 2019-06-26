@@ -33,14 +33,13 @@ children=4
 #dns_try_ipv6=yes
 
 /* comment the next line to enable the auto discovery of local aliases
-   based on revers DNS on IPs */
+   based on reverse DNS on IPs */
 auto_aliases=no
 
 
 listen=udp:127.0.0.1:5060   # CUSTOMIZE ME
-
-ifelse(ENABLE_TCP, `yes', `listen=tcp:127.0.0.1:5060   # CUSTOMIZE ME' , `')
-ifelse(ENABLE_TLS,`yes',`listen=tls:127.0.0.1:5061   # CUSTOMIZE ME' , `')
+ifelse(ENABLE_TCP, `yes', `listen=tcp:127.0.0.1:5060   # CUSTOMIZE ME',`')
+ifelse(ENABLE_TLS,`yes',`listen=tls:127.0.0.1:5061   # CUSTOMIZE ME',`')
 
 ifelse(USE_HTTP_MANAGEMENT_INTERFACE,`yes',`define(`HTTPD_NEEDED',`yes')', `')
 
@@ -81,10 +80,6 @@ loadmodule "sipmsgops.so"
 loadmodule "mi_fifo.so"
 modparam("mi_fifo", "fifo_name", "/tmp/opensips_fifo")
 modparam("mi_fifo", "fifo_mode", 0666)
-
-#### URI module
-loadmodule "uri.so"
-modparam("uri", "use_uri_table", 0)
 
 #### MYSQL module
 loadmodule "db_mysql.so"
@@ -138,6 +133,7 @@ modparam("load_balancer", "probing_interval", 30)
 ')
 
 ifelse(USE_HTTP_MANAGEMENT_INTERFACE,`yes',`####  MI_HTTP module
+loadmodule "httpd.so"
 loadmodule "mi_http.so"
 ',`')
 
@@ -162,8 +158,8 @@ modparam("tls_mgm","ca_list", "/usr/local/etc/opensips/tls/user/user-calist.pem"
 
 route{
 
-	if (!mf_process_maxfwd_header("10")) {
-		sl_send_reply("483","Too Many Hops");
+	if (!mf_process_maxfwd_header(10)) {
+		send_reply(483,"Too Many Hops");
 		exit;
 	}
 
@@ -180,7 +176,7 @@ route{
 		if ( !loose_route() ) {
 			# we do record-routing for all our traffic, so we should not
 			# receive any sequential requests without Route hdr.
-			sl_send_reply("404","Not here");
+			send_reply(404,"Not here");
 			exit;
 		}
 		ifelse(USE_DISPATCHER,`no',`
@@ -211,13 +207,13 @@ route{
 			t_relay();
 		exit;
 	} else if (!is_method("INVITE")) {
-		send_reply("405","Method Not Allowed");
+		send_reply(405,"Method Not Allowed");
 		exit;
 	}
 
 	if ($rU==NULL) {
 		# request with no Username in RURI
-		sl_send_reply("484","Address Incomplete");
+		send_reply(484,"Address Incomplete");
 		exit;
 	}
 
@@ -226,9 +222,9 @@ route{
 	# preloaded route checking
 	if (loose_route()) {
 		xlog("L_ERR",
-		"Attempt to route with preloaded Route's [$fu/$tu/$ru/$ci]");
+			"Attempt to route with preloaded Route's [$fu/$tu/$ru/$ci]");
 		if (!is_method("ACK"))
-			sl_send_reply("403","Preload Route denied");
+			send_reply(403,"Preload Route denied");
 		exit;
 	}
 
@@ -239,11 +235,11 @@ route{
 	', `do_accounting("log");')
 
 	ifelse(USE_DISPATCHER,`yes',`
-	if ( !ds_select_dst("1","4") ) {
+	if ( !ds_select_dst(1,4) ) {
 	',`
-	if ( !load_balance("1","channel")) {
+	if ( !lb_start(1,"channel")) {
 	')
-		send_reply("500","No Destination available");
+		send_reply(500,"No Destination available");
 		exit;
 	}
 
@@ -257,7 +253,7 @@ route{
 route[RELAY] {
 	if (!t_relay()) {
 		sl_reply_error();
-	};
+	}
 	exit;
 }
 
@@ -274,14 +270,14 @@ failure_route[GW_FAILOVER] {
 		ifelse(USE_DISPATCHER,`yes',`
 		if ( ds_next_dst() ) {
 		',`
-		if ( load_balance("1","channel") ) {
+		if ( lb_next() ) {
 		')
 			t_on_failure("GW_FAILOVER");
 			t_relay();
 			exit;
 		}
 		
-		send_reply("500","All GW are down");
+		send_reply(500,"All GW are down");
 	}
 }
 

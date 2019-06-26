@@ -40,9 +40,27 @@
 #define MAX_DLG_RR_PARAM_NAME 32
 
 /* values for the sequential match mode */
+#define SEQ_MATCH_DEFAULT   -1
 #define SEQ_MATCH_STRICT_ID  0
 #define SEQ_MATCH_FALLBACK   1
 #define SEQ_MATCH_NO_ID      2
+static inline int dlg_match_mode_str_to_int(const str *in)
+{
+	str did_only = str_init("did_only"),
+	    did_fallback = str_init("did_fallback"),
+	    did_none = str_init("did_none");
+
+	if (!str_strcasecmp(in, &did_only))
+		return SEQ_MATCH_STRICT_ID;
+
+	if (!str_strcasecmp(in, &did_fallback))
+		return SEQ_MATCH_FALLBACK;
+
+	if (!str_strcasecmp(in, &did_none))
+		return SEQ_MATCH_NO_ID;
+
+	return SEQ_MATCH_DEFAULT;
+}
 
 #define RR_DLG_PARAM_SIZE  (2*2*sizeof(int)+3+MAX_DLG_RR_PARAM_NAME)
 #define DLG_SEPARATOR      '.'
@@ -107,7 +125,7 @@ typedef int (*terminate_dlg_f)(unsigned int h_entry, unsigned int h_id,str *reas
 void unreference_dialog(void *dialog);
 
 static inline int parse_dlg_rr_param(char *p, char *end,
-													int *h_entry, int *h_id)
+								unsigned int *h_entry, unsigned int *h_id)
 {
 	char *s;
 
@@ -117,12 +135,12 @@ static inline int parse_dlg_rr_param(char *p, char *end,
 		return -1;
 	}
 
-	if ( (*h_entry=reverse_hex2int( s, p-s))<0 ) {
+	if ( reverse_hex2int( s, p-s, h_entry)<0 ) {
 		LM_ERR("invalid hash entry '%.*s'\n", (int)(long)(p-s), s);
 		return -1;
 	}
 
-	if ( (*h_id=reverse_hex2int( p+1, end-(p+1)))<0 ) {
+	if ( reverse_hex2int( p+1, end-(p+1), h_id)<0 ) {
 		LM_ERR("invalid hash id '%.*s'\n", (int)(long)(end-(p+1)), p+1 );
 		return -1;
 	}
@@ -161,6 +179,19 @@ static inline int pre_match_parse( struct sip_msg *req, str *callid,
 	/* from tag */
 	*ftag = get_from(req)->tag_value;
 	return 0;
+}
+
+static inline void get_totag(struct sip_msg *msg, str *tag)
+{
+	/* get to tag*/
+	if (!msg->to && (parse_headers(msg, HDR_TO_F, 0) < 0 || !msg->to)) {
+		LM_ERR("bad %s or missing TO hdr\n",
+		       msg->first_line.type == SIP_REQUEST ? "request" : "reply");
+		tag->s = NULL;
+		tag->len = 0;
+	} else {
+		*tag = get_to(msg)->tag_value;
+	}
 }
 
 int test_and_set_dlg_flag(struct dlg_cell *dlg, unsigned long index,

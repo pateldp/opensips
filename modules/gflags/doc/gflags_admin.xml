@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 	gflags module (global flags) keeps a bitmap of flags in shared memory
@@ -31,7 +31,7 @@
 	</para>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<para>
 		The module depends on the following modules (in the other words the
@@ -44,9 +44,9 @@
 	</para>
 	</section>
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_initial" xreflabel="initial">
 		<title><varname>initial</varname> (integer)</title>
 		<para>
 		The initial value of global flags bitmap.
@@ -63,15 +63,15 @@ modparam("gflags", "initial", 15)
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_set_gflag" xreflabel="set_gflag()">
 		<title><function moreinfo="none">set_gflag(flag)</function></title>
 		<para>
 		Set the bit at the position <quote>flag</quote> in global flags.
 		</para>
 		<para>
-		<quote>flag</quote> can have a value in the range of 0..31.
+		The <quote>flag</quote> (int) parameter can have a value in the range of 0..31.
 		</para>
 		<para>
 		This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
@@ -81,19 +81,19 @@ modparam("gflags", "initial", 15)
 		<title><function moreinfo="none">set_gflag()</function> usage</title>
 		<programlisting format="linespecific">
 ...
-set_gflag("4");
+set_gflag(4);
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section>
+	<section id="func_reset_gflag" xreflabel="reset_gflag()">
 		<title><function moreinfo="none">reset_gflag(flag)</function></title>
 		<para>
 		Reset the bit at the position <quote>flag</quote> in global flags.
 		</para>
 		<para>
-		<quote>flag</quote> can have a value in the range of 0..31.
+		The <quote>flag</quote> (int) parameter can have a value in the range of 0..31.
 		</para>
 		<para>
 		This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
@@ -103,20 +103,20 @@ set_gflag("4");
 		<title><function moreinfo="none">reset_gflag()</function> usage</title>
 		<programlisting format="linespecific">
 ...
-reset_gflag("4");
+reset_gflag(4);
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section>
+	<section id="func_is_gflag" xreflabel="is_gflag()">
 		<title><function moreinfo="none">is_gflag(flag)</function></title>
 		<para>
 		Check if bit at the position <quote>flag</quote> in global flags is
 		set.
 		</para>
 		<para>
-		<quote>flag</quote> can have a value in the range of 0..31.
+		The <quote>flag</quote> (int) parameter can have a value in the range of 0..31.
 		</para>
 		<para>
 		This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
@@ -126,7 +126,7 @@ reset_gflag("4");
 		<title><function moreinfo="none">is_gflag()</function> usage</title>
 		<programlisting format="linespecific">
 ...
-if(is_gflag("4"))
+if(is_gflag(4))
 {
 	log("global flag 4 is set\n");
 } else {
@@ -139,15 +139,15 @@ if(is_gflag("4"))
 
 	</section>
 
-	<section>
-		<title><acronym>MI</acronym> Commands</title>
+	<section id="exported_mi_functions" xreflabel="Exported MI Functions">
+	<title>Exported MI Functions</title>
 		<para>Functions that check or change some flags accepts one parameter 
 			which is the flag bitmap/mask specifing the corresponding flags.
 			It is not possible to specify directly the flag position that 
 			should be changed as in the functions available in the routing 
 			script.
 		</para>
-		<section>
+		<section id="mi_set_gflag" xreflabel="set_gflag">
 			<title><function moreinfo="none">set_gflag</function></title>
 			<para>
 			Set the value of some flags (specified by bitmask) to 1.
@@ -160,14 +160,14 @@ if(is_gflag("4"))
 			<title><function moreinfo="none">set_gflag</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$ opensipsctl fifo set_gflag 1
-$ opensipsctl fifo set_gflag 0x3
+$ opensips-cli -x mi set_gflag 1
+$ opensips-cli -x mi set_gflag 0x3
 ...
 </programlisting>
 			</example>
 
 		</section>
-		<section>
+		<section id="mi_reset_gflag" xreflabel="reset_gflag">
 			<title><function moreinfo="none">reset_gflag</function></title>
 			<para>
 			Reset the value of some flags to 0.
@@ -181,13 +181,13 @@ $ opensipsctl fifo set_gflag 0x3
 				<function moreinfo="none">reset_gflag</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$ opensipsctl fifo reset_gflag 1
-$ opensipsctl fifo reset_gflag 0x3
+$ opensips-cli -x mi reset_gflag 1
+$ opensips-cli -x mi reset_gflag 0x3
 ...
 </programlisting>
 			</example>
 		</section>
-		<section>
+		<section id="mi_is_gflag" xreflabel="is_gflag">
 			<title><function moreinfo="none">is_gflag</function></title>
 			<para>
 			Returns true if the all the flags from the bitmask are set.
@@ -204,25 +204,25 @@ $ opensipsctl fifo reset_gflag 0x3
 			<title><function moreinfo="none">is_gflag</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$ opensipsctl fifo set_gflag 1024
-$ opensipsctl fifo is_gflag 1024
+$ opensips-cli -x mi set_gflag 1024
+$ opensips-cli -x mi is_gflag 1024
 TRUE
-$ opensipsctl fifo is_gflag 1025
+$ opensips-cli -x mi is_gflag 1025
 TRUE
-$ opensipsctl fifo is_gflag 1023
+$ opensips-cli -x mi is_gflag 1023
 FALSE
-$ opensipsctl fifo set_gflag 0x10
-$ opensipsctl fifo is_gflag 1023
+$ opensips-cli -x mi set_gflag 0x10
+$ opensips-cli -x mi is_gflag 1023
 TRUE
-$ opensipsctl fifo is_gflag 1007
+$ opensips-cli -x mi is_gflag 1007
 FALSE
-$ opensipsctl fifo is_gflag 16
+$ opensips-cli -x mi is_gflag 16
 TRUE
 ...
 </programlisting>
 			</example>
 		</section>
-		<section>
+		<section id="mi_get_gflags" xreflabel="get_gflags">
 			<title><function moreinfo="none">get_gflags</function></title>
 			<para>
 			Return the bitmap with all flags. The function gets no 
@@ -233,7 +233,7 @@ TRUE
 				<function moreinfo="none">get_gflags</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$ opensipsctl fifo get_gflags
+$ opensips-cli -x mi get_gflags
 0x3039
 12345
 ...

@@ -39,6 +39,12 @@
 #include "../../db/db_op.h"
 #include "../../db/db_val.h"
 
+/**
+ * Postgres default timeout
+ */
+#define DEFAULT_POSTGRES_TIMEOUT 5
+extern int pg_timeout;
+
 
 /**
  * Initialize database connection
@@ -108,5 +114,10 @@ int db_postgres_fetch_result(const db_con_t* _h, db_res_t** _r, const int nrows)
  */
 int db_postgres_use_table(db_con_t* _h, const str* _t);
 
+int db_postgres_async_raw_query(db_con_t *_h, const str *_s, void **_priv);
+
+int db_postgres_async_resume(db_con_t *_h, int fd, db_res_t **_r, void *_priv);
+
+int db_postgres_async_free_result(db_con_t *_h, db_res_t *_r, void *_priv);
 
 #endif /* DBASE_H */

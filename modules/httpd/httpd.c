@@ -52,7 +52,9 @@
 /* module functions */
 static int mod_init();
 static int destroy(void);
-static struct mi_root* mi_list_root_path(struct mi_root* cmd, void* param);
+
+static mi_response_t *mi_list_root_path(const mi_params_t *params,
+						struct mi_handler *async_hdl);
 
 int port = 8888;
 str ip = {NULL, 0};
@@ -77,16 +79,18 @@ static param_export_t params[] = {
 };
 
 /** Exported functions */
-static cmd_export_t cmds[]=
-{
-	{"httpd_bind",	(cmd_function)httpd_bind,	1, 0, 0, 0},
-	{NULL, NULL, 0, 0, 0, 0}
+static cmd_export_t cmds[] = {
+	{"httpd_bind",	(cmd_function)httpd_bind, {{0,0,0}}, 0},
+	{0,0,{{0,0,0}},0}
 };
 
 /** MI commands */
 static mi_export_t mi_cmds[] = {
-	{ "httpd_list_root_path", 0, mi_list_root_path, 0,  0,  0},
-	{ NULL, 0, NULL, 0, 0, 0}
+	{ "httpd_list_root_path", 0, 0, 0, {
+		{mi_list_root_path, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
 
 /** Module exports */
@@ -95,6 +99,7 @@ struct module_exports exports = {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,            /* dlopen flags */
+	0,				            /* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	cmds,                       /* exported functions */
 	0,                          /* exported async functions */
@@ -107,7 +112,8 @@ struct module_exports exports = {
 	mod_init,                   /* module initialization function */
 	(response_function) NULL,   /* response handling function */
 	(destroy_function) destroy, /* destroy function */
-	NULL                        /* per-child init function */
+	NULL,                       /* per-child init function */
+	NULL                        /* reload confirm function */
 };
 
 
@@ -130,7 +136,7 @@ static int mod_init(void)
 		return -1;
 	}
 	if (buffer.len == 0)
-		buffer.len = (pkg_mem_size/4)*3;
+		buffer.len = (pkg_mem_size/4);
 	LM_DBG("buf_size=[%d]\n", buffer.len);
 
 	return 0;
@@ -155,6 +161,7 @@ int destroy(void)
 int httpd_register_httpdcb(const char *module, str *http_root,
 			httpd_acces_handler_cb f1,
 			httpd_flush_data_cb f2,
+			enum HTTPD_CONTENT_TYPE type,
 			httpd_init_proc_cb f3)
 {
 	int i;
@@ -193,6 +200,7 @@ int httpd_register_httpdcb(const char *module, str *http_root,
 	}
 
 	cb->module = module;
+	cb->type = type;
 	cb->http_root = http_root;
 	cb->callback = f1;
 	cb->flush_data_callback = f2;
@@ -218,34 +226,39 @@ int httpd_bind(httpd_api_t *api)
 	return 0;
 }
 
-
-static struct mi_root* mi_list_root_path(struct mi_root* cmd, void* param)
+static mi_response_t *mi_list_root_path(const mi_params_t *params,
+						struct mi_handler *async_hdl)
 {
-	struct mi_root *rpl_tree;
-	struct mi_node *node, *rpl;
-	struct mi_attr* attr;
+	mi_response_t *resp;
+	mi_item_t *resp_arr;
+	mi_item_t *root_item;
 	struct httpd_cb *cb = httpd_cb_list;
 
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==NULL) return NULL;
-	rpl = &rpl_tree->node;
-	rpl->flags |= MI_IS_ARRAY;
+	resp = init_mi_result_array(&resp_arr);
+	if (!resp)
+		return 0;
+
 	while(cb) {
-		node = add_mi_node_child(rpl, 0, "http_root", 9,
-				cb->http_root->s, cb->http_root->len);
-		if(node == NULL) goto error;
-		attr = add_mi_attr(node, 0, "module", 6,
-				(char*)cb->module, strlen(cb->module));
-		if(attr == NULL) goto error;
+		root_item = add_mi_object(resp_arr, 0, 0);
+		if (!root_item)
+			goto error;
+
+		if (add_mi_string(root_item, MI_SSTR("http_root"),
+				cb->http_root->s, cb->http_root->len) < 0)
+			goto error;
+
+		if (add_mi_string(root_item, MI_SSTR("module"),
+				(char*)cb->module, strlen(cb->module)) < 0)
+			goto error;
 
 		cb = cb->next;
 	}
 
-	return rpl_tree;
+	return resp;
+
 error:
-	LM_ERR("Unable to create reply\n");
-	free_mi_tree(rpl_tree);
-	return NULL;
+	free_mi_response(resp);
+	return 0;
 }
 
 

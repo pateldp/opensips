@@ -97,17 +97,18 @@ static int ws_conn_init(struct tcp_connection* c);
 static void ws_conn_clean(struct tcp_connection* c);
 static void ws_report(int type, unsigned long long conn_id, int conn_flags,
 		void *extra);
-static struct mi_root* ws_trace_mi(struct mi_root* cmd, void* param );
+static mi_response_t *ws_trace_mi(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+static mi_response_t *ws_trace_mi_1(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 
 
 static int ws_port = WS_DEFAULT_PORT;
 
 
 static cmd_export_t cmds[] = {
-	{"proto_init", (cmd_function)proto_ws_init, 0, 0, 0, 0},
-	{0, 0, 0, 0, 0, 0}
+	{"proto_init", (cmd_function)proto_ws_init, {{0,0,0}},0},
 };
-
 
 static param_export_t params[] = {
 	/* XXX: should we drop the ws prefix? */
@@ -132,10 +133,14 @@ static dep_export_t deps = {
 	},
 };
 
-
 static mi_export_t mi_cmds[] = {
-	{ "ws_trace", 0, ws_trace_mi,   0,  0,  0 },
-	{ 0, 0, 0, 0, 0, 0}
+	{ "ws_trace", 0, 0, 0, {
+		{ws_trace_mi, {0}},
+		{ws_trace_mi_1, {"trace_mode", 0}},
+		{EMPTY_MI_RECIPE}
+		}
+	},
+	{EMPTY_MI_EXPORT}
 };
 
 struct module_exports exports = {
@@ -143,6 +148,7 @@ struct module_exports exports = {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	&deps,            /* OpenSIPS module dependencies */
 	cmds,       /* exported functions */
 	0,          /* exported async functions */
@@ -156,6 +162,7 @@ struct module_exports exports = {
 	0,          /* response function */
 	0,          /* destroy function */
 	0,          /* per-child init function */
+	0           /* reload confirm function */
 };
 
 
@@ -214,7 +221,8 @@ static int mod_init(void)
 	*trace_is_on = trace_is_on_tmp;
 	if ( trace_filter_route ) {
 		trace_filter_route_id =
-			get_script_route_ID_by_name( trace_filter_route, rlist, RT_NO);
+			get_script_route_ID_by_name( trace_filter_route, 
+				sroutes->request, RT_NO);
 	}
 
 	return 0;
@@ -408,9 +416,9 @@ static int proto_ws_send(struct socket_info* send_sock,
 	if (to){
 		su2ip_addr(&ip, to);
 		port=su_getport(to);
-		n = tcp_conn_get(id, &ip, port, PROTO_WS, &c, &fd);
+		n = tcp_conn_get(id, &ip, port, PROTO_WS, NULL, &c, &fd);
 	}else if (id){
-		n = tcp_conn_get(id, 0, 0, PROTO_NONE, &c, &fd);
+		n = tcp_conn_get(id, 0, 0, PROTO_NONE, NULL, &c, &fd);
 	}else{
 		LM_CRIT("prot_tls_send called with null id & to\n");
 		get_time_difference(get,tcpthreshold,tcp_timeout_con_get);
@@ -486,6 +494,8 @@ send_it:
 
 	/* mark the ID of the used connection (tracing purposes) */
 	last_outgoing_tcp_id = c->id;
+	send_sock->last_local_real_port = c->rcv.dst_port;
+	send_sock->last_remote_real_port = c->rcv.src_port;
 
 	tcp_conn_release(c, 0);
 	return n;
@@ -540,45 +550,51 @@ error:
 	return -1;
 }
 
-static struct mi_root* ws_trace_mi(struct mi_root* cmd_tree, void* param )
+static mi_response_t *ws_trace_mi(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_node* node;
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
 
-	struct mi_node *rpl;
-	struct mi_root *rpl_tree ;
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return 0;
 
-	node = cmd_tree->node.kids;
-	if(node == NULL) {
-		/* display status on or off */
-		rpl_tree = init_mi_tree( 200, MI_SSTR(MI_OK));
-		if (rpl_tree == 0)
+	if ( *trace_is_on ) {
+		if (add_mi_string(resp_obj, MI_SSTR("WS tracing"), MI_SSTR("on")) < 0) {
+			free_mi_response(resp);
 			return 0;
-		rpl = &rpl_tree->node;
-
-		if ( *trace_is_on ) {
-			node = add_mi_node_child(rpl,0,MI_SSTR("WS tracing"),MI_SSTR("on"));
-		} else {
-			node = add_mi_node_child(rpl,0,MI_SSTR("WS tracing"),MI_SSTR("off"));
-		}
-
-		return rpl_tree ;
-	} else if ( node && !node->next ) {
-		if ( (node->value.s[0] | 0x20) == 'o' &&
-				(node->value.s[1] | 0x20) == 'n' ) {
-			*trace_is_on = 1;
-			return init_mi_tree( 200, MI_SSTR(MI_OK));
-		} else
-		if ( (node->value.s[0] | 0x20) == 'o' &&
-				(node->value.s[1] | 0x20) == 'f' &&
-				(node->value.s[2] | 0x20) == 'f' ) {
-			*trace_is_on = 0;
-			return init_mi_tree( 200, MI_SSTR(MI_OK));
-		} else {
-			return init_mi_tree( 500, MI_SSTR(MI_INTERNAL_ERR));
 		}
 	} else {
-		return init_mi_tree( 500, MI_SSTR(MI_INTERNAL_ERR));
+		if (add_mi_string(resp_obj, MI_SSTR("WS tracing"), MI_SSTR("off")) < 0) {
+			free_mi_response(resp);
+			return 0;
+		}
 	}
 
-	return NULL;
+	return resp;
+}
+
+static mi_response_t *ws_trace_mi_1(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	str new_mode;
+
+	if (get_mi_string_param(params, "trace_mode", &new_mode.s, &new_mode.len) < 0)
+		return init_mi_param_error();
+
+	if ( (new_mode.s[0] | 0x20) == 'o' &&
+			(new_mode.s[1] | 0x20) == 'n' ) {
+		*trace_is_on = 1;
+		return init_mi_result_ok();
+	} else
+	if ( (new_mode.s[0] | 0x20) == 'o' &&
+			(new_mode.s[1] | 0x20) == 'f' &&
+			(new_mode.s[2] | 0x20) == 'f' ) {
+		*trace_is_on = 0;
+		return init_mi_result_ok();
+	} else {
+		return init_mi_error_extra(500, MI_SSTR("Bad parameter value"),
+			MI_SSTR("trace_mode should be 'on' or 'off'"));
+	}
 }

@@ -98,6 +98,7 @@ struct module_exports exports = {
 	MOD_TYPE_CACHEDB,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,            /* dlopen flags */
+	0,				            /* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	0,                          /* exported functions */
 	0,                          /* exported async functions */
@@ -110,7 +111,8 @@ struct module_exports exports = {
 	mod_init,                   /* module initialization function */
 	(response_function) 0,      /* response handling function */
 	(destroy_function) destroy, /* destroy function */
-	child_init                  /* per-child init function */
+	child_init,                 /* per-child init function */
+	0                           /* reload confirm function */
 };
 
 #define CACHEDBSQL_DB_DELIMITER '-'
@@ -399,7 +401,7 @@ static int dbcache_add(cachedb_con *con, str *attr, int val, int expires, int *n
 	if(new_val) {
 		str val;
 		if (dbcache_get(con, attr, &val) < 0) {
-			LM_ERR("could not get the new value");
+			LM_ERR("could not get the new value\n");
 			return -1;
 		}
 		*new_val = atoi(val.s);
@@ -515,6 +517,7 @@ static int mod_init(void)
 	cachedb_engine cde;
 
 	LM_INFO("initializing module cachedb_sql...\n");
+	memset(&cde, 0, sizeof cde);
 
 	db_table.len = strlen(db_table.s);
 	key_column.len = strlen(key_column.s);

@@ -80,6 +80,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,			/* dlopen flags */
+	0,							/* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	0,							/* exported functions */
 	0,							/* exported async functions */
@@ -92,7 +93,8 @@ struct module_exports exports= {
 	mod_init,					/* module initialization function */
 	0,							/* response handling function */
 	destroy,					/* destroy function */
-	child_init					/* per-child init function */
+	child_init,					/* per-child init function */
+	0							/* reload confirm function */
 };
 
 
@@ -421,7 +423,7 @@ static str rmq_print(evi_reply_sock *sock)
 	rmq_print_s.len = 0;
 
 	if (!sock) {
-		LM_DBG("Nothing to print");
+		LM_DBG("Nothing to print\n");
 		goto end;
 	}
 

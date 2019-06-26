@@ -33,16 +33,19 @@
 #include "../../bin_interface.h"
 #include "../../timer.h"
 #include "../../forward.h"
-#include "../../mi/tree.h"
 
 #include "api.h"
 #include "node_info.h"
 #include "clusterer.h"
+#include "sync.h"
+#include "sharing_tags.h"
 
 struct clusterer_binds clusterer_api;
 
-struct mod_registration *clusterer_reg_modules;
 enum sip_protos clusterer_proto = PROTO_BIN;
+
+str cl_internal_cap = str_init("clusterer-internal");
+str cl_extra_cap = str_init("clusterer-extra");
 
 extern int ping_interval;
 extern int node_timeout;
@@ -50,8 +53,10 @@ extern int ping_timeout;
 
 static event_id_t ei_req_rcv_id = EVI_ERROR;
 static event_id_t ei_rpl_rcv_id = EVI_ERROR;
+static event_id_t ei_node_state_id = EVI_ERROR;
 static str ei_req_rcv_name = str_init("E_CLUSTERER_REQ_RECEIVED");
 static str ei_rpl_rcv_name = str_init("E_CLUSTERER_RPL_RECEIVED");
+static str ei_node_state_name = str_init("E_CLUSTERER_NODE_STATE_CHANGED");
 
 static evi_params_p ei_event_params;
 static evi_param_p ei_clid_p, ei_srcid_p, ei_msg_p, ei_tag_p;
@@ -60,39 +65,77 @@ static str ei_srcid_pname = str_init("src_id");
 static str ei_msg_pname = str_init("msg");
 static str ei_tag_pname = str_init("tag");
 
+static evi_params_p ei_node_event_params;
+static evi_param_p ei_clusterid_p, ei_nodeid_p, ei_newstate_p;
+static str ei_clusterid_pname = str_init("cluster_id");
+static str ei_nodeid_pname = str_init("node_id");
+static str ei_newstate_pname = str_init("new_state");
+
+
 static int set_link(clusterer_link_state new_ls, node_info_t *node_a,
 						node_info_t *node_b);
 static int set_link_w_neigh(clusterer_link_state new_ls, node_info_t *neigh);
-static int set_link_w_neigh_adv(clusterer_link_state new_ls, node_info_t *neigh);
+static int set_link_w_neigh_adv(int prev_ls, clusterer_link_state new_ls,
+							node_info_t *neigh);
 static int set_link_w_neigh_up(node_info_t *neigh, int nr_nodes, int *node_list);
-static void call_cbs_event(bin_packet_t *,cluster_info_t *clusters,
-							int *clusters_to_call, int no_clusters);
+static void do_actions_node_ev(cluster_info_t *clusters, int *select_cluster,
+								int no_clusters);
+static int send_cap_update(node_info_t *dest_node, int require_reply);
 
-/* actions to be done for the transitions of the simple 'state machine' used for
+#define PING_REPLY_INTERVAL(_node) \
+	((_node)->last_pong.tv_sec*1000000 + (_node)->last_pong.tv_usec \
+	- (_node)->last_ping.tv_sec*1000000 - (_node)->last_ping.tv_usec)
+
+#define LAST_PING_INTERVAL(_node, _now) \
+	((_now).tv_sec*1000000 + (_now).tv_usec \
+	- (_node)->last_ping.tv_sec*1000000 - (_node)->last_ping.tv_usec)
+
+static int send_ping(node_info_t *node, int req_node_list)
+{
+	struct timeval now;
+	str send_buffer;
+	bin_packet_t packet;
+	int rc;
+
+	gettimeofday(&now, NULL);
+
+	if (bin_init(&packet, &cl_internal_cap, CLUSTERER_PING, BIN_VERSION,
+		SMALL_MSG) < 0) {
+		LM_ERR("Failed to init bin send buffer\n");
+		return -1;
+	}
+	bin_push_int(&packet, node->cluster->cluster_id);
+	bin_push_int(&packet, current_id);
+	bin_push_int(&packet, req_node_list);	/* request list of known nodes ? */
+	bin_get_buffer(&packet, &send_buffer);
+
+	#ifndef CLUSTERER_EXTRA_BIN_DBG
+	set_proc_log_level(L_INFO);
+	#endif
+
+	rc = msg_send(NULL, clusterer_proto, &node->addr, 0, send_buffer.s,
+		send_buffer.len, 0);
+
+	#ifndef CLUSTERER_EXTRA_BIN_DBG
+	reset_proc_log_level();
+	#endif
+
+	lock_get(node->lock);
+	node->last_ping_state = rc;
+	node->last_ping = now;
+	lock_release(node->lock);
+
+	bin_free_packet(&packet);
+
+	return rc;
+}
+
+/* actions to be done for the transitions of the simple state machine' used for
  * establishing the link states with the other nodes */
 
 static void do_action_trans_0(node_info_t *node, int *link_state_to_set)
 {
-	struct timeval now;
-	static str module_name = str_init("clusterer");
-	str send_buffer;
-	bin_packet_t packet;
-
-	gettimeofday(&now, NULL);
-
-	node->last_ping = now;
-
-	if (bin_init(&packet, &module_name, CLUSTERER_PING, BIN_VERSION, SMALL_MSG) < 0) {
-		LM_ERR("Failed to init bin send buffer\n");
-		return;
-	}
-	bin_push_int(&packet, node->cluster->cluster_id);
-	bin_push_int(&packet, current_id);
-	bin_push_int(&packet, 1);	/* request list of known nodes */
-	bin_get_buffer(&packet, &send_buffer);
-
-	if (msg_send(NULL, clusterer_proto, &node->addr, 0, send_buffer.s,
-		send_buffer.len, 0) < 0) {
+	if (send_ping(node, 1) < 0) {
 		LM_ERR("Failed to send ping to node [%d]\n", node->node_id);
 		if (node->no_ping_retries == 0)
 			*link_state_to_set = LS_DOWN;
@@ -104,33 +147,13 @@ static void do_action_trans_0(node_info_t *node, int *link_state_to_set)
 		*link_state_to_set = LS_RESTARTED;
 		LM_DBG("Sent ping to node [%d]\n", node->node_id);
 	}
-
-	bin_free_packet(&packet);
 }
 
 static void do_action_trans_1(node_info_t *node, int *link_state_to_set)
 {
-	struct timeval now;
-	static str module_name = str_init("clusterer");
-	str send_buffer;
-	bin_packet_t packet;
-
-	gettimeofday(&now, NULL);
-
-	node->last_ping = now;
 	node->curr_no_retries--;
 
-	if (bin_init(&packet, &module_name, CLUSTERER_PING, BIN_VERSION, SMALL_MSG) < 0) {
-		LM_ERR("Failed to init bin send buffer\n");
-		return;
-	}
-	bin_push_int(&packet, node->cluster->cluster_id);
-	bin_push_int(&packet, current_id);
-	bin_push_int(&packet, 1);	/* request list of known nodes */
-	bin_get_buffer(&packet, &send_buffer);
-
-	if (msg_send(NULL, clusterer_proto, &node->addr, 0, send_buffer.s,
-		send_buffer.len, 0) < 0) {
+	if (send_ping(node, 1) < 0) {
 		LM_ERR("Failed to send ping retry to node [%d]\n", node->node_id);
 		if (node->curr_no_retries == 0) {
 			*link_state_to_set = LS_DOWN;
@@ -141,38 +164,18 @@ static void do_action_trans_1(node_info_t *node, int *link_state_to_set)
 		LM_DBG("Sent ping to node [%d]\n", node->node_id);
 		*link_state_to_set = LS_RETRYING;
 	}
-
-	bin_free_packet(&packet);
 }
 
 static void do_action_trans_2(node_info_t *node, int *link_state_to_set)
 {
-	struct timeval now;
-	static str module_name = str_init("clusterer");
-	str send_buffer;
-	bin_packet_t packet;
-
-	gettimeofday(&now, NULL);
-
 	if (node->no_ping_retries == 0) {
 		*link_state_to_set = LS_DOWN;
-		LM_INFO("Pong not received, node [%d] is down\n", node->node_id);
+		LM_INFO("Ping reply not received, node [%d] is down\n", node->node_id);
 	} else {
-		LM_INFO("Pong not received, node [%d] is possibly down, retrying\n",
+		LM_INFO("Ping reply not received, node [%d] is possibly down, retrying\n",
 			node->node_id);
-		node->last_ping = now;
 
-		if (bin_init(&packet, &module_name, CLUSTERER_PING, BIN_VERSION, SMALL_MSG) < 0) {
-			LM_ERR("Failed to init bin send buffer\n");
-			return;
-		}
-		bin_push_int(&packet, node->cluster->cluster_id);
-		bin_push_int(&packet, current_id);
-		bin_push_int(&packet, 1);	/* request list of known nodes */
-		bin_get_buffer(&packet, &send_buffer);
-
-		if (msg_send(NULL, clusterer_proto, &node->addr, 0, send_buffer.s,
-			send_buffer.len, 0) < 0) {
+		if (send_ping(node, 1) < 0) {
 			LM_ERR("Failed to send ping to node [%d]\n", node->node_id);
 			node->curr_no_retries = node->no_ping_retries;
 			*link_state_to_set = LS_RETRY_SEND_FAIL;
@@ -181,34 +184,13 @@ static void do_action_trans_2(node_info_t *node, int *link_state_to_set)
 			*link_state_to_set = LS_RETRYING;
 			node->curr_no_retries = --node->no_ping_retries;
 		}
-
-		bin_free_packet(&packet);
 	}
 }
 
 static void do_action_trans_3(node_info_t *node, int *link_state_to_set)
 {
-	struct timeval now;
-	static str module_name = str_init("clusterer");
-	str send_buffer;
-	bin_packet_t packet;
-
-	gettimeofday(&now, NULL);
-
 	if (node->curr_no_retries > 0) {
-		node->last_ping = now;
-
-		if (bin_init(&packet, &module_name, CLUSTERER_PING, BIN_VERSION, SMALL_MSG) < 0) {
-			LM_ERR("Failed to init bin send buffer\n");
-			return;
-		}
-		bin_push_int(&packet, node->cluster->cluster_id);
-		bin_push_int(&packet, current_id);
-		bin_push_int(&packet, 1);	/* request list of known nodes */
-		bin_get_buffer(&packet, &send_buffer);
-
-		if (msg_send(NULL, clusterer_proto, &node->addr, 0, send_buffer.s,
-			send_buffer.len, 0) < 0) {
+		if (send_ping(node, 1) < 0) {
 			LM_ERR("Failed to send ping retry to node [%d]\n",
 				node->node_id);
 			*link_state_to_set = LS_RETRY_SEND_FAIL;
@@ -216,39 +198,18 @@ static void do_action_trans_3(node_info_t *node, int *link_state_to_set)
 			LM_DBG("Sent ping retry to node [%d]\n", node->node_id);
 			node->curr_no_retries--;
 		}
-
-		bin_free_packet(&packet);
 	} else {
 		*link_state_to_set = LS_DOWN;
-		LM_INFO("Pong not received, node [%d] is down\n", node->node_id);
+		LM_INFO("Ping reply not received, node [%d] is down\n", node->node_id);
 	}
 }
 
 static void do_action_trans_4(node_info_t *node, int *link_state_to_set)
 {
-	struct timeval now;
-	static str module_name = str_init("clusterer");
-	str send_buffer;
-	bin_packet_t packet;
-
-	gettimeofday(&now, NULL);
-
 	LM_INFO("Node timeout passed, restart pinging node [%d]\n",
 		node->node_id);
 
-	node->last_ping = now;
-
-	if (bin_init(&packet, &module_name, CLUSTERER_PING, BIN_VERSION, SMALL_MSG) < 0) {
-		LM_ERR("Failed to init bin send buffer\n");
-		return;
-	}
-	bin_push_int(&packet, node->cluster->cluster_id);
-	bin_push_int(&packet, current_id);
-	bin_push_int(&packet, 1);	/* request list of known nodes */
-	bin_get_buffer(&packet, &send_buffer);
-
-	if (msg_send(NULL, clusterer_proto, &node->addr, 0, send_buffer.s,
-		send_buffer.len, 0) < 0) {
+	if (send_ping(node, 1) < 0) {
 		LM_ERR("Failed to send ping to node [%d]\n", node->node_id);
 		if (node->no_ping_retries != 0) {
 			node->curr_no_retries = node->no_ping_retries;
@@ -258,33 +219,12 @@ static void do_action_trans_4(node_info_t *node, int *link_state_to_set)
 		*link_state_to_set = LS_RESTARTED;
 		LM_DBG("Sent ping to node [%d]\n", node->node_id);
 	}
-
-	bin_free_packet(&packet);
 }
 
 static void do_action_trans_5(node_info_t *node, int *link_state_to_set,
-								int *check_call_cbs_event, int no_clusters)
+								int *ev_actions_required, int no_clusters)
 {
-	struct timeval now;
-	static str module_name = str_init("clusterer");
-	str send_buffer;
-	bin_packet_t packet;
-
-	gettimeofday(&now, NULL);
-
-	node->last_ping = now;
-
-	if (bin_init(&packet, &module_name, CLUSTERER_PING, BIN_VERSION, SMALL_MSG) < 0) {
-		LM_ERR("Failed to init bin send buffer\n");
-		return;
-	}
-	bin_push_int(&packet, node->cluster->cluster_id);
-	bin_push_int(&packet, current_id);
-	bin_push_int(&packet, 0);	/* don't request list of known nodes */
-	bin_get_buffer(&packet, &send_buffer);
-
-	if (msg_send(NULL, clusterer_proto, &node->addr, 0, send_buffer.s,
-		send_buffer.len, 0) < 0) {
+	if (send_ping(node, 0) < 0) {
 		LM_ERR("Failed to send ping to node [%d]\n", node->node_id);
 		if (node->no_ping_retries == 0)
 			*link_state_to_set = LS_DOWN;
@@ -292,11 +232,9 @@ static void do_action_trans_5(node_info_t *node, int *link_state_to_set,
 			node->curr_no_retries = node->no_ping_retries;
 			*link_state_to_set = LS_RETRY_SEND_FAIL;
 		}
-		check_call_cbs_event[no_clusters] = 1;
+		ev_actions_required[no_clusters] = 1;
 	} else
 		LM_DBG("Sent ping to node [%d]\n", node->node_id);
-
-	bin_free_packet(&packet);
 }
 
 void heartbeats_timer(void)
@@ -305,10 +243,9 @@ void heartbeats_timer(void)
 	utime_t last_ping_int, ping_reply_int;
 	cluster_info_t *clusters_it;
 	node_info_t *node;
-	int check_call_cbs_event[MAX_NO_CLUSTERS] = {0};
+	int ev_actions_required[MAX_NO_CLUSTERS] = {0};
 	int no_clusters = 0;
-	int action_trans;
-	int link_state_to_set;
+	int prev_ls, new_ls;
 
 	lock_start_read(cl_list_lock);
 
@@ -324,118 +261,67 @@ void heartbeats_timer(void)
 			lock_get(node->lock);
 
 			gettimeofday(&now, NULL);
-			ping_reply_int = node->last_pong.tv_sec*1000000 + node->last_pong.tv_usec
-							- node->last_ping.tv_sec*1000000 - node->last_ping.tv_usec;
-			last_ping_int = now.tv_sec*1000000 + now.tv_usec
-							- node->last_ping.tv_sec*1000000 - node->last_ping.tv_usec;
+			ping_reply_int = PING_REPLY_INTERVAL(node);
+			last_ping_int = LAST_PING_INTERVAL(node, now);
 
-			action_trans = -1;
+			prev_ls = -1;
+			new_ls = -1;
 
-			if (node->link_state == LS_RESTART_PINGING)
+			if (node->link_state == LS_RESTART_PINGING) {
+				prev_ls = node->link_state;
+				lock_release(node->lock);
+
 				/* restart pinging sequence */
-				action_trans = 0;
-			else if (node->link_state == LS_RETRY_SEND_FAIL &&
-				last_ping_int >= (utime_t)ping_timeout*1000)
+				do_action_trans_0(node, &new_ls);
+			} else if (node->link_state == LS_RETRY_SEND_FAIL &&
+				last_ping_int >= (utime_t)ping_timeout*1000) {
+				prev_ls = node->link_state;
+				lock_release(node->lock);
+
 				/* failed to send previous ping, retry */
-				action_trans = 1;
-			else if ((node->link_state == LS_UP || node->link_state == LS_RESTARTED) &&
+				do_action_trans_1(node, &new_ls);
+			} else if ((node->link_state == LS_UP || node->link_state == LS_RESTARTED) &&
 				(ping_reply_int >= (utime_t)ping_timeout*1000 || ping_reply_int <= 0) &&
-				last_ping_int >= (utime_t)ping_timeout*1000)
+				last_ping_int >= (utime_t)ping_timeout*1000) {
+				prev_ls = -2;
+				lock_release(node->lock);
+
 				/* send first ping retry */
-				action_trans = 2;
-			else if (node->link_state == LS_RETRYING &&
+				do_action_trans_2(node, &new_ls);
+				ev_actions_required[no_clusters] = 1;
+			} else if (node->link_state == LS_RETRYING &&
 				(ping_reply_int >= (utime_t)ping_timeout*1000 || ping_reply_int <= 0) &&
-				last_ping_int >= (utime_t)ping_timeout*1000)
+				last_ping_int >= (utime_t)ping_timeout*1000) {
+				prev_ls = node->link_state;
+				lock_release(node->lock);
+
 				/* previous ping retry not replied, continue to retry */
-				action_trans = 3;
-			else if (node->link_state == LS_DOWN &&
-				last_ping_int >= (utime_t)node_timeout*1000000)
+				do_action_trans_3(node, &new_ls);
+			} else if (node->link_state == LS_DOWN &&
+				last_ping_int >= (utime_t)node_timeout*1000000) {
+				prev_ls = node->link_state;
+				lock_release(node->lock);
+
 				/* ping a failed node after node_timeout since last ping */
-				action_trans = 4;
-			else if (node->link_state == LS_UP &&
-				last_ping_int >= (utime_t)ping_interval*1000000)
+				do_action_trans_4(node, &new_ls);
+			} else if (node->link_state == LS_UP &&
+				last_ping_int >= (utime_t)ping_interval*1000000) {
+				prev_ls = node->link_state;
+				lock_release(node->lock);
+
 				/* send regular ping */
-				action_trans = 5;
+				do_action_trans_5(node, &new_ls, ev_actions_required, no_clusters);
+			} else
+				lock_release(node->lock);
 
-			lock_release(node->lock);
-
-			link_state_to_set = -1;
-
-			switch (action_trans) {
-				case 0:
-					do_action_trans_0(node, &link_state_to_set);
-
-					lock_get(node->lock);
-					if (node->link_state != LS_RESTART_PINGING) {
-						lock_release(node->lock);
-						continue;
-					}
-					lock_release(node->lock);
-					break;
-				case 1:
-					do_action_trans_1(node, &link_state_to_set);
-
-					lock_get(node->lock);
-					if (node->link_state != LS_RETRY_SEND_FAIL) {
-						lock_release(node->lock);
-						continue;
-					}
-					lock_release(node->lock);
-					break;
-				case 2:
-					do_action_trans_2(node, &link_state_to_set);
-					check_call_cbs_event[no_clusters] = 1;
-
-					lock_get(node->lock);
-					if (node->link_state != LS_UP && node->link_state != LS_RESTARTED) {
-						lock_release(node->lock);
-						continue;
-					}
-					lock_release(node->lock);
-					break;
-				case 3:
-					do_action_trans_3(node, &link_state_to_set);
-
-					lock_get(node->lock);
-					if (node->link_state != LS_RETRYING) {
-						lock_release(node->lock);
-						continue;
-					}
-					lock_release(node->lock);
-					break;
-				case 4:
-					do_action_trans_4(node, &link_state_to_set);
-
-					lock_get(node->lock);
-					if (node->link_state != LS_DOWN) {
-						lock_release(node->lock);
-						continue;
-					}
-					lock_release(node->lock);
-					break;
-				case 5:
-					do_action_trans_5(node, &link_state_to_set, check_call_cbs_event,
-						no_clusters);
-
-					lock_get(node->lock);
-					if (node->link_state != LS_UP) {
-						lock_release(node->lock);
-						continue;
-					}
-					lock_release(node->lock);
-					break;
-				default:
-					continue;
-			}
-
-			if (link_state_to_set >= 0)
-				set_link_w_neigh_adv(link_state_to_set, node);
+			if (new_ls >= 0)
+				set_link_w_neigh_adv(prev_ls, new_ls, node);
 		}
 
 		no_clusters++;
 	}
 
-	call_cbs_event(NULL, *cluster_list, check_call_cbs_event, no_clusters);
+	do_actions_node_ev(*cluster_list, ev_actions_required, no_clusters);
 
 	lock_stop_read(cl_list_lock);
 }
@@ -444,7 +330,7 @@ int cl_set_state(int cluster_id, enum cl_node_state state)
 {
 	cluster_info_t *cluster = NULL;
 	node_info_t *node;
-	int check_call_cbs_event = 1;
+	int ev_actions_required = 1;
 	int new_link_states = 0;
 
 	lock_start_read(cl_list_lock);
@@ -474,7 +360,7 @@ int cl_set_state(int cluster_id, enum cl_node_state state)
 		for (node = cluster->node_list; node; node = node->next)
 			set_link_w_neigh(LS_DOWN, node);
 
-		call_cbs_event(NULL, cluster, &check_call_cbs_event, 1);
+		do_actions_node_ev(cluster, &ev_actions_required, 1);
 	} else if (new_link_states == LS_RESTART_PINGING) {
 		for (node = cluster->node_list; node; node = node->next)
 			set_link_w_neigh(LS_RESTART_PINGING, node);
@@ -482,7 +368,7 @@ int cl_set_state(int cluster_id, enum cl_node_state state)
 
 	lock_stop_read(cl_list_lock);
 
-	LM_INFO("Set state: %s for current node in cluster: %d\n",
+	LM_INFO("Set state: %s for local node in cluster: %d\n",
 			state ? "enabled" : "disabled", cluster_id);
 
 	if (db_mode && update_db_state(state) < 0)
@@ -641,7 +527,7 @@ int get_next_hop(node_info_t *dest)
  * -2 : dest down or probing
  */
 static int msg_send_retry(bin_packet_t *packet, node_info_t *dest, int change_dest,
-							int *check_call_cbs_event)
+							int *ev_actions_required)
 {
 	int retr_send = 0;
 	node_info_t *chosen_dest = dest;
@@ -679,9 +565,9 @@ static int msg_send_retry(bin_packet_t *packet, node_info_t *dest, int change_de
 			retr_send = 1;
 
 			/* this node was supposed to be up, retry pinging */
-			set_link_w_neigh_adv(LS_RESTART_PINGING, chosen_dest);
+			set_link_w_neigh_adv(-1, LS_RESTART_PINGING, chosen_dest);
 
-			*check_call_cbs_event = 1;
+			*ev_actions_required = 1;
 		} else {
 			LM_DBG("sent bin packet to node [%d]\n", chosen_dest->node_id);
 			retr_send = 0;
@@ -692,12 +578,12 @@ static int msg_send_retry(bin_packet_t *packet, node_info_t *dest, int change_de
 }
 
 enum clusterer_send_ret clusterer_send_msg(bin_packet_t *packet,
-											int cluster_id, int dst_id)
+											int cluster_id, int dst_node_id)
 {
 	node_info_t *node;
 	int rc;
 	cluster_info_t *cl;
-	int check_call_cbs_event = 0;
+	int ev_actions_required = 0;
 
 	if (!cl_list_lock) {
 		LM_ERR("cluster shutdown - cannot send new messages!\n");
@@ -720,19 +606,19 @@ enum clusterer_send_ret clusterer_send_msg(bin_packet_t *packet,
 	}
 	lock_release(cl->current_node->lock);
 
-	node = get_node_by_id(cl, dst_id);
+	node = get_node_by_id(cl, dst_node_id);
 	if (!node) {
-		LM_ERR("Node id [%d] not found in cluster\n", dst_id);
+		LM_ERR("Node id [%d] not found in cluster\n", dst_node_id);
 		lock_stop_read(cl_list_lock);
 		return CLUSTERER_SEND_ERR;
 	}
 
-	rc = msg_send_retry(packet, node, 0, &check_call_cbs_event);
+	rc = msg_send_retry(packet, node, 0, &ev_actions_required);
 
 	bin_remove_int_buffer_end(packet, 3);
 
-	if (check_call_cbs_event)
-		call_cbs_event(packet ,cl, &check_call_cbs_event, 1);
+	if (ev_actions_required)
+		do_actions_node_ev(cl, &ev_actions_required, 1);
 
 	lock_stop_read(cl_list_lock);
 
@@ -748,12 +634,14 @@ enum clusterer_send_ret clusterer_send_msg(bin_packet_t *packet,
 	return CLUSTERER_SEND_ERR;
 }
 
-enum clusterer_send_ret clusterer_bcast_msg(bin_packet_t *packet, int cluster_id)
+static enum clusterer_send_ret
+clusterer_bcast_msg(bin_packet_t *packet, int dst_cid,
+                    enum cl_node_match_op match_op)
 {
 	node_info_t *node;
-	int rc, sent = 0, down = 1;
-	cluster_info_t *cl;
-	int check_call_cbs_event = 0;
+	int rc, sent = 0, down = 1, matched_once = 0;
+	cluster_info_t *dst_cl;
+	int ev_actions_required = 0;
 
 	if (!cl_list_lock) {
 		LM_ERR("cluster shutdown - cannot send new messages!\n");
@@ -761,23 +649,28 @@ enum clusterer_send_ret clusterer_bcast_msg(bin_packet_t *packet, int cluster_id
 	}
 	lock_start_read(cl_list_lock);
 
-	cl = get_cluster_by_id(cluster_id);
-	if (!cl) {
-		LM_ERR("Unknown cluster, id [%d]\n", cluster_id);
+	dst_cl = get_cluster_by_id(dst_cid);
+	if (!dst_cl) {
+		LM_ERR("Unknown cluster, id [%d]\n", dst_cid);
 		lock_stop_read(cl_list_lock);
 		return CLUSTERER_SEND_ERR;
 	}
 
-	lock_get(cl->current_node->lock);
-	if (!(cl->current_node->flags & NODE_STATE_ENABLED)) {
-		lock_release(cl->current_node->lock);
+	lock_get(dst_cl->current_node->lock);
+	if (!(dst_cl->current_node->flags & NODE_STATE_ENABLED)) {
+		lock_release(dst_cl->current_node->lock);
 		lock_stop_read(cl_list_lock);
 		return CLUSTERER_CURR_DISABLED;
 	}
-	lock_release(cl->current_node->lock);
+	lock_release(dst_cl->current_node->lock);
 
-	for (node = cl->node_list; node; node = node->next) {
-		rc = msg_send_retry(packet, node, 1, &check_call_cbs_event);
+	for (node = dst_cl->node_list; node; node = node->next) {
+		if (!match_node(dst_cl->current_node, node, match_op))
+			continue;
+
+		matched_once = 1;
+
+		rc = msg_send_retry(packet, node, 1, &ev_actions_required);
 		if (rc != -2)	/* at least one node is up */
 			down = 0;
 		if (rc == 0)	/* at least one message is sent successfuly*/
@@ -786,10 +679,13 @@ enum clusterer_send_ret clusterer_bcast_msg(bin_packet_t *packet, int cluster_id
 
 	bin_remove_int_buffer_end(packet, 3);
 
-	if (check_call_cbs_event)
-		call_cbs_event(packet, cl, &check_call_cbs_event, 1);
+	if (ev_actions_required)
+		do_actions_node_ev(dst_cl, &ev_actions_required, 1);
 
 	lock_stop_read(cl_list_lock);
+
+	if (!matched_once)
+		return CLUSTERER_SEND_SUCCES;
 
 	if (down)
 		return CLUSTERER_DEST_DOWN;
@@ -799,7 +695,7 @@ enum clusterer_send_ret clusterer_bcast_msg(bin_packet_t *packet, int cluster_id
 		return CLUSTERER_SEND_ERR;
 }
 
-static inline int msg_add_trailer(bin_packet_t *packet, int cluster_id, int dst_id)
+int msg_add_trailer(bin_packet_t *packet, int cluster_id, int dst_id)
 {
 	if (bin_push_int(packet, cluster_id) < 0)
 		return -1;
@@ -814,10 +710,8 @@ static inline int msg_add_trailer(bin_packet_t *packet, int cluster_id, int dst_
 static int prep_gen_msg(bin_packet_t *packet, int cluster_id, int dst_id,
 							str *gen_msg, str *exchg_tag, int req_like)
 {
-	static str module_name = str_init("clusterer");
-
 	/* build packet */
-	if (bin_init(packet, &module_name, CLUSTERER_GENERIC_MSG, BIN_VERSION, 0) < 0) {
+	if (bin_init(packet, &cl_extra_cap, CLUSTERER_GENERIC_MSG, BIN_VERSION, 0) < 0) {
 		LM_ERR("Failed to init bin send buffer\n");
 		return -1;
 	}
@@ -855,25 +749,43 @@ enum clusterer_send_ret cl_send_all(bin_packet_t *packet, int cluster_id)
 		return CLUSTERER_SEND_ERR;
 	}
 
-	return clusterer_bcast_msg(packet, cluster_id);
+	return clusterer_bcast_msg(packet, cluster_id, NODE_CMP_ANY);
+}
+
+enum clusterer_send_ret
+cl_send_all_having(bin_packet_t *packet, int dst_cluster_id,
+                   enum cl_node_match_op match_op)
+{
+	if (msg_add_trailer(packet, dst_cluster_id, -1 /* dummy value */) < 0) {
+		LM_ERR("Failed to add trailer to module's message\n");
+		return CLUSTERER_SEND_ERR;
+	}
+
+	return clusterer_bcast_msg(packet, dst_cluster_id, match_op);
 }
 
 enum clusterer_send_ret send_gen_msg(int cluster_id, int dst_id, str *gen_msg,
 										str *exchg_tag, int req_like)
 {
 	bin_packet_t packet;
+	int rc;
 
 	if (prep_gen_msg(&packet, cluster_id, dst_id, gen_msg, exchg_tag, req_like) < 0) {
 		LM_ERR("Failed to build generic clusterer message\n");
 		return CLUSTERER_SEND_ERR;
 	}
 
-	return clusterer_send_msg(&packet, cluster_id, dst_id);
+	rc = clusterer_send_msg(&packet, cluster_id, dst_id);
+
+	bin_free_packet(&packet);
+
+	return rc;
 }
 
 enum clusterer_send_ret bcast_gen_msg(int cluster_id, str *gen_msg, str *exchg_tag)
 {
 	bin_packet_t packet;
+	int rc;
 
 	if (prep_gen_msg(&packet, cluster_id, -1 /* dummy value */, gen_msg,
 			exchg_tag, 1) < 0) {
@@ -881,17 +793,21 @@ enum clusterer_send_ret bcast_gen_msg(int cluster_id, str *gen_msg, str *exchg_t
 		return CLUSTERER_SEND_ERR;
 	}
 
-	return clusterer_bcast_msg(&packet, cluster_id);
+	rc = clusterer_bcast_msg(&packet, cluster_id, NODE_CMP_ANY);
+
+	bin_free_packet(&packet);
+
+	return rc;
 }
 
 enum clusterer_send_ret send_mi_cmd(int cluster_id, int dst_id, str cmd_name,
-										str *cmd_params, int no_params)
+								mi_item_t *cmd_params_arr, int no_params)
 {
-	static str module_name = str_init("clusterer");
 	bin_packet_t packet;
-	int i;
+	int i, rc;
+	str val;
 
-	if (bin_init(&packet, &module_name, CLUSTERER_MI_CMD, BIN_VERSION, 0) < 0) {
+	if (bin_init(&packet, &cl_extra_cap, CLUSTERER_MI_CMD, BIN_VERSION, 0) < 0) {
 		LM_ERR("Failed to init bin send buffer\n");
 		return CLUSTERER_SEND_ERR;
 	}
@@ -900,9 +816,13 @@ enum clusterer_send_ret send_mi_cmd(int cluster_id, int dst_id, str cmd_name,
 		return CLUSTERER_SEND_ERR;
 	if (bin_push_int(&packet, no_params) < 0)
 		return CLUSTERER_SEND_ERR;
-	for (i = 0; i < no_params; i++)
-		if (bin_push_str(&packet, &cmd_params[i]) < 0)
+	for (i = 0; i < no_params; i++) {
+		if (get_mi_arr_param_string(cmd_params_arr, i, &val.s, &val.len) < 0)
 			return CLUSTERER_SEND_ERR;
+
+		if (bin_push_str(&packet, &val) < 0)
+			return CLUSTERER_SEND_ERR;
+	}
 
 	if (msg_add_trailer(&packet, cluster_id, dst_id ? dst_id : -1) < 0) {
 		LM_ERR("Failed to add trailer to module's message\n");
@@ -910,9 +830,13 @@ enum clusterer_send_ret send_mi_cmd(int cluster_id, int dst_id, str cmd_name,
 	}
 
 	if (dst_id)
-		return clusterer_send_msg(&packet, cluster_id, dst_id);
+		rc = clusterer_send_msg(&packet, cluster_id, dst_id);
 	else
-		return clusterer_bcast_msg(&packet, cluster_id);
+		rc = clusterer_bcast_msg(&packet, cluster_id, NODE_CMP_ANY);
+
+	bin_free_packet(&packet);
+
+	return rc;
 }
 
 static inline int su_ip_cmp(union sockaddr_union* s1, union sockaddr_union* s2)
@@ -931,20 +855,40 @@ static inline int su_ip_cmp(union sockaddr_union* s1, union sockaddr_union* s2)
 	}
 }
 
-static int ip_check(cluster_info_t *cluster, union sockaddr_union *su)
+static int ip_check(cluster_info_t *cluster, union sockaddr_union *su, str *ip_str)
 {
 	node_info_t *node;
+	str sip_addr;
+	char *p;
 
 	for (node = cluster->node_list; node; node = node->next)
-		if (su_ip_cmp(su, &node->addr))
-			return 1;
+		if (su) {
+			if (su_ip_cmp(su, &node->addr))
+				return 1;
+		} else if (ip_str && ip_str->s) {
+			if ((p = q_memchr(node->sip_addr.s, ':', node->sip_addr.len))) {
+				sip_addr.s = node->sip_addr.s;
+				sip_addr.len = p - node->sip_addr.s;
+			} else
+				sip_addr = node->sip_addr;
+
+			if (!str_strcmp(ip_str, &sip_addr))
+				return 1;
+		} else {
+			LM_ERR("No address to check\n");
+			return 0;
+		}
+
 	return 0;
 }
 
-int clusterer_check_addr(int cluster_id, union sockaddr_union *su)
+int clusterer_check_addr(int cluster_id, str *ip_str,
+							enum node_addr_type check_type)
 {
 	cluster_info_t *cluster;
 	int rc;
+	struct ip_addr ip;
+	union sockaddr_union su;
 
 	lock_start_read(cl_list_lock);
 	cluster = get_cluster_by_id(cluster_id);
@@ -952,14 +896,32 @@ int clusterer_check_addr(int cluster_id, union sockaddr_union *su)
 		LM_WARN("Unknown cluster id [%d]\n", cluster_id);
 		return 0;
 	}
-	rc = ip_check(cluster, su);
-	lock_stop_read(cl_list_lock);
 
+	if (check_type == NODE_BIN_ADDR) {
+		ip.af = AF_INET;
+		ip.len = 16;
+		if (inet_pton(AF_INET, ip_str->s, ip.u.addr) <= 0) {
+			LM_ERR("Invalid IP address\n");
+			return 0;
+		}
+		ip_addr2su(&su, &ip, 0);
+
+		rc = ip_check(cluster, &su, NULL);
+		
+	} else if (check_type == NODE_SIP_ADDR) {
+		rc = ip_check(cluster, NULL, ip_str);
+	} else {
+		LM_ERR("Bad address type\n");
+		rc = 0;
+	}
+
+	lock_stop_read(cl_list_lock);
+	/* return 1 if addr matched, 0 for ALL other cases, unless return codes implemented */
 	return rc;
 }
 
 static int flood_message(bin_packet_t *packet, cluster_info_t *cluster,
-							int source_id)
+							int source_id, int rst_req_repl)
 {
 	int path_len;
 	int path_nodes[UPDATE_MAX_PATH_LEN];
@@ -990,6 +952,13 @@ static int flood_message(bin_packet_t *packet, cluster_info_t *cluster,
 			continue;
 		}
 		skip_nodes[no_skip_nodes++] = tmp_path_node->node_id;
+	}
+
+	if (rst_req_repl) {
+		/* message has a require_reply field and it should be reset */
+		bin_remove_int_buffer_end(packet, path_len + 2);
+		bin_push_int(packet, 0);
+		bin_skip_int_packet_end(packet, path_len + 1);
 	}
 
 	lock_get(cluster->current_node->lock);
@@ -1030,7 +999,7 @@ static int flood_message(bin_packet_t *packet, cluster_info_t *cluster,
 				destinations[i]->node_id);
 
 			/* this node was supposed to be up, restart pinging */
-			set_link_w_neigh_adv(LS_RESTART_PINGING, destinations[i]);
+			set_link_w_neigh_adv(-1, LS_RESTART_PINGING, destinations[i]);
 		}
 	}
 
@@ -1070,6 +1039,7 @@ static node_info_t *add_node(bin_packet_t *received, cluster_info_t *cl,
 		str_vals[STR_VALS_SIP_ADDR_COL].s, str_vals[STR_VALS_SIP_ADDR_COL].len);
 	char_str_vals[STR_VALS_SIP_ADDR_COL][str_vals[STR_VALS_SIP_ADDR_COL].len] = 0;
 
+	char_str_vals[STR_VALS_FLAGS_COL] = 0;
 	char_str_vals[STR_VALS_DESCRIPTION_COL] = 0;
 
 	int_vals[INT_VALS_ID_COL] = -1;	/* no DB id */
@@ -1098,7 +1068,7 @@ static node_info_t *add_node(bin_packet_t *received, cluster_info_t *cl,
 }
 
 static void handle_full_top_update(bin_packet_t *packet, node_info_t *source,
-									int *check_call_cbs_event)
+									int *ev_actions_required)
 {
 	node_info_t *top_node, *top_neigh, *it;
 	int seq_no, timestamp;
@@ -1228,12 +1198,12 @@ static void handle_full_top_update(bin_packet_t *packet, node_info_t *source,
 					lock_release(top_node->lock);
 
 					set_link_w_neigh(LS_RESTART_PINGING, top_node);
-					*check_call_cbs_event = 1;
+					*ev_actions_required = 1;
 				} else
 					lock_release(top_node->lock);
 			} else {
 				set_link(LS_UP, top_node, top_neigh);
-				*check_call_cbs_event = 1;
+				*ev_actions_required = 1;
 
 				/* save the node in order to identify neighbours which are missing
 				 * from the adjacency list and thus represent failed links */
@@ -1243,7 +1213,9 @@ static void handle_full_top_update(bin_packet_t *packet, node_info_t *source,
 
 		/* search the saved nodes to delete the corresponding links */
 		for (it = source->cluster->node_list; it; it = it->next) {
-			if (it->node_id == top_node_id[i])
+			if (it->node_id == top_node_id[i] ||
+				/* a node has no info about the links from it's neighbours to itself */
+				it->node_id == source->node_id)
 				continue;
 
 			present = 0;
@@ -1254,18 +1226,125 @@ static void handle_full_top_update(bin_packet_t *packet, node_info_t *source,
 				}
 			if (!present) {
 				set_link(LS_DOWN, top_node, it);
-				*check_call_cbs_event = 1;
+				*ev_actions_required = 1;
 			}
 		}
 	}
 
-	flood_message(packet, source->cluster, source->node_id);
+	flood_message(packet, source->cluster, source->node_id, 0);
+}
+
+static void handle_cap_update(bin_packet_t *packet, node_info_t *source)
+{
+	str cap;
+	int nr_cap, i, j;
+	struct remote_cap *cur;
+	struct local_cap *lcap;
+	int nr_nodes;
+	int node_id;
+	node_info_t *node;
+	int cap_state;
+	int rc;
+	int require_reply;
+
+	bin_pop_int(packet, &nr_nodes);
+
+	for (i = 0; i < nr_nodes; i++) {
+		bin_pop_int(packet, &node_id);
+
+		if (node_id == current_id) {
+			bin_pop_int(packet, &nr_cap);
+			for (j = 0; j < nr_cap; j++) {
+				bin_pop_str(packet, &cap);
+				bin_pop_int(packet, &cap_state);
+			}
+			continue;
+		}
+		node = get_node_by_id(source->cluster, node_id);
+		if (!node) {
+			LM_ERR("Unknown id [%d] in capability update from node [%d]\n",
+				node_id, source->node_id);
+			return;
+		}
+
+		bin_pop_int(packet, &nr_cap);
+		for (j = 0; j < nr_cap; j++) {
+			bin_pop_str(packet, &cap);
+			bin_pop_int(packet, &cap_state);
+
+			lock_get(node->lock);
+
+			for (cur = node->capabilities; cur && str_strcmp(&cap, &cur->name);
+				cur = cur->next) ;
+			if (!cur) {	/* new capability */
+				cur = shm_malloc(sizeof(struct remote_cap) + cap.len);
+				if (!cur) {
+					LM_ERR("No more shm memory!\n");
+					lock_release(node->lock);
+					return;
+				}
+				memset(cur, 0, sizeof *cur);
+				cur->name.s = (char *)(cur + 1);
+				cur->name.len = cap.len;
+				memcpy(cur->name.s, cap.s, cap.len);
+
+				cur->next = node->capabilities;
+				node->capabilities = cur;
+			}
+
+			if (cap_state == 0)
+				cur->flags &= ~CAP_STATE_OK;
+			else if (cap_state == 1)
+				cur->flags |= CAP_STATE_OK;
+			else
+				LM_ERR("Received bad state for capability:%.*s from node [%d]\n",
+					cap.len, cap.s, source->node_id);
+			lock_release(node->lock);
+
+			/* for a node in state OK, check pending sync requests */
+			if (cap_state == 1) {
+				for (lcap = source->cluster->capabilities; lcap; lcap = lcap->next)
+					if (!str_strcmp(&cap, &lcap->reg.name))
+						break;
+				if (lcap) {
+					lock_get(source->cluster->lock);
+					if (lcap->flags & CAP_SYNC_PENDING) {
+						lock_release(source->cluster->lock);
+
+						if (!match_node(source->cluster->current_node, node,
+						                lcap->reg.sync_cond)) {
+							LM_DBG("no match for node id %d\n", node->node_id);
+							continue;
+						}
+
+						rc = send_sync_req(&cap, source->cluster->cluster_id,
+											node_id);
+						if (rc == CLUSTERER_SEND_SUCCES) {
+							lock_get(source->cluster->lock);
+							lcap->flags &= ~CAP_SYNC_PENDING;
+							lock_release(source->cluster->lock);
+						} else if (rc == CLUSTERER_SEND_ERR)
+							LM_ERR("Failed to send sync request to node: %d\n",
+								node_id);
+					} else
+						lock_release(source->cluster->lock);
+				}
+			}
+		}
+	}
+
+	bin_pop_int(packet, &require_reply);
+	if (require_reply)
+		/* also send current node's capabilities information to source node */
+		send_cap_update(source, 0);
+
+	/* flood to other neighbours */
+	flood_message(packet, source->cluster, source->node_id, require_reply);
 }
 
 static void handle_internal_msg_unknown(bin_packet_t *received, cluster_info_t *cl,
 					int packet_type, union sockaddr_union *src_su, int src_node_id)
 {
-	static str module_name = str_init("clusterer");
 	str bin_buffer;
 	int req_list;
 	str str_vals[NO_DB_STR_VALS];
@@ -1278,7 +1357,7 @@ static void handle_internal_msg_unknown(bin_packet_t *received, cluster_info_t *
 		bin_pop_int(received, &req_list);
 
 		/* reply in order to inform the node that the current node has no info about it */
-		if (bin_init(&packet, &module_name, CLUSTERER_UNKNOWN_ID, BIN_VERSION, SMALL_MSG) < 0) {
+		if (bin_init(&packet, &cl_internal_cap, CLUSTERER_UNKNOWN_ID, BIN_VERSION, SMALL_MSG) < 0) {
 			LM_ERR("Failed to init bin send buffer\n");
 			return;
 		}
@@ -1295,7 +1374,7 @@ static void handle_internal_msg_unknown(bin_packet_t *received, cluster_info_t *
 		bin_free_packet(&packet);
 		break;
 	case CLUSTERER_NODE_DESCRIPTION:
-		LM_DBG("Received node descripiton from sorce [%d]\n", src_node_id);
+		LM_DBG("Received node description from sorce [%d]\n", src_node_id);
 
 		bin_pop_str(received, &str_vals[STR_VALS_URL_COL]);
 		bin_pop_str(received, &str_vals[STR_VALS_SIP_ADDR_COL]);
@@ -1303,7 +1382,7 @@ static void handle_internal_msg_unknown(bin_packet_t *received, cluster_info_t *
 		bin_pop_int(received, &int_vals[INT_VALS_NO_PING_RETRIES_COL]);
 		add_node(received, cl, src_node_id, str_vals, int_vals);
 
-		flood_message(received, cl, src_node_id);
+		flood_message(received, cl, src_node_id, 0);
 		break;
 	default:
 		LM_DBG("Ignoring message, type: %d from unknown source, id [%d]\n",
@@ -1312,7 +1391,7 @@ static void handle_internal_msg_unknown(bin_packet_t *received, cluster_info_t *
 }
 
 static void handle_ls_update(bin_packet_t *received, node_info_t *src_node,
-								int *check_call_cbs_event)
+								int *ev_actions_required)
 {
 	int seq_no, timestamp;
 	int neigh_id;
@@ -1351,8 +1430,8 @@ static void handle_ls_update(bin_packet_t *received, node_info_t *src_node,
 			(new_ls == LS_DOWN && src_node->link_state == LS_UP)) {
 			lock_release(src_node->lock);
 
-			set_link_w_neigh_adv(LS_RESTART_PINGING, src_node);
-			*check_call_cbs_event = 1;
+			set_link_w_neigh_adv(-1, LS_RESTART_PINGING, src_node);
+			*ev_actions_required = 1;
 		} else
 			lock_release(src_node->lock);
 	} else {
@@ -1360,10 +1439,10 @@ static void handle_ls_update(bin_packet_t *received, node_info_t *src_node,
 
 		set_link(new_ls, src_node, ls_neigh);
 
-		*check_call_cbs_event = 1;
+		*ev_actions_required = 1;
 	}
 
-	flood_message(received, src_node->cluster, src_node->node_id);
+	flood_message(received, src_node->cluster, src_node->node_id, 0);
 }
 
 static inline void bin_push_node_info(bin_packet_t *packet, node_info_t *node)
@@ -1378,10 +1457,9 @@ static void handle_unknown_id(node_info_t *src_node)
 {
 	bin_packet_t packet;
 	str bin_buffer;
-	static str module_name = str_init("clusterer");
 
 	/* send description */
-	if (bin_init(&packet, &module_name, CLUSTERER_NODE_DESCRIPTION,
+	if (bin_init(&packet, &cl_internal_cap, CLUSTERER_NODE_DESCRIPTION,
 		BIN_VERSION, SMALL_MSG) < 0) {
 		LM_ERR("Failed to init bin send buffer\n");
 		return;
@@ -1404,24 +1482,24 @@ static void handle_unknown_id(node_info_t *src_node)
 		LM_DBG("Sent node description to node [%d]\n", src_node->node_id);
 	bin_free_packet(&packet);
 
-	set_link_w_neigh_adv(LS_RESTART_PINGING, src_node);
+	set_link_w_neigh_adv(-1, LS_RESTART_PINGING, src_node);
 }
 
 static void handle_internal_msg(bin_packet_t *received, int packet_type,
-		node_info_t *src_node, struct timeval rcv_time, int *check_call_cbs_event)
+		node_info_t *src_node, struct timeval rcv_time, int *ev_actions_required)
 {
 	node_info_t *it;
-	static str module_name = str_init("clusterer");
 	str bin_buffer;
 	int send_rc;
-	int set_ls_restart = 0;
+	int new_ls = -1;
+	int rst_ping_now = 0;
 	int req_list;
 	int node_list[MAX_NO_NODES], i, nr_nodes;
 	bin_packet_t packet;
 
 	switch (packet_type) {
 	case CLUSTERER_PONG:
-		LM_DBG("Received pong from node [%d]\n", src_node->node_id);
+		LM_DBG("Received ping reply from node [%d]\n", src_node->node_id);
 
 		bin_pop_int(received, &nr_nodes);
 		for (i=0; i<nr_nodes; i++)
@@ -1431,12 +1509,25 @@ static void handle_internal_msg(bin_packet_t *received, int packet_type,
 
 		src_node->last_pong = rcv_time;
 
+		/* check possible races between setting the appropriate state
+		 * after sending ping and receiving the reply */
+		if ((src_node->link_state == LS_RESTART_PINGING ||
+			src_node->link_state == LS_RETRY_SEND_FAIL ||
+			src_node->link_state == LS_DOWN) &&
+			src_node->last_ping_state == 0 &&
+			LAST_PING_INTERVAL(src_node, rcv_time) < (utime_t)ping_timeout*1000)
+			src_node->link_state = LS_TEMP;
+
 		/* if the node was retried and a reply was expected, it should be UP again */
-		if (src_node->link_state == LS_RESTARTED || src_node->link_state == LS_RETRYING) {
+		if ((src_node->link_state == LS_RESTARTED ||
+			src_node->link_state == LS_RETRYING ||
+			src_node->link_state == LS_TEMP) &&
+			PING_REPLY_INTERVAL(src_node) > 0 &&
+			PING_REPLY_INTERVAL(src_node) < (utime_t)ping_timeout*1000) {
 			lock_release(src_node->lock);
 
 			set_link_w_neigh_up(src_node, nr_nodes, node_list);
-			*check_call_cbs_event = 1;
+			*ev_actions_required = 1;
 
 			LM_INFO("Node [%d] is UP\n", src_node->node_id);
 		} else
@@ -1447,7 +1538,8 @@ static void handle_internal_msg(bin_packet_t *received, int packet_type,
 		bin_pop_int(received, &req_list);
 
 		/* reply with pong */
-		if (bin_init(&packet, &module_name, CLUSTERER_PONG, BIN_VERSION, SMALL_MSG) < 0) {
+		if (bin_init(&packet, &cl_internal_cap, CLUSTERER_PONG, BIN_VERSION,
+			SMALL_MSG) < 0) {
 			LM_ERR("Failed to init bin send buffer\n");
 			return;
 		}
@@ -1465,16 +1557,24 @@ static void handle_internal_msg(bin_packet_t *received, int packet_type,
 
 		bin_get_buffer(&packet, &bin_buffer);
 
+		#ifndef CLUSTERER_EXTRA_BIN_DBG
+		set_proc_log_level(L_INFO);
+		#endif
+
 		send_rc = msg_send(NULL, clusterer_proto, &src_node->addr, 0, bin_buffer.s,
 			bin_buffer.len, 0);
+
+		#ifndef CLUSTERER_EXTRA_BIN_DBG
+		reset_proc_log_level();
+		#endif
 
 		lock_get(src_node->lock);
 
 		if (send_rc < 0) {
 			LM_ERR("Failed to reply to ping from node [%d]\n", src_node->node_id);
 			if (src_node->link_state == LS_UP) {
-				set_ls_restart = 1;
-				*check_call_cbs_event = 1;
+				new_ls = LS_RESTART_PINGING;
+				*ev_actions_required = 1;
 			}
 		} else
 			LM_DBG("Replied to ping from node [%d]\n", src_node->node_id);
@@ -1482,30 +1582,43 @@ static void handle_internal_msg(bin_packet_t *received, int packet_type,
 		/* if the node was down, restart pinging */
 		if (src_node->link_state == LS_DOWN) {
 			LM_DBG("Received ping from failed node, restart pinging\n");
-			set_ls_restart = 1;
+
+			if (send_rc == 0)
+				/* restart right now */
+				rst_ping_now = 1;
+			else
+				/* restart on timer */
+				new_ls = LS_RESTART_PINGING;
 		}
 
 		lock_release(src_node->lock);
 
-		if (set_ls_restart)
-			set_link_w_neigh_adv(LS_RESTART_PINGING, src_node);
+		if (rst_ping_now)
+			do_action_trans_0(src_node, &new_ls);
+
+		if (new_ls >= 0)
+			set_link_w_neigh_adv(-1, new_ls, src_node);
 
 		bin_free_packet(&packet);
 		break;
 	case CLUSTERER_LS_UPDATE:
-		handle_ls_update(received, src_node, check_call_cbs_event);
+		handle_ls_update(received, src_node, ev_actions_required);
 		break;
 	case CLUSTERER_FULL_TOP_UPDATE:
 		LM_DBG("Received full topology update with source [%d]\n", src_node->node_id);
-		handle_full_top_update(received, src_node, check_call_cbs_event);
+		handle_full_top_update(received, src_node, ev_actions_required);
 		break;
 	case CLUSTERER_UNKNOWN_ID:
 		LM_DBG("Received UNKNOWN_ID from node [%d]\n", src_node->node_id);
 		handle_unknown_id(src_node);
 		break;
 	case CLUSTERER_NODE_DESCRIPTION:
-		LM_DBG("Already got node descripiton for source [%d], drop this message\n",
+		LM_DBG("Already got node description for source [%d], drop this message\n",
 			src_node->node_id);
+		break;
+	case CLUSTERER_CAP_UPDATE:
+		LM_DBG("Received capability update with source [%d]\n", src_node->node_id);
+		handle_cap_update(received, src_node);
 		break;
 	default:
 		LM_WARN("Invalid clusterer binary packet command from node: %d\n",
@@ -1560,7 +1673,7 @@ static void handle_cl_mi_msg(bin_packet_t *packet)
 	str cmd_params[MI_CMD_MAX_NR_PARAMS];
 	str cmd_name;
 	int i, no_params;
-	struct mi_root *cmd_rpl;
+	int rc;
 
 	bin_pop_str(packet, &cmd_name);
 	LM_DBG("Received MI command <%.*s>\n", cmd_name.len, cmd_name.s);
@@ -1569,37 +1682,51 @@ static void handle_cl_mi_msg(bin_packet_t *packet)
 	for (i = 0; i < no_params; i++)
 		bin_pop_str(packet, &cmd_params[i]);
 
-	cmd_rpl = run_rcv_mi_cmd(&cmd_name, cmd_params, no_params);
-	if (!cmd_rpl) {
+	rc = run_rcv_mi_cmd(&cmd_name, cmd_params, no_params);
+	if (rc == -1) {
 		LM_ERR("MI command <%.*s> failed\n", cmd_name.len, cmd_name.s);
 		return;
 	}
 
-	LM_INFO("MI command <%.*s> returned with: code <%d>, reason <%.*s>\n",
-		cmd_name.len, cmd_name.s, cmd_rpl->code, cmd_rpl->reason.len, cmd_rpl->reason.s);
+	LM_INFO("MI command <%.*s> returned with %s\n",
+		cmd_name.len, cmd_name.s, (rc == 1) ? "error" : "success");
 }
 
-static void handle_other_cl_msg(bin_packet_t *packet, int packet_type)
+void bin_rcv_cl_extra_packets(bin_packet_t *packet, int packet_type,
+									struct receive_info *ri, void *att)
 {
 	int source_id, dest_id, cluster_id;
 	cluster_info_t *cl;
 	node_info_t *node;
-	int check_call_cbs_event = 0;
+	int ev_actions_required = 0;
+	char *ip;
+	unsigned short port;
 
 	bin_pop_back_int(packet, &dest_id);
 	bin_pop_back_int(packet, &source_id);
 	bin_pop_back_int(packet, &cluster_id);
 
+	get_su_info(&ri->src_su.s, ip, port);
+	LM_DBG("received clusterer message from: %s:%hu with source id: %d and"
+			" cluster id: %d\n", ip, port, source_id, cluster_id);
+
+	if (source_id == current_id) {
+		LM_ERR("Received message with bad source - same node id as this instance\n");
+		return;
+	}
+
 	lock_start_read(cl_list_lock);
 
 	cl = get_cluster_by_id(cluster_id);
 	if (!cl) {
-		LM_WARN("Received message from unknown cluster, id [%d]\n", cluster_id);
+		LM_WARN("Received message, type: %d, from unknown cluster id [%d]\n",
+			packet_type, cluster_id);
 		goto exit;
 	}
 
 	lock_get(cl->current_node->lock);
 	if (!(cl->current_node->flags & NODE_STATE_ENABLED)) {
+		lock_release(cl->current_node->lock);
 		LM_INFO("Current node disabled, ignoring received bin packet\n");
 		goto exit;
 	}
@@ -1633,18 +1760,18 @@ static void handle_other_cl_msg(bin_packet_t *packet, int packet_type)
 			goto exit;
 		}
 
-		if (msg_send_retry(packet, node, 0, &check_call_cbs_event) < 0) {
+		if (msg_send_retry(packet, node, 0, &ev_actions_required) < 0) {
 			LM_ERR("Failed to route message with source id [%d] and destination id [%d]\n",
 				source_id, dest_id);
-			if (check_call_cbs_event)
-				call_cbs_event(packet, cl, &check_call_cbs_event, 1);
+			if (ev_actions_required)
+				do_actions_node_ev(cl, &ev_actions_required, 1);
 
 			goto exit;
 		} else {
 			LM_DBG("Routed message with source id [%d] and destination id [%d]\n",
 				source_id, dest_id);
-			if (check_call_cbs_event)
-				call_cbs_event(packet, cl, &check_call_cbs_event, 1);
+			if (ev_actions_required)
+				do_actions_node_ev(cl, &ev_actions_required, 1);
 
 			goto exit;
 		}
@@ -1653,6 +1780,16 @@ static void handle_other_cl_msg(bin_packet_t *packet, int packet_type)
 			handle_cl_gen_msg(packet, cluster_id, source_id);
 		else if (packet_type == CLUSTERER_MI_CMD)
 			handle_cl_mi_msg(packet);
+		else if (packet_type == CLUSTERER_SHTAG_ACTIVE)
+			handle_shtag_active(packet, cluster_id);
+		else if (packet_type == CLUSTERER_SYNC_REQ)
+			handle_sync_request(packet, cl, node);
+		else if (packet_type == CLUSTERER_SYNC || packet_type == CLUSTERER_SYNC_END)
+			handle_sync_packet(packet, packet_type, cl, source_id);
+		else {
+			LM_ERR("Unknown clusterer message type: %d\n", packet_type);
+			goto exit;
+		}
 	}
 
 exit:
@@ -1668,20 +1805,21 @@ void bin_rcv_cl_packets(bin_packet_t *packet, int packet_type,
 	cluster_info_t *cl;
 	char *ip;
 	unsigned short port;
-	int check_call_cbs_event = 0;
+	int ev_actions_required = 0;
 
 	gettimeofday(&now, NULL);
 
-	get_su_info(&ri->src_su.s, ip, port);
-	LM_DBG("received clusterer message from: %s:%hu\n", ip, port);
-
-	if (packet_type == CLUSTERER_GENERIC_MSG || packet_type == CLUSTERER_MI_CMD) {
-		handle_other_cl_msg(packet, packet_type);
-		return;
-	}
-
 	bin_pop_int(packet, &cl_id);
 	bin_pop_int(packet, &source_id);
+
+	get_su_info(&ri->src_su.s, ip, port);
+	LM_DBG("received clusterer message from: %s:%hu with source id: %d and "
+		"cluster id: %d\n", ip, port, source_id, cl_id);
+
+	if (source_id == current_id) {
+		LM_ERR("Received message with bad source - same node id as this instance\n");
+		return;
+	}
 
 	lock_start_sw_read(cl_list_lock);
 
@@ -1693,8 +1831,8 @@ void bin_rcv_cl_packets(bin_packet_t *packet, int packet_type,
 
 	lock_get(cl->current_node->lock);
 	if (!(cl->current_node->flags & NODE_STATE_ENABLED)) {
-		LM_INFO("Current node disabled, ignoring received clusterer bin packet\n");
 		lock_release(cl->current_node->lock);
+		LM_INFO("Current node disabled, ignoring received clusterer bin packet\n");
 		goto exit;
 	}
 	lock_release(cl->current_node->lock);
@@ -1705,9 +1843,9 @@ void bin_rcv_cl_packets(bin_packet_t *packet, int packet_type,
 		LM_INFO("Received message with unknown source id [%d]\n", source_id);
 		handle_internal_msg_unknown(packet, cl, packet_type, &ri->src_su, source_id);
 	} else {
-		handle_internal_msg(packet, packet_type, node, now,	&check_call_cbs_event);
-		if (check_call_cbs_event)
-			call_cbs_event(NULL, cl, &check_call_cbs_event, 1);
+		handle_internal_msg(packet, packet_type, node, now,	&ev_actions_required);
+		if (ev_actions_required)
+			do_actions_node_ev(cl, &ev_actions_required, 1);
 	}
 
 exit:
@@ -1717,14 +1855,14 @@ exit:
 static void bin_rcv_mod_packets(bin_packet_t *packet, int packet_type,
 									struct receive_info *ri, void *ptr)
 {
-	struct mod_registration *module;
+	struct capability_reg *cap;
+	struct local_cap *cl_cap;
 	unsigned short port;
 	int source_id, dest_id, cluster_id;
 	char *ip;
 	node_info_t *node = NULL;
 	cluster_info_t *cl;
-	int i;
-	int check_call_cbs_event = 0;
+	int ev_actions_required = 0;
 
 	/* pop the source and destination from the bin packet */
 	bin_pop_back_int(packet, &dest_id);
@@ -1732,15 +1870,17 @@ static void bin_rcv_mod_packets(bin_packet_t *packet, int packet_type,
 	bin_pop_back_int(packet, &cluster_id);
 
 	get_su_info(&ri->src_su.s, ip, port);
-	LM_DBG("received bin packet from: %s:%hu\n with source id [%d] and cluster id [%d]\n",
-		ip, port, source_id, cluster_id);
+	LM_DBG("received bin packet from: %s:%hu with source id: %d and cluster id: %d\n",
+			ip, port, source_id, cluster_id);
 
-	module = (struct mod_registration *)ptr;
+	if (source_id == current_id) {
+		LM_ERR("Received message with bad source - same node id as this instance\n");
+		return;
+	}
 
-	for (i = 0; i < module->no_accept_clusters ||
-			module->accept_clusters_ids[i] != cluster_id; i++);
-	if (i == module->no_accept_clusters) {
-		LM_DBG("Received message from unaccepted cluster [%d], ignoring\n", cluster_id);
+	cap = (struct capability_reg *)ptr;
+	if (!cap) {
+		LM_ERR("Failed to get bin callback parameter\n");
 		return;
 	}
 
@@ -1754,6 +1894,7 @@ static void bin_rcv_mod_packets(bin_packet_t *packet, int packet_type,
 
 	lock_get(cl->current_node->lock);
 	if (!(cl->current_node->flags & NODE_STATE_ENABLED)) {
+		lock_release(cl->current_node->lock);
 		LM_INFO("Current node disabled, ignoring received bin packet\n");
 		goto exit;
 	}
@@ -1765,7 +1906,7 @@ static void bin_rcv_mod_packets(bin_packet_t *packet, int packet_type,
 		goto exit;
 	}
 
-	if (module->auth_check && !ip_check(cl, &ri->src_su)) {
+	if (!su_ip_cmp(&ri->src_su, &node->addr) && !ip_check(cl, &ri->src_su, NULL)) {
 		LM_WARN("Received message from unknown source, addr: %s\n", ip);
 		goto exit;
 	}
@@ -1775,7 +1916,7 @@ static void bin_rcv_mod_packets(bin_packet_t *packet, int packet_type,
 	/* if the node was down, restart pinging */
 	if (node->link_state == LS_DOWN) {
 		lock_release(node->lock);
-		LM_DBG("Received bin packet from failed node, restart pinging");
+		LM_DBG("Received bin packet from failed node, restart pinging\n");
 		set_link_w_neigh(LS_RESTART_PINGING, node);
 	} else
 		lock_release(node->lock);
@@ -1788,55 +1929,69 @@ static void bin_rcv_mod_packets(bin_packet_t *packet, int packet_type,
 
 		node = get_node_by_id(cl, dest_id);
 		if (!node) {
-			LM_WARN("Received message with unknown destination id [%d]\n", source_id);
+			LM_WARN("Received message with unknown destination id [%d]\n",
+				source_id);
 			goto exit;
 		}
 
-		if (msg_send_retry(packet, node, 0, &check_call_cbs_event) < 0) {
-			LM_ERR("Failed to route message with source id [%d] and destination id [%d]\n",
-				source_id, dest_id);
-			if (check_call_cbs_event)
-				call_cbs_event(packet, cl, &check_call_cbs_event, 1);
-
-			lock_stop_read(cl_list_lock);
-
-			module->cb(CLUSTER_ROUTE_FAILED, packet, packet_type, ri, cluster_id, source_id, dest_id);
-			return;
+		if (msg_send_retry(packet, node, 0, &ev_actions_required) < 0) {
+			LM_ERR("Failed to route message with source id [%d] and destination "
+				"id [%d]\n", source_id, dest_id);
+			if (ev_actions_required)
+				do_actions_node_ev(cl, &ev_actions_required, 1);
 		} else {
 			LM_DBG("Routed message with source id [%d] and destination id [%d]\n",
 				source_id, dest_id);
-			if (check_call_cbs_event)
-				call_cbs_event(packet, cl, &check_call_cbs_event, 1);
-
-			lock_stop_read(cl_list_lock);
-			return;
+			if (ev_actions_required)
+				do_actions_node_ev(cl, &ev_actions_required, 1);
 		}
 	} else {
-		/* pass message to module*/
-		lock_stop_read(cl_list_lock);
-		module->cb(CLUSTER_RECV_MSG, packet, packet_type, ri, cluster_id, source_id, dest_id);
-		return;
+		/* try to pass message to registered callback */
+
+		for (cl_cap = cl->capabilities; cl_cap; cl_cap = cl_cap->next)
+			if (!str_strcmp(&cl_cap->reg.name, &cap->name))
+				break;
+		if (!cl_cap) {
+			LM_ERR("Packet's capability: %.*s not found in cluster info\n",
+				cap->name.len, cap->name.s);
+			goto exit;
+		}
+
+		lock_get(cl->lock);
+
+		if (cl_cap->flags & CAP_PKT_BUFFERING) {
+			/* buffer regular packets during sync or during processing of
+			 * previously buffered packets */
+			buffer_bin_pkt(packet, cl_cap, source_id);
+			lock_release(cl->lock);
+		} else {
+			lock_release(cl->lock);
+			lock_stop_read(cl_list_lock);
+			packet->src_id = source_id;
+			cap->packet_cb(packet);
+			return;
+		}
 	}
 
 exit:
 	lock_stop_read(cl_list_lock);
 }
 
-static int delete_neighbour(node_info_t *from_n, node_info_t *old_n)
+static int delete_neighbour(node_info_t *from_node, node_info_t *to_delete_n)
 {
 	struct neighbour *neigh, *tmp;
 
-	neigh = from_n->neighbour_list;
+	neigh = from_node->neighbour_list;
 	if (!neigh)
 		return 0;
 
-	if (neigh->node->node_id == old_n->node_id) {
-		from_n->neighbour_list = neigh->next;
+	if (neigh->node->node_id == to_delete_n->node_id) {
+		from_node->neighbour_list = neigh->next;
 		shm_free(neigh);
 		return 1;
 	}
 	while (neigh->next) {
-		if (neigh->next->node->node_id == old_n->node_id) {
+		if (neigh->next->node->node_id == to_delete_n->node_id) {
 			tmp = neigh->next;
 			neigh->next = neigh->next->next;
 			shm_free(tmp);
@@ -1848,11 +2003,11 @@ static int delete_neighbour(node_info_t *from_n, node_info_t *old_n)
 	return 0;
 }
 
-static int add_neighbour(node_info_t *to_n, node_info_t *new_n)
+static int add_neighbour(node_info_t *to_node, node_info_t *new_n)
 {
 	struct neighbour *neigh;
 
-	neigh = to_n->neighbour_list;
+	neigh = to_node->neighbour_list;
 	while (neigh) {
 		if (neigh->node->node_id == new_n->node_id)
 			return 0;
@@ -1865,20 +2020,19 @@ static int add_neighbour(node_info_t *to_n, node_info_t *new_n)
 		return -1;
 	}
 	neigh->node = new_n;
-	neigh->next = to_n->neighbour_list;
-	to_n->neighbour_list = neigh;
+	neigh->next = to_node->neighbour_list;
+	to_node->neighbour_list = neigh;
 	return 1;
 }
 
-/* topology update packets(CLUSTERER_TOP_UPDATE and CLUSTERER_LS_UPDATE) format:
+/* topology update packets(CLUSTERER_FULL_TOP_UPDATE and CLUSTERER_LS_UPDATE) format:
  * +---------------------------------------------------------------------------------------------+
  * | cluster | src_node | seq_no | timestamp | update_content | path_len | node_1 | node_2 | ... |
  * +---------------------------------------------------------------------------------------------+
  */
 
-static int send_top_update(node_info_t *dest_node, int nr_nodes, int *node_list)
+static int send_full_top_update(node_info_t *dest_node, int nr_nodes, int *node_list)
 {
-	static str module_name = str_init("clusterer");
 	str bin_buffer;
 	struct neighbour *neigh;
 	node_info_t *it;
@@ -1891,7 +2045,8 @@ static int send_top_update(node_info_t *dest_node, int nr_nodes, int *node_list)
 
 	lock_get(dest_node->cluster->current_node->lock);
 
-	if (bin_init(&packet, &module_name, CLUSTERER_FULL_TOP_UPDATE, BIN_VERSION, 0) < 0) {
+	if (bin_init(&packet, &cl_internal_cap, CLUSTERER_FULL_TOP_UPDATE, BIN_VERSION, 0) < 0) {
+		lock_release(dest_node->cluster->current_node->lock);
 		LM_ERR("Failed to init bin send buffer\n");
 		return -1;
 	}
@@ -1900,7 +2055,7 @@ static int send_top_update(node_info_t *dest_node, int nr_nodes, int *node_list)
 	bin_push_int(&packet, ++dest_node->cluster->current_node->top_seq_no);
 	bin_push_int(&packet, timestamp);
 
-	/* CLUSTERER_TOP_UPDATE message update content:
+	/* CLUSTERER_FULL_TOP_UPDATE message update content:
      * +----------------------------------------------------------------------------------------------------------------------+
 	 * | no_nodes | node_1 | has_descr | descr | ls_seq_no | ls_timestamp | no_neigh | neigh_1 | neigh_2 | ... | node_2 | ... |
 	 * +----------------------------------------------------------------------------------------------------------------------+
@@ -1947,12 +2102,6 @@ static int send_top_update(node_info_t *dest_node, int nr_nodes, int *node_list)
 		for (neigh = it->neighbour_list, no_neigh = 0; neigh;
 			neigh = neigh->next, no_neigh++)
 			bin_push_int(&packet, neigh->node->node_id);
-		/* the current node does not appear in the neighbour_list of other nodes
-		 * but it should be present in the adjacency list to be sent if there is a link */
-		if (it->link_state == LS_UP) {
-			bin_push_int(&packet, current_id);
-			no_neigh++;
-		}
 		/* set the number of neighbours */
 		bin_remove_int_buffer_end(&packet, no_neigh + 1);
 		bin_push_int(&packet, no_neigh);
@@ -1968,7 +2117,7 @@ static int send_top_update(node_info_t *dest_node, int nr_nodes, int *node_list)
 	if (msg_send(NULL, clusterer_proto, &dest_node->addr, 0, bin_buffer.s,
 		bin_buffer.len, 0) < 0) {
 		LM_ERR("Failed to send topology update to node [%d]\n", dest_node->node_id);
-		set_link_w_neigh_adv(LS_RESTART_PINGING, dest_node);
+		set_link_w_neigh_adv(-1, LS_RESTART_PINGING, dest_node);
 	} else
 		LM_DBG("Sent topology update to node [%d]\n", dest_node->node_id);
 
@@ -1979,9 +2128,7 @@ static int send_top_update(node_info_t *dest_node, int nr_nodes, int *node_list)
 static int send_ls_update(node_info_t *node, clusterer_link_state new_ls)
 {
 	struct neighbour *neigh;
-	static str module_name = str_init("clusterer");
 	str send_buffer;
-	int msg_created = 0;
 	node_info_t* destinations[MAX_NO_NODES];
 	int no_dests = 0, i;
 	bin_packet_t packet;
@@ -1991,87 +2138,320 @@ static int send_ls_update(node_info_t *node, clusterer_link_state new_ls)
 
 	lock_get(node->cluster->current_node->lock);
 
-	/* send link state update to all neighbours */
 	for (neigh = node->cluster->current_node->neighbour_list; neigh;
 		neigh = neigh->next) {
 		if (neigh->node->node_id == node->node_id)
 			continue;
 
-		if (!msg_created) {
-			if (bin_init(&packet, &module_name, CLUSTERER_LS_UPDATE, BIN_VERSION, SMALL_MSG) < 0) {
-				LM_ERR("Failed to init bin send buffer\n");
-				lock_release(node->cluster->current_node->lock);
-				return -1;
-			}
-			bin_push_int(&packet, node->cluster->cluster_id);
-			bin_push_int(&packet, current_id);
-			bin_push_int(&packet, ++node->cluster->current_node->ls_seq_no);
-			bin_push_int(&packet, timestamp);
-			/* The link state update message's update content consists of a neighbour
-			 * and it's new link state */
-			bin_push_int(&packet, node->node_id);
-			bin_push_int(&packet, new_ls != LS_UP ? LS_DOWN : LS_UP);
-			bin_push_int(&packet, 1);	/* path length is 1, only current node at this point */
-			bin_push_int(&packet, current_id);
-			bin_get_buffer(&packet, &send_buffer);
-			msg_created = 1;
-		}
-
 		destinations[no_dests++] = neigh->node;
 	}
 
+	if (no_dests == 0) {
+		lock_release(node->cluster->current_node->lock);
+		return 0;
+	}
+
+	if (bin_init(&packet, &cl_internal_cap, CLUSTERER_LS_UPDATE, BIN_VERSION,
+		SMALL_MSG) < 0) {
+		LM_ERR("Failed to init bin send buffer\n");
+		lock_release(node->cluster->current_node->lock);
+		return -1;
+	}
+	bin_push_int(&packet, node->cluster->cluster_id);
+	bin_push_int(&packet, current_id);
+	bin_push_int(&packet, ++node->cluster->current_node->ls_seq_no);
+	bin_push_int(&packet, timestamp);
+
+	/* The link state update message's update content consists of a neighbour
+	 * and it's new link state */
+	bin_push_int(&packet, node->node_id);
+	bin_push_int(&packet, new_ls);
+
+	/* path length is 1, only current node at this point */
+	bin_push_int(&packet, 1);
+	bin_push_int(&packet, current_id);
+
 	lock_release(node->cluster->current_node->lock);
 
+	bin_get_buffer(&packet, &send_buffer);
 	for (i = 0; i < no_dests; i++) {
-		if (msg_send(NULL, clusterer_proto, &destinations[i]->addr, 0, send_buffer.s,
-			send_buffer.len, 0) < 0) {
-			LM_ERR("Failed to send link state update to node [%d]\n", destinations[i]->node_id);
+		if (msg_send(NULL, clusterer_proto, &destinations[i]->addr, 0,
+			send_buffer.s, send_buffer.len, 0) < 0) {
+			LM_ERR("Failed to send link state update to node [%d]\n",
+				destinations[i]->node_id);
 			/* this node was supposed to be up, restart pinging */
-			set_link_w_neigh_adv(LS_RESTART_PINGING, destinations[i]);
+			set_link_w_neigh_adv(-1, LS_RESTART_PINGING, destinations[i]);
 		}
 	}
 
-	if (msg_created){
-		bin_free_packet(&packet);
-		LM_DBG("Sent link state update about node [%d] to all reachable neighbours\n",
-			node->node_id);
+	bin_free_packet(&packet);
+	LM_DBG("Sent link state update about node [%d] to all reachable neighbours\n",
+		node->node_id);
+
+	return 0;
+}
+
+int send_single_cap_update(cluster_info_t *cluster, struct local_cap *cap,
+							int cap_state)
+{
+	bin_packet_t packet;
+	str bin_buffer;
+	node_info_t* destinations[MAX_NO_NODES];
+	struct neighbour *neigh;
+	int no_dests = 0, i;
+
+	lock_get(cluster->current_node->lock);
+
+	for (neigh = cluster->current_node->neighbour_list; neigh;
+		neigh = neigh->next)
+		destinations[no_dests++] = neigh->node;
+
+	lock_release(cluster->current_node->lock);
+
+	if (no_dests == 0)
+		return 0;
+
+	if (bin_init(&packet, &cl_internal_cap, CLUSTERER_CAP_UPDATE,
+		BIN_VERSION, 0) < 0) {
+		LM_ERR("Failed to init bin send buffer\n");
+		return -1;
+	}
+	bin_push_int(&packet, cluster->cluster_id);
+	bin_push_int(&packet, current_id);
+
+	/* only the current node */
+	bin_push_int(&packet, 1);
+	bin_push_int(&packet, current_id);
+
+	/* only a single capability */
+	bin_push_int(&packet, 1);
+	bin_push_str(&packet, &cap->reg.name);
+	bin_push_int(&packet, cap_state);
+
+	bin_push_int(&packet, 0);  /* don't require reply */
+
+	bin_push_int(&packet, 1);	/* path length is 1, only current node at this point */
+	bin_push_int(&packet, current_id);
+	bin_get_buffer(&packet, &bin_buffer);
+
+	for (i = 0; i < no_dests; i++)
+		if (msg_send(NULL, clusterer_proto, &destinations[i]->addr, 0,
+			bin_buffer.s, bin_buffer.len, 0) < 0) {
+			LM_ERR("Failed to send capability update to node [%d]\n",
+				destinations[i]->node_id);
+			set_link_w_neigh_adv(-1, LS_RESTART_PINGING, destinations[i]);
+		} else
+			LM_DBG("Sent capability update to node [%d]\n",
+				destinations[i]->node_id);
+
+	bin_free_packet(&packet);
+
+	return 0;
+}
+
+static int send_cap_update(node_info_t *dest_node, int require_reply)
+{
+	bin_packet_t packet;
+	str bin_buffer;
+	struct local_cap *cl_cap;
+	struct remote_cap *n_cap;
+	int nr_cap, nr_nodes = 0;
+	node_info_t *node;
+
+	if (dest_node->cluster->capabilities)
+		nr_nodes++;
+
+	for (node = dest_node->cluster->node_list; node; node = node->next) {
+		lock_get(node->lock);
+		if (node->capabilities && node->node_id != dest_node->node_id)
+			nr_nodes++;
+		lock_release(node->lock);
+	}
+
+	if (nr_nodes == 0)
+		return 0;
+
+	if (bin_init(&packet, &cl_internal_cap, CLUSTERER_CAP_UPDATE, BIN_VERSION, 0) < 0) {
+		LM_ERR("Failed to init bin send buffer\n");
+		return -1;
+	}
+	bin_push_int(&packet, dest_node->cluster->cluster_id);
+	bin_push_int(&packet, current_id);
+
+	bin_push_int(&packet, nr_nodes);
+
+	/* current node's capabilities */
+	for (cl_cap = dest_node->cluster->capabilities, nr_cap = 0; cl_cap;
+		cl_cap = cl_cap->next, nr_cap++) ;
+	if (nr_cap) {
+		bin_push_int(&packet, current_id);
+		bin_push_int(&packet, nr_cap);
+		for (cl_cap=dest_node->cluster->capabilities;cl_cap;cl_cap=cl_cap->next) {
+			bin_push_str(&packet, &cl_cap->reg.name);
+			lock_get(dest_node->cluster->lock);
+			bin_push_int(&packet, cl_cap->flags & CAP_STATE_OK ? 1 : 0);
+			lock_release(dest_node->cluster->lock);
+		}
+	}
+
+	/* known capabilities for other nodes */
+	for (node = dest_node->cluster->node_list; node; node = node->next) {
+		if (node->node_id == dest_node->node_id)
+			continue;
+		lock_get(node->lock);
+		for (n_cap = node->capabilities, nr_cap = 0; n_cap;
+			n_cap = n_cap->next, nr_cap++) ;
+		if (nr_cap) {
+			bin_push_int(&packet, node->node_id);
+			bin_push_int(&packet, nr_cap);
+			for (n_cap = node->capabilities; n_cap; n_cap = n_cap->next) {
+				bin_push_str(&packet, &n_cap->name);
+				bin_push_int(&packet, n_cap->flags & CAP_STATE_OK ? 1 : 0);
+			}
+		}
+		lock_release(node->lock);
+	}
+
+	bin_push_int(&packet, require_reply);
+
+	bin_push_int(&packet, 1);	/* path length is 1, only current node at this point */
+	bin_push_int(&packet, current_id);
+	bin_get_buffer(&packet, &bin_buffer);
+
+	if (msg_send(NULL, clusterer_proto, &dest_node->addr, 0, bin_buffer.s,
+		bin_buffer.len, 0) < 0) {
+		LM_ERR("Failed to send capability update to node [%d]\n", dest_node->node_id);
+		set_link_w_neigh_adv(-1, LS_RESTART_PINGING, dest_node);
+	} else
+		LM_DBG("Sent capability update to node [%d]\n", dest_node->node_id);
+
+	bin_free_packet(&packet);
+
+	return 0;
+}
+
+static int raise_node_state_ev(enum clusterer_event ev, int cluster_id, int node_id)
+{
+	int new_state = ev == CLUSTER_NODE_DOWN ? 0 : 1;
+
+	if (evi_param_set_int(ei_clusterid_p, &cluster_id) < 0) {
+		LM_ERR("cannot set cluster_id event parameter\n");
+		return -1;
+	}
+	if (evi_param_set_int(ei_nodeid_p, &node_id) < 0) {
+		LM_ERR("cannot set node_id event parameter\n");
+		return -1;
+	}
+	if (evi_param_set_int(ei_newstate_p, &new_state) < 0) {
+		LM_ERR("cannot set new_state event parameter\n");
+		return -1;
+	}
+
+	if (evi_raise_event(ei_node_state_id, ei_node_event_params) < 0) {
+		LM_ERR("cannot raise event\n");
+		return -1;
 	}
 
 	return 0;
 }
 
-/* Although the callbacks are called with cl_list_lock acquired, a deadlock is not possible
- * because the api functions which could be called from within the callbacks only acquire the
- * same lock for reading (RW lock, so multiple readers is ok) and never for writing
-*/
-static void call_cbs_event(bin_packet_t *packet, cluster_info_t *clusters,
-							int *clusters_to_call, int no_clusters)
+static void do_actions_node_ev(cluster_info_t *clusters, int *select_cluster,
+								int no_clusters)
 {
 	node_info_t *node;
 	cluster_info_t *cl;
-	struct cluster_mod *mod_it;
+	struct local_cap *cap_it;
+	struct remote_cap *n_cap;
 	int k;
+	int rc;
 
 	for (k = 0, cl = clusters; k < no_clusters && cl; k++, cl = clusters->next) {
-		if (!clusters_to_call[k])
+		if (!select_cluster[k])
 			continue;
 
 		for (node = cl->node_list; node; node = node->next) {
 			lock_get(node->lock);
-			if (node->flags	& CALL_CBS_DOWN) {
-				node->flags &= ~CALL_CBS_DOWN;
+
+			if (node->flags	& NODE_EVENT_DOWN) {
+				node->flags &= ~NODE_EVENT_DOWN;
 				lock_release(node->lock);
 
-				for (mod_it = cl->modules; mod_it; mod_it = mod_it->next)
-					mod_it->reg->cb(CLUSTER_NODE_DOWN,packet,  UNDEFINED_PACKET_TYPE, NULL,
-						cl->cluster_id, INVAL_NODE_ID, node->node_id);
-			} else if (node->flags & CALL_CBS_UP) {
-				node->flags &= ~CALL_CBS_UP;
+				for (cap_it = cl->capabilities; cap_it; cap_it = cap_it->next)
+					if (cap_it->reg.event_cb)
+						cap_it->reg.event_cb(CLUSTER_NODE_DOWN, node->node_id);
+
+				if (raise_node_state_ev(cl->cluster_id, CLUSTER_NODE_DOWN,
+					node->node_id) < 0)
+					LM_ERR("Failed to raise node state changed event for: "
+						"cluster_id=%d node_id=%d, new_state=node down\n",
+						cl->cluster_id, node->node_id);
+
+				shtag_event_handler(cl->cluster_id, CLUSTER_NODE_DOWN,
+					node->node_id);
+
+			} else if (node->flags & NODE_EVENT_UP) {
+				node->flags &= ~NODE_EVENT_UP;
+
+				/* check pending sync replies */
+				for (n_cap = node->capabilities; n_cap; n_cap = n_cap->next) {
+					if (n_cap->flags & CAP_SYNC_PENDING) {
+						n_cap->flags &= ~CAP_SYNC_PENDING;
+						lock_release(node->lock);
+						/* reply now that the node is up */
+						send_sync_repl(cl, node->node_id, &n_cap->name);
+						lock_get(node->lock);
+					}
+				}
 				lock_release(node->lock);
 
-				for (mod_it = cl->modules; mod_it; mod_it = mod_it->next)
-					mod_it->reg->cb(CLUSTER_NODE_UP, packet, UNDEFINED_PACKET_TYPE, NULL,
-						cl->cluster_id, INVAL_NODE_ID, node->node_id);
+				for (cap_it = cl->capabilities; cap_it; cap_it = cap_it->next) {
+					/* check pending sync request */
+					lock_get(cl->lock);
+					if (cap_it->flags & CAP_SYNC_PENDING) {
+						lock_release(cl->lock);
+
+						if (!match_node(cl->current_node, node,
+						                cap_it->reg.sync_cond)) {
+							LM_DBG("no match for node id %d\n", node->node_id);
+							continue;
+						}
+
+						lock_get(node->lock);
+						for (n_cap = node->capabilities; n_cap;
+							n_cap = n_cap->next) {
+							if (!str_strcmp(&cap_it->reg.name, &n_cap->name)) {
+								if (n_cap->flags & CAP_STATE_OK) {
+									lock_release(node->lock);
+									rc = send_sync_req(&n_cap->name,
+										cl->cluster_id, node->node_id);
+									if (rc == CLUSTERER_SEND_SUCCES) {
+										lock_get(cl->lock);
+										cap_it->flags &= ~CAP_SYNC_PENDING;
+										lock_release(cl->lock);
+									} else if (rc == CLUSTERER_SEND_ERR)
+										LM_ERR("Failed to send sync request to"
+											"node: %d\n", node->node_id);
+									lock_get(node->lock);
+								}
+							}
+						}
+						lock_release(node->lock);
+					} else
+						lock_release(cl->lock);
+
+					if (cap_it->reg.event_cb)
+						cap_it->reg.event_cb(CLUSTER_NODE_UP, node->node_id);
+				}
+
+				if (raise_node_state_ev(cl->cluster_id, CLUSTER_NODE_UP,
+					node->node_id) < 0)
+					LM_ERR("Failed to raise node state changed event for: "
+						"cluster_id=%d node_id=%d, new_state=node up\n",
+						cl->cluster_id, node->node_id);
+
+				shtag_event_handler(cl->cluster_id, CLUSTER_NODE_UP,
+					node->node_id);
+
 			} else
 				lock_release(node->lock);
 		}
@@ -2081,20 +2461,24 @@ static void call_cbs_event(bin_packet_t *packet, cluster_info_t *clusters,
 static void check_node_events(node_info_t *node_s, enum clusterer_event ev)
 {
 	node_info_t *n;
-	int nhop;
+	int nhop, had_nhop;
 
 	for(n = node_s->cluster->node_list; n; n = n->next) {
 		if (n == node_s)
 			continue;
 
-		nhop = get_next_hop_2(n);
+		lock_get(n->lock);
+		had_nhop = n->next_hop ? 1 : 0;
+		lock_release(n->lock);
+
+		nhop = get_next_hop(n);
 
 		lock_get(n->lock);
 		if (n->link_state != LS_UP) {
-			if(ev == CLUSTER_NODE_DOWN && n->next_hop && nhop <= 0)
-				n->flags |= CALL_CBS_DOWN;
-			if(ev == CLUSTER_NODE_UP && !n->next_hop && nhop > 0)
-				n->flags |= CALL_CBS_UP;
+			if(ev == CLUSTER_NODE_DOWN && had_nhop && nhop <= 0)
+				n->flags |= NODE_EVENT_DOWN;
+			if(ev == CLUSTER_NODE_UP && !had_nhop && nhop > 0)
+				n->flags |= NODE_EVENT_UP;
 		}
 		lock_release(n->lock);
 	}
@@ -2129,13 +2513,14 @@ static int set_link_w_neigh(clusterer_link_state new_ls, node_info_t *neigh)
 		lock_get(neigh->lock);
 
 		if (nhop <= 0)
-			neigh->flags |= CALL_CBS_DOWN;
+			neigh->flags |= NODE_EVENT_DOWN;
 
 	} else if (new_ls == LS_UP && neigh->link_state != LS_UP) {
 		lock_release(neigh->lock);
 
 		lock_get(neigh->cluster->current_node->lock);
 		if (add_neighbour(neigh->cluster->current_node, neigh) < 0) {
+			lock_release(neigh->cluster->current_node->lock);
 			LM_ERR("Unable to add neighbour [%d] to topology\n", neigh->node_id);
 			return -1;
 		}
@@ -2150,7 +2535,7 @@ static int set_link_w_neigh(clusterer_link_state new_ls, node_info_t *neigh)
 		/* if there was no other path to this neighbour, we check if any other nodes
 		 * are now reachable through this new link */
 		if (!neigh->next_hop) {
-			neigh->flags |= CALL_CBS_UP;
+			neigh->flags |= NODE_EVENT_UP;
 			lock_release(neigh->lock);
 			check_node_events(neigh, CLUSTER_NODE_UP);
 			lock_get(neigh->lock);
@@ -2165,9 +2550,17 @@ static int set_link_w_neigh(clusterer_link_state new_ls, node_info_t *neigh)
 	return 0;
 }
 
-static int set_link_w_neigh_adv(clusterer_link_state new_ls, node_info_t *neigh)
+static int set_link_w_neigh_adv(int prev_ls, clusterer_link_state new_ls,
+						node_info_t *neigh)
 {
 	lock_get(neigh->lock);
+
+	if ((prev_ls >= 0 && prev_ls != neigh->link_state) ||
+		(prev_ls == -2 && neigh->link_state != LS_UP &&
+		neigh->link_state != LS_RESTARTED)) {
+		lock_release(neigh->lock);
+		return 0;
+	}
 
 	if (new_ls != LS_UP && neigh->link_state == LS_UP) {
 		lock_release(neigh->lock);
@@ -2194,8 +2587,10 @@ static int set_link_w_neigh_up(node_info_t *neigh, int nr_nodes, int *node_list)
 	/* send link state update about this neigbour to the others */
 	send_ls_update(neigh, LS_UP);
 	/* send topology update to neighbour */
-	if (send_top_update(neigh, nr_nodes, node_list) < 0)
+	if (send_full_top_update(neigh, nr_nodes, node_list) < 0)
 		return -1;
+	/* send capabilities update to neighbour */
+	send_cap_update(neigh, 1);
 
 	return 0;
 }
@@ -2203,69 +2598,46 @@ static int set_link_w_neigh_up(node_info_t *neigh, int nr_nodes, int *node_list)
 static int set_link(clusterer_link_state new_ls, node_info_t *node_a,
 						node_info_t *node_b)
 {
-	int top_change = 0;
-	int lock_a_released = 0;
+	int top_change;
 
 	if (new_ls == LS_DOWN) {
-		lock_get(node_b->lock);
-		top_change = delete_neighbour(node_b, node_a);
-		lock_release(node_b->lock);
-
 		lock_get(node_a->lock);
 
-		top_change += delete_neighbour(node_a, node_b);
-
-		if (top_change > 0) {
+		if (delete_neighbour(node_a, node_b)) {
 			if (node_a->next_hop) {
 				lock_release(node_a->lock);
-				lock_a_released = 1;
 
 				if (get_next_hop(node_b) <= 0) {
 					lock_get(node_b->lock);
-					node_b->flags |= CALL_CBS_DOWN;
+					node_b->flags |= NODE_EVENT_DOWN;
 					lock_release(node_b->lock);
 
 					check_node_events(node_b, CLUSTER_NODE_DOWN);
 				}
-			}
-		}
+			} else
+				lock_release(node_a->lock);
 
-		if (!lock_a_released)
-			lock_release(node_a->lock);
-
-		if (top_change > 0) {
 			lock_get(node_a->cluster->lock);
 			node_a->cluster->top_version++;
 			lock_release(node_a->cluster->lock);
 			LM_DBG("setting link between nodes [%d] and [%d] to state <%d>\n",
 				node_a->node_id, node_b->node_id, new_ls);
-		}
+		} else
+			lock_release(node_a->lock);
 	} else { /* new_ls == LS_UP */
-		lock_get(node_b->lock);
-		top_change = add_neighbour(node_b, node_a);
-		if (top_change < 0) {
-			lock_release(node_b->lock);
-			return -1;
-		}
-		lock_release(node_b->lock);
-
 		lock_get(node_a->lock);
 
-		top_change += add_neighbour(node_a, node_b);
-
+		top_change = add_neighbour(node_a, node_b);
 		if (top_change < 0) {
 			lock_release(node_a->lock);
 			return -1;
-		}
-
-		if (top_change > 0) {
+		} else if (top_change > 0) {
 			if (node_a->next_hop) {
 				lock_release(node_a->lock);
-				lock_a_released = 1;
 
 				lock_get(node_b->lock);
 				if (!node_b->next_hop) {
-					node_b->flags |= CALL_CBS_UP;
+					node_b->flags |= NODE_EVENT_UP;
 					lock_release(node_b->lock);
 
 					check_node_events(node_b, CLUSTER_NODE_UP);
@@ -2273,62 +2645,98 @@ static int set_link(clusterer_link_state new_ls, node_info_t *node_a,
 					get_next_hop_2(node_b);
 				} else
 					lock_release(node_b->lock);
-			}
-		}
+			} else
+				lock_release(node_a->lock);
 
-		if (!lock_a_released)
-			lock_release(node_a->lock);
-
-		if (top_change > 0) {
 			lock_get(node_a->cluster->lock);
 			node_a->cluster->top_version++;
 			lock_release(node_a->cluster->lock);
 			LM_DBG("setting link between nodes [%d] and [%d] to state <%d>\n",
 				node_a->node_id, node_b->node_id, new_ls);
-		}
+		} else
+			lock_release(node_a->lock);
 	}
 
 	return 0;
 }
 
-int cl_register_module(char *mod_name,  clusterer_cb_f cb, int auth_check,
-								int *accept_clusters_ids, int no_accept_clusters)
+int cl_register_cap(str *cap, cl_packet_cb_f packet_cb, cl_event_cb_f event_cb,
+             int cluster_id, int require_sync, enum cl_node_match_op sync_cond)
 {
-	struct mod_registration *new_module;
-	int i;
+	struct local_cap *new_cl_cap = NULL;
+	cluster_info_t *cluster;
 
-	new_module = shm_malloc(sizeof *new_module);
-	if (!new_module) {
+	cluster = get_cluster_by_id(cluster_id);
+	if (!cluster) {
+		LM_ERR("cluster id %d is not defined in the %s\n", cluster_id,
+		       db_mode ? "DB" : "script");
+		return -1;
+	}
+
+	new_cl_cap = shm_malloc(sizeof *new_cl_cap);
+	if (!new_cl_cap) {
 		LM_ERR("No more shm memory\n");
 		return -1;
 	}
-	new_module->mod_name.len = strlen(mod_name);
-	new_module->mod_name.s = mod_name;
-	new_module->cb = cb;
-	new_module->auth_check = auth_check;
+	memset(new_cl_cap, 0, sizeof *new_cl_cap);
 
-	if (no_accept_clusters > MAX_MOD_REG_CLUSTERS) {
-		LM_CRIT("Module: %*.s registered to too many clusters: %d\n",
-			new_module->mod_name.len, new_module->mod_name.s, no_accept_clusters);
-		return -1;
-	}
-	for (i = 0; i < no_accept_clusters; i++) {
-		if (accept_clusters_ids[i] < 1) {
-			LM_CRIT("Bad cluster_id: %d for module: %*.s registration\n",
-				accept_clusters_ids[i], new_module->mod_name.len, new_module->mod_name.s);
-			return -1;
+	new_cl_cap->reg.name.len = cap->len;
+	new_cl_cap->reg.name.s = cap->s;
+	new_cl_cap->reg.sync_cond = sync_cond;
+	new_cl_cap->reg.packet_cb = packet_cb;
+	new_cl_cap->reg.event_cb = event_cb;
+
+	if (cluster->current_node->flags & NODE_IS_SEED || !require_sync)
+		new_cl_cap->flags |= CAP_STATE_OK;
+
+	new_cl_cap->next = cluster->capabilities;
+	cluster->capabilities = new_cl_cap;
+
+	bin_register_cb(cap, bin_rcv_mod_packets, &new_cl_cap->reg,
+		sizeof new_cl_cap->reg);
+
+	LM_DBG("Registered capability: %.*s\n", cap->len, cap->s);
+
+	return 0;
+}
+
+struct local_cap *dup_caps(struct local_cap *caps)
+{
+	struct local_cap *cap, *ret = NULL;
+
+	for (; caps; caps = caps->next) {
+		cap = shm_malloc(sizeof *cap);
+		if (!cap) {
+			LM_ERR("No more shm memory\n");
+			return NULL;
 		}
+		memcpy(cap, caps, sizeof *caps);
 
-		new_module->accept_clusters_ids[i] = accept_clusters_ids[i];
+		cap->next = NULL;
+
+		add_last(cap, ret);
 	}
-	new_module->no_accept_clusters = no_accept_clusters;
 
-	new_module->next = clusterer_reg_modules;
-	clusterer_reg_modules = new_module;
+	return ret;
+}
 
-	bin_register_cb(mod_name, bin_rcv_mod_packets, new_module);
+int preserve_reg_caps(cluster_info_t *new_info)
+{
+	cluster_info_t *cl, *new_cl;
+	struct local_cap *cap;
 
-	LM_DBG("Registered module: %s\n", mod_name);
+	for (cl = *cluster_list; cl; cl = cl->next)
+		for (new_cl = new_info; new_cl; new_cl = new_cl->next)
+			if (new_cl->cluster_id == cl->cluster_id && cl->capabilities) {
+				new_cl->capabilities = dup_caps(cl->capabilities);
+				if (!new_cl->capabilities)
+					return -1;
+
+				for (cap = new_cl->capabilities; cap; cap = cap->next)
+					if (!(cap->flags & CAP_STATE_OK) &&
+						(new_cl->current_node->flags & NODE_IS_SEED))
+						cap->flags |= CAP_STATE_OK;
+			}
 
 	return 0;
 }
@@ -2374,7 +2782,47 @@ create_error:
 	return -1;
 }
 
+int node_state_ev_init(void)
+{
+	/* publish the events */
+	ei_node_state_id = evi_publish_event(ei_node_state_name);
+	if (ei_node_state_id == EVI_ERROR) {
+		LM_ERR("cannot register node state changed event\n");
+		return -1;
+	}
+
+	ei_node_event_params = pkg_malloc(sizeof(evi_params_t));
+	if (ei_node_event_params == NULL) {
+		LM_ERR("no more pkg mem\n");
+		return -1;
+	}
+	memset(ei_node_event_params, 0, sizeof(evi_params_t));
+
+	ei_clusterid_p = evi_param_create(ei_node_event_params, &ei_clusterid_pname);
+	if (ei_clusterid_p == NULL)
+		goto create_error;
+
+	ei_nodeid_p = evi_param_create(ei_node_event_params, &ei_nodeid_pname);
+	if (ei_nodeid_p == NULL)
+		goto create_error;
+
+	ei_newstate_p = evi_param_create(ei_node_event_params, &ei_newstate_pname);
+	if (ei_newstate_p == NULL)
+		goto create_error;
+
+	return 0;
+
+create_error:
+	LM_ERR("cannot create event parameter\n");
+	return -1;
+}
+
 void gen_rcv_evs_destroy(void)
 {
 	evi_free_params(ei_event_params);
+}
+
+void node_state_ev_destroy(void)
+{
+	evi_free_params(ei_node_event_params);
 }

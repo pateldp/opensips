@@ -75,8 +75,7 @@ void *slinkedl_prepend(slinkedl_list_t *list, size_t e_size)
 	element->next = list->head;
 	element->data = (void*)(element + 1);
 	list->head = element;
-	if (element->next) {
-	} else {
+	if (!element->next) {
 		/* This is an empty list */
 		list->tail = element;
 	}
@@ -125,6 +124,13 @@ int slinkedl_traverse(slinkedl_list_t *list,
 	return 0;
 }
 
+void *slinkedl_peek(slinkedl_list_t *list)
+{
+	if (!list || !list->head)
+		return NULL;
+
+	return list->head->data;
+}
 
 void slinkedl_list_destroy(slinkedl_list_t *list)
 {

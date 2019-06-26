@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		The module implements the Diversion extensions as per 
@@ -20,7 +20,7 @@
 	</para></warning>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -41,9 +41,9 @@
 		</para>
 	</section>
 	</section>
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_suffix" xreflabel="suffix">
 		<title><varname>suffix</varname> (string)</title>
 		<para>
 		The suffix to be appended to the end of the header field. You can use 
@@ -61,10 +61,10 @@ modparam("diversion", "suffix", ";privacy=full")
 		</example>
 	</section>
 	</section>
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
-		<title><function moreinfo="none">add_diversion(reason [[,uri], counter])</function></title>
+	<section id="func_add_diversion" xreflabel="add_diversion()">
+		<title><function moreinfo="none">add_diversion(reason, [uri], [counter])</function></title>
 		<para>
 		The function adds a new diversion header field before any other 
 		existing Diversion header field in the message (the newly added 
@@ -75,18 +75,17 @@ modparam("diversion", "suffix", ";privacy=full")
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>reason</emphasis> - The reason string to be added 
+			<para><emphasis>reason</emphasis> (string) - The reason string to be added 
 			as the reason parameter
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>uri</emphasis> - The URI to be added in the header. If missing
+			<para><emphasis>uri</emphasis> (string, optional) - The URI to be added in the header. If missing
 			    the unchanged RURI from the original message will be used.
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>counter</emphasis> - Diversion counter to be added to the header,
-			    as defined by the standard.
+			<para><emphasis>counter</emphasis> (int, optional) - Diversion counter to be added to the header, as defined by the standard.
 			</para>
 		</listitem>
 	</itemizedlist>

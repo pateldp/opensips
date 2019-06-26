@@ -56,6 +56,7 @@
 #include "parse_fline.h"
 #include "parse_body.h"
 #include "hf.h"
+#include "../trim.h"
 
 
 /* convenience short-cut macros */
@@ -102,7 +103,7 @@ enum request_method {
                                       * callback had already been registered */
 #define FL_NAT_TRACK_DIALOG  (1<<13) /* trigger dialog tracking from the
                                       * nat_traversal module */
-#define FL_USE_SIPTRACE      (1<<14) /* used by siptrace to check if the tm
+#define FL_USE_SIPTRACE      (1<<14) /* used by tracer to check if the tm
                                       * callbacks were registered */
 #define FL_SHM_UPDATABLE     (1<<15) /* a SHM cloned message can be updated
                                       * (TM used, requires FL_SHM_CLONE) */
@@ -119,13 +120,14 @@ enum request_method {
                                       * generated based on the transaction,
                                       * either in failure route or resume 
                                       * route */
+#define FL_TM_REPLICATED	 (1<<19) /* message received due to a tm replication */
 
 /* define the # of unknown URI parameters to parse */
 #define URI_MAX_U_PARAMS 10
 
 #define IFISMETHOD(methodname,firstchar)                                  \
 if (  (*tmp==(firstchar) || *tmp==((firstchar) | 32)) &&                  \
-        strncasecmp( tmp+1, #methodname +1, methodname##_LEN-1)==0 &&     \
+        strncasecmp( tmp+1, (char *)#methodname+1, methodname##_LEN-1)==0 &&     \
         *(tmp+methodname##_LEN)==' ') {                                   \
                 fl->type=SIP_REQUEST;                                     \
                 fl->u.request.method.len=methodname##_LEN;                \
@@ -417,6 +419,28 @@ inline static int get_body(struct sip_msg *msg, str *body)
 		body->len = 0;
 	}
 
+	return 0;
+}
+
+/*
+ * Get the callid of a message. If returned value is 0, the callid is stored
+ * in the _cid field, otherwise -1 is returned on error
+ */
+inline static int get_callid(struct sip_msg* _m, str* _cid)
+{
+	if ((parse_headers(_m, HDR_CALLID_F, 0) == -1)) {
+		LM_ERR("failed to parse call-id header\n");
+		return -1;
+	}
+
+	if (_m->callid == NULL) {
+		LM_ERR("call-id not found\n");
+		return -1;
+	}
+
+	_cid->s = _m->callid->body.s;
+	_cid->len = _m->callid->body.len;
+	trim(_cid);
 	return 0;
 }
 

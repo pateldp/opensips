@@ -1,19 +1,4 @@
 AAA RADIUS MODULE
-
-Irina-Maria Stanescu
-
-   OpenSIPS Solutions
-
-Edited by
-
-Irina-Maria Stanescu
-
-   Copyright © 2009 Irina-Maria
-   Stanescu
-
-   Copyright © 2009 Voice Sistem SRL
-   Revision History
-   Revision $Revision: 5908 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -51,6 +36,22 @@ Irina-Maria Stanescu
 
         2.1. Downloading radius-client library
         2.2. Applying the patch
+
+   3. Contributors
+
+        3.1. By Commit Statistics
+        3.2. By Commit Activity
+
+   4. Documentation
+
+        4.1. Contributors
+
+   List of Tables
+
+   3.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   3.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -213,14 +214,14 @@ modparam("aaa_radius", "fetch_all_values", 1)
    This function can be used from the script to make custom radius
    authentication request. The function takes two parameters.
 
-   The first parameter represents the name of the set that
-   contains the list of attributes and pvars that will form the
-   authentication request (see the “sets” module parameter).
-
-   The second parameter represents the name of the set that
-   contains the list of attributes and pvars that will be
-   extracted form the authentication reply (see the “sets” module
-   parameter).
+   Parameters:
+     * input_set_name (string) - the name of the set that contains
+       the list of attributes and pvars that will form the
+       authentication request (see the “sets” module parameter).
+     * output_set_name (string) - the name of the set that
+       contains the list of attributes and pvars that will be
+       extracted form the authentication reply (see the “sets”
+       module parameter).
 
    The sets must be defined using the “sets” exported parameter.
 
@@ -253,9 +254,10 @@ switch ($rc) {
 1.4.2.  radius_send_acct(input_set_name)
 
    This function can be used from the script to make custom radius
-   authentication request. The function takes only one parameter
-   that represents the name of the set that contains the list of
-   attributes and pvars that will form the accounting request.
+   authentication request. The function takes only one string
+   parameter that represents the name of the set that contains the
+   list of attributes and pvars that will form the accounting
+   request.
 
    Only one set is needed as a parameter because no AVPs can be
    extracted from the accounting replies.
@@ -277,16 +279,16 @@ radius_send_acct("set1");
 1.5.1.  radius_send_auth(input_set_name, output_set_name)
 
    This function can be used from the script to make custom radius
-   authentication request. The function takes two parameters.
+   authentication request.
 
-   The first parameter represents the name of the set that
-   contains the list of attributes and pvars that will form the
-   authentication request (see the “sets” module parameter).
-
-   The second parameter represents the name of the set that
-   contains the list of attributes and pvars that will be
-   extracted form the authentication reply (see the “sets” module
-   parameter).
+   Parameters:
+     * input_set_name (string) - the name of the set that contains
+       the list of attributes and pvars that will form the
+       authentication request (see the “sets” module parameter).
+     * output_set_name (string) - the name of the set that
+       contains the list of attributes and pvars that will be
+       extracted form the authentication reply (see the “sets”
+       module parameter).
 
    The sets must be defined using the “sets” exported parameter.
 
@@ -320,9 +322,10 @@ switch ($rc) {
 1.5.2.  radius_send_acct(input_set_name)
 
    This function can be used from the script to make custom radius
-   authentication request. The function takes only one parameter
-   that represents the name of the set that contains the list of
-   attributes and pvars that will form the accounting request.
+   authentication request. The function takes only one string
+   parameter that represents the name of the set that contains the
+   list of attributes and pvars that will form the accounting
+   request.
 
    Only one set is needed as a parameter because no AVPs can be
    extracted from the accounting replies.
@@ -382,3 +385,78 @@ tch
 make
 sudo make install
 ........
+
+Chapter 3. Contributors
+
+3.1. By Commit Statistics
+
+   Table 3.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Irina-Maria Stanescu 24 10 1432 60
+   2. Ionut Ionita (@ionutrazvanionita) 22 11 1258 30
+   3. Bogdan-Andrei Iancu (@bogdan-iancu) 15 12 102 82
+   4. Razvan Crainea (@razvancrainea) 13 11 49 41
+   5. Liviu Chircu (@liviuchircu) 9 7 21 49
+   6. Vlad Patrascu (@rvlad-patrascu) 6 3 49 73
+   7. Boris Ratner 4 2 38 5
+   8. Anca Vamanu 4 2 5 3
+   9. Matt Lehner 3 1 32 3
+   10. Авдиенко Михаил 3 1 7 17
+
+   All remaining contributors: Alex Massover, Julián Moreno
+   Patiño, Peter Lemenkov (@lemenkov), Walter Doekes (@wdoekes),
+   Dan Pascu (@danpascu).
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+3.2. By Commit Activity
+
+   Table 3.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Razvan Crainea (@razvancrainea)     Sep 2010 - May 2019
+   2.  Dan Pascu (@danpascu)               May 2019 - May 2019
+   3.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   4.  Bogdan-Andrei Iancu (@bogdan-iancu) Aug 2009 - Apr 2019
+   5.  Liviu Chircu (@liviuchircu)         Mar 2014 - Nov 2018
+   6.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   7.  Ionut Ionita (@ionutrazvanionita)   Jun 2015 - Apr 2017
+   8.  Julián Moreno Patiño                Feb 2016 - Feb 2016
+   9.  Walter Doekes (@wdoekes)            Jun 2014 - Jun 2014
+   10. Boris Ratner                        Mar 2012 - Jan 2013
+
+   All remaining contributors: Matt Lehner, Irina-Maria Stanescu,
+   Авдиенко Михаил, Alex Massover, Anca Vamanu.
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 4. Documentation
+
+4.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Peter Lemenkov
+   (@lemenkov), Liviu Chircu (@liviuchircu), Razvan Crainea
+   (@razvancrainea), Ionut Ionita (@ionutrazvanionita), Walter
+   Doekes (@wdoekes), Bogdan-Andrei Iancu (@bogdan-iancu), Boris
+   Ratner, Irina-Maria Stanescu.
+
+   Documentation Copyrights:
+
+   Copyright © 2009 Irina-Maria Stanescu
+
+   Copyright © 2009 Voice Sistem SRL

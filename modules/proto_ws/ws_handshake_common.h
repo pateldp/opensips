@@ -656,7 +656,7 @@ static inline int ws_parse_req_http_fl(struct tcp_connection *c,
 	tmp.s = spe + 5; /* start of the major */
 	sp = q_memchr(tmp.s, '.', end - tmp.s);
 	if (!sp || sp == tmp.s) {
-		LM_ERR("cannot find DOT");
+		LM_ERR("cannot find DOT\n");
 		goto version_error;
 	}
 	tmp.len = sp - tmp.s;
@@ -717,7 +717,7 @@ static inline int ws_parse_rpl_http_fl(struct tcp_connection *c,
 	tmp.s = p;
 	sp = q_memchr(tmp.s, '.', end - tmp.s);
 	if (!sp || sp == tmp.s) {
-		LM_ERR("cannot find version DOT");
+		LM_ERR("cannot find version DOT\n");
 		goto error;
 	}
 	tmp.len = sp - tmp.s;
@@ -729,7 +729,7 @@ static inline int ws_parse_rpl_http_fl(struct tcp_connection *c,
 	tmp.s = p;
 	sp = q_memchr(tmp.s, ' ', end - tmp.s);
 	if (!sp || sp == tmp.s) {
-		LM_ERR("cannot find version separator");
+		LM_ERR("cannot find version separator\n");
 		goto error;
 	}
 	tmp.len = sp - tmp.s;
@@ -1278,8 +1278,8 @@ static int ws_start_handshake(struct tcp_connection *c)
 	reset_tcp_vars(tcpthreshold);
 	start_expire_timer(get, tcpthreshold);
 
-	ip = ip_addr2a(&c->rcv.dst_ip);
-	port = int2str(c->rcv.dst_port, &port_len);
+	ip = ip_addr2a(&c->rcv.src_ip);
+	port = int2str(c->rcv.src_port, &port_len);
 	n = strlen(ip);
 	memcpy(host_orig_buf, ip, n);
 	host_orig_buf[n] = ':';

@@ -31,6 +31,8 @@
 #include "../daemonize.h"
 #include "../reactor.h"
 #include "../timer.h"
+#include "../pt_load.h"
+#include "../cfg_reload.h"
 #include "net_udp.h"
 
 
@@ -61,19 +63,26 @@ void udp_destroy(void)
 }
 
 /* tells how many processes the UDP layer will create */
-int udp_count_processes(void)
+int udp_count_processes(unsigned int *extra)
 {
 	struct socket_info *si;
-	int n, i;
+	unsigned int n, e, i;
 
-	if (udp_disabled)
+	if (udp_disabled) {
+		if (extra) *extra = 0;
 		return 0;
+	}
 
-	for( i=0,n=0 ; i<PROTO_LAST ; i++)
+	for( i=0,n=0,e=0 ; i<PROTO_LAST ; i++)
 		if (protos[i].id!=PROTO_NONE && is_udp_based_proto(i))
-			for( si=protos[i].listeners ; si; si=si->next)
-				n+=si->children;
+			for( si=protos[i].listeners ; si; si=si->next) {
+				n+=si->workers;
+				if (si->s_profile)
+					if (si->s_profile->max_procs > si->workers)
+						e+=si->s_profile->max_procs-si->workers;
+			}
 
+	if (extra) *extra = e;
 	return n;
 }
 
@@ -251,35 +260,50 @@ error:
 
 inline static int handle_io(struct fd_map* fm, int idx,int event_type)
 {
-	int n,read;
+	int n = 0;
+	int read;
+
+	pt_become_active();
+
+	pre_run_handle_script_reload(fm->app_flags);
 
 	switch(fm->type){
 		case F_UDP_READ:
-			update_stat( pt[process_no].load, +1 );
 			n = protos[((struct socket_info*)fm->data)->proto].net.
 				read( fm->data /*si*/, &read);
-			update_stat( pt[process_no].load, -1 );
-			return n;
+			break;
 		case F_TIMER_JOB:
 			handle_timer_job();
-			return 0;
+			break;
 		case F_SCRIPT_ASYNC:
-			async_script_resume_f( &fm->fd, fm->data);
-			return 0;
+			async_script_resume_f( fm->fd, fm->data);
+			break;
 		case F_FD_ASYNC:
-			async_fd_resume( &fm->fd, fm->data);
-			return 0;
+			async_fd_resume( fm->fd, fm->data);
+			break;
 		case F_LAUNCH_ASYNC:
-			async_launch_resume( &fm->fd, fm->data);
-			return 0;
+			async_launch_resume( fm->fd, fm->data);
+			break;
 		case F_IPC:
-			ipc_handle_job();
-			return 0;
+			ipc_handle_job(fm->fd);
+			break;
 		default:
 			LM_CRIT("unknown fd type %d in UDP worker\n", fm->type);
-			return -1;
+			n = -1;
+			break;
 	}
-	return -1;
+
+	if (reactor_is_empty() && _termination_in_progress==1) {
+		LM_WARN("reactor got empty while termination in progress\n");
+		ipc_handle_all_pending_jobs(IPC_FD_READ_SELF);
+		if (reactor_is_empty())
+			dynamic_process_final_exit();
+	}
+
+	post_run_handle_script_reload();
+
+	pt_become_idle();
+	return n;
 }
 
 
@@ -299,9 +323,15 @@ int udp_proc_reactor_init( struct socket_info *si )
 	}
 
 	/* init: start watching for the IPC jobs */
-	if (reactor_add_reader( IPC_FD_READ_SELF, F_IPC, RCT_PRIO_ASYNC,NULL)<0){
+	if (reactor_add_reader(IPC_FD_READ_SELF, F_IPC, RCT_PRIO_ASYNC, NULL)<0){
 		LM_CRIT("failed to add IPC pipe to reactor\n");
 		goto error;
+	}
+
+	/* init: start watching for IPC "dispatched" jobs */
+	if (reactor_add_reader(IPC_FD_READ_SHARED, F_IPC, RCT_PRIO_ASYNC, NULL)<0){
+		LM_CRIT("failed to add IPC shared pipe to reactor\n");
+		return -1;
 	}
 
 	/* init: start watching the SIP UDP fd */
@@ -317,12 +347,88 @@ error:
 }
 
 
+static int fork_dynamic_udp_process(void *si_filter)
+{
+	struct socket_info *si = (struct socket_info*)si_filter;
+	int p_id;
+
+	if ((p_id=internal_fork( "UDP receiver",
+	OSS_PROC_DYNAMIC|OSS_PROC_NEEDS_SCRIPT, TYPE_UDP))<0) {
+		LM_CRIT("cannot fork UDP process\n");
+		return(-1);
+	} else if (p_id==0) {
+		/* new UDP process */
+		/* set a more detailed description */
+		set_proc_attrs("SIP receiver %.*s",
+			si->sock_str.len, si->sock_str.s);
+		pt[process_no].pg_filter = si;
+		bind_address=si; /* shortcut */
+		/* we first need to init the reactor to be able to add fd
+		 * into it in child_init routines */
+		if (udp_proc_reactor_init(si) < 0 ||
+		init_child(10000/*FIXME*/) < 0) {
+			goto error;
+		}
+		report_conditional_status( 1, 0); /*report success*/
+		/* the child proc is done read&write) dealing with the status pipe */
+		clean_read_pipeend();
+
+		reactor_main_loop(UDP_SELECT_TIMEOUT, error, );
+		destroy_worker_reactor();
+error:
+		report_failure_status();
+		LM_ERR("Initializing new process failed, exiting with error \n");
+		pt[process_no].flags |= OSS_PROC_SELFEXIT;
+		exit( -1);
+	} else {
+		/*parent/main*/
+		return p_id;
+	}
+}
+
+
+static void udp_process_graceful_terminate(int sender, void *param)
+{
+	/* we accept this only from the main proccess */
+	if (sender!=0) {
+		LM_BUG("graceful terminate received from a non-main process!!\n");
+		return;
+	}
+	LM_NOTICE("process %d received RPC to terminate from Main\n",process_no);
+
+	/*remove from reactor all the shared fds, so we stop reading from them */
+
+	/*remove timer jobs pipe */
+	reactor_del_reader( timer_fd_out, -1, 0);
+
+	/*remove IPC dispatcher pipe */
+	reactor_del_reader( IPC_FD_READ_SHARED, -1, 0);
+
+	/*remove network interface */
+	reactor_del_reader( bind_address->socket, -1, 0);
+
+	/*remove private IPC pipe */
+	reactor_del_reader( IPC_FD_READ_SELF, -1, 0);
+
+	/* let's drain the private IPC */
+	ipc_handle_all_pending_jobs(IPC_FD_READ_SELF);
+
+	/* what is left now is the reactor are async fd's, so we need to 
+	 * wait to complete all of them */
+	if (reactor_is_empty())
+		dynamic_process_final_exit();
+
+	/* the exit will be triggered by the reactor, when empty */
+	_termination_in_progress = 1;
+	LM_INFO("reactor not empty, waiting for pending async\n");
+}
+
+
 /* starts all UDP related processes */
 int udp_start_processes(int *chd_rank, int *startup_done)
 {
 	struct socket_info *si;
-	stat_var *load_p = NULL;
-	pid_t pid;
+	int p_id;
 	int i,p;
 
 	if (udp_disabled)
@@ -333,21 +439,26 @@ int udp_start_processes(int *chd_rank, int *startup_done)
 			continue;
 
 		for(si=protos[p].listeners; si ; si=si->next ) {
-			if (register_udp_load_stat(&si->sock_str,&load_p,si->children)!=0){
-				LM_ERR("failed to init load statistics\n");
-				goto error;
-			}
 
-			for (i=0;i<si->children;i++) {
+			if ( auto_scaling_enabled && si->s_profile &&
+			create_process_group( TYPE_UDP, si, si->s_profile,
+			fork_dynamic_udp_process, udp_process_graceful_terminate)!=0)
+				LM_ERR("failed to create group of UDP processes for <%.*s>, "
+					"auto forking will not be possible\n",
+					si->name.len, si->name.s);
+
+			for (i=0;i<si->workers;i++) {
 				(*chd_rank)++;
-				if ( (pid=internal_fork( "UDP receiver"))<0 ) {
+				if ( (p_id=internal_fork( "UDP receiver",
+				OSS_PROC_NEEDS_SCRIPT, TYPE_UDP))<0 ) {
 					LM_CRIT("cannot fork UDP process\n");
 					goto error;
-				} else if (pid==0) {
+				} else if (p_id==0) {
 					/* new UDP process */
 					/* set a more detailed description */
-					set_proc_attrs("SIP receiver %.*s ",
+					set_proc_attrs("SIP receiver %.*s",
 						si->sock_str.len, si->sock_str.s);
+					pt[process_no].pg_filter = si;
 					bind_address=si; /* shortcut */
 					/* we first need to init the reactor to be able to add fd
 					 * into it in child_init routines */
@@ -372,10 +483,6 @@ int udp_start_processes(int *chd_rank, int *startup_done)
 					}
 
 					report_conditional_status( (!no_daemon_mode), 0);
-
-					/* all UDP listeners on same interface
-					 * have same SHM load pointer */
-					pt[process_no].load = load_p;
 
 					/**
 					 * Main UDP receiver loop, processes data from the

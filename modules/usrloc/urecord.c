@@ -42,10 +42,11 @@
 #include "ul_mod.h"
 #include "utime.h"
 #include "ul_callback.h"
-#include "ureplication.h"
+#include "ul_cluster.h"
 #include "udomain.h"
 #include "dlist.h"
 #include "usrloc.h"
+#include "kv_store.h"
 
 extern int max_contact_delete;
 extern db_key_t *cid_keys;
@@ -59,31 +60,34 @@ int cseq_delay = 20;
 extern event_id_t ei_c_ins_id;
 extern event_id_t ei_c_del_id;
 
+str urec_store_key = str_init("_urec_kvs");
+
 /*! \brief
  * Create and initialize new record structure
  */
 int new_urecord(str* _dom, str* _aor, urecord_t** _r)
 {
-	size_t att_data_sz;
-
-	att_data_sz = get_att_aor_data_sz();
-
-	*_r = (urecord_t*)shm_malloc(sizeof(urecord_t) + att_data_sz);
+	*_r = (urecord_t*)shm_malloc(sizeof(urecord_t));
 	if (*_r == 0) {
 		LM_ERR("no more share memory\n");
 		return -1;
 	}
-	memset(*_r, 0, sizeof(urecord_t) + att_data_sz);
+	memset(*_r, 0, sizeof(urecord_t));
 
-	if (att_data_sz > 0)
-		(*_r)->attached_data = (void **)(*_r + 1);
+	(*_r)->kv_storage = map_create(AVLMAP_SHARED);
+	if (!(*_r)->kv_storage) {
+		LM_ERR("oom\n");
+		shm_free(*_r);
+		*_r = NULL;
+		return -1;
+	}
 
 	(*_r)->aor.s = (char*)shm_malloc(_aor->len);
 	if ((*_r)->aor.s == 0) {
 		LM_ERR("no more share memory\n");
 		shm_free(*_r);
-		*_r = 0;
-		return -2;
+		*_r = NULL;
+		return -1;
 	}
 	memcpy((*_r)->aor.s, _aor->s, _aor->len);
 	(*_r)->aor.len = _aor->len;
@@ -109,8 +113,10 @@ void free_urecord(urecord_t* _r)
 		free_ucontact(ptr);
 	}
 
-	/* if mem cache is not used, the urecord struct is static*/
-	if (db_mode!=DB_ONLY) {
+	shm_free_all(_r->remote_aors);
+	store_destroy(_r->kv_storage);
+
+	if (have_mem_storage() && !_r->is_static) {
 		if (_r->aor.s) shm_free(_r->aor.s);
 		shm_free(_r);
 	} else {
@@ -118,31 +124,16 @@ void free_urecord(urecord_t* _r)
 	}
 }
 
-
-/*! \brief
- * Print a record
- */
-void print_urecord(FILE* _f, urecord_t* _r)
+void restore_urecord_kv_store(urecord_t *_r, ucontact_t *_c)
 {
-	ucontact_t* ptr;
+	int_str_t **urec_kv_store;
 
-	fprintf(_f, "...Record(%p)...\n", _r);
-	fprintf(_f, "domain : '%.*s'\n", _r->domain->len, ZSW(_r->domain->s));
-	fprintf(_f, "aor    : '%.*s'\n", _r->aor.len, ZSW(_r->aor.s));
-	fprintf(_f, "aorhash: '%u'\n", (unsigned)_r->aorhash);
-	fprintf(_f, "slot:    '%d'\n", _r->aorhash&(_r->slot->d->size-1));
-
-	if (_r->contacts) {
-		ptr = _r->contacts;
-		while(ptr) {
-			print_ucontact(_f, ptr);
-			ptr = ptr->next;
-		}
+	urec_kv_store = (int_str_t **)map_find(_c->kv_storage, urec_store_key);
+	if (urec_kv_store) {
+		store_destroy(_r->kv_storage);
+		_r->kv_storage = store_deserialize(&(*urec_kv_store)->s);
 	}
-
-	fprintf(_f, ".../Record...\n");
 }
-
 
 /*! \brief
  * Add a new contact
@@ -162,6 +153,9 @@ ucontact_t* mem_insert_ucontact(urecord_t* _r, str* _c, ucontact_info_t* _ci)
 	}
 
 	if_update_stat( _r->slot, _r->slot->d->contacts, 1);
+
+	if (c->kv_storage)
+		restore_urecord_kv_store(_r, c);
 
 	ptr = _r->contacts;
 
@@ -201,6 +195,8 @@ ucontact_t* mem_insert_ucontact(urecord_t* _r, str* _c, ucontact_info_t* _ci)
  */
 void mem_remove_ucontact(urecord_t* _r, ucontact_t* _c)
 {
+	int_str_t **rstore;
+
 	if (_c->prev) {
 		_c->prev->next = _c->next;
 		if (_c->next) {
@@ -212,6 +208,15 @@ void mem_remove_ucontact(urecord_t* _r, ucontact_t* _c)
 			_c->next->prev = 0;
 		}
 	}
+
+	if (sql_wmode != SQL_NO_WRITE) {
+		rstore = (int_str_t **)map_find(_c->kv_storage, urec_store_key);
+		if (rstore && _r->contacts) {
+			if (!put_ucontact_key(_r->contacts, &urec_store_key, *rstore))
+				LM_ERR("oom\n");
+		}
+	}
+
 	ul_raise_contact_event(ei_c_del_id, _c);
 }
 
@@ -230,7 +235,7 @@ void mem_delete_ucontact(urecord_t* _r, ucontact_t* _c)
 
 /*! \brief
  * This timer routine is used when
- * db_mode is set to NO_DB
+ * 'rr_persist' is set to RRP_NONE
  */
 static inline int nodb_timer(urecord_t* _r)
 {
@@ -264,8 +269,7 @@ static inline int nodb_timer(urecord_t* _r)
 
 
 /*! \brief
- * This routine is used when db_mode is
- * set to WRITE_THROUGH
+ * This routine is used when 'sql_wmode' is set to SQL_WRITE_THROUGH
  */
 static inline int ALLOW_UNUSED wt_timer(urecord_t* _r)
 {
@@ -313,6 +317,9 @@ static inline int wb_timer(urecord_t* _r,query_list_t **ins_list)
 
 	ptr = _r->contacts;
 
+	if (cluster_mode != CM_SQL_ONLY && persist_urecord_kv_store(_r) != 0)
+		LM_DBG("failed to persist latest urecord K/V storage\n");
+
 	while(ptr) {
 		if (!VALID_CONTACT(ptr, act_time)) {
 			/* run callbacks for EXPIRE event */
@@ -323,7 +330,8 @@ static inline int wb_timer(urecord_t* _r,query_list_t **ins_list)
 			LM_DBG("Binding '%.*s','%.*s' has expired\n",
 				ptr->aor->len, ZSW(ptr->aor->s),
 				ptr->c.len, ZSW(ptr->c.s));
-			if (db_mode != DB_ONLY)
+
+			if (have_mem_storage())
 				update_stat( _r->slot->d->expires, 1);
 
 			t = ptr;
@@ -415,18 +423,32 @@ static inline int db_only_timer(urecord_t* _r) {
 
 int timer_urecord(urecord_t* _r,query_list_t **ins_list)
 {
-	switch(db_mode) {
-	case NO_DB:         return nodb_timer(_r);
-	/* use also the write_back timer routine to handle the failed
-	 * realtime inserts/updates */
-	case WRITE_THROUGH: return wb_timer(_r,ins_list); /*wt_timer(_r);*/
-	case WRITE_BACK:    return wb_timer(_r,ins_list);
+	if (!have_mem_storage())
+		return 0;
+
+	switch (rr_persist) {
+	case RRP_NONE:
+	case RRP_SYNC_FROM_CLUSTER:
+		return nodb_timer(_r);
+	case RRP_LOAD_FROM_SQL:
+		/* use also the write_back timer routine to handle the failed
+		 * realtime inserts/updates */
+		return wb_timer(_r, ins_list); /* wt_timer(_r); */
 	default:
 		return 0; /* Makes gcc happy */
 	}
 }
 
+int cdb_delete_urecord(urecord_t* _r)
+{
+	/* TODO: refactor; this looks incompatible with Cassandra */
+	if (cdbf.remove(cdbc, &_r->aor) < 0) {
+		LM_ERR("delete failed for AoR %.*s\n", _r->aor.len, _r->aor.s);
+		return -1;
+	}
 
+	return 0;
+}
 
 int db_delete_urecord(urecord_t* _r)
 {
@@ -468,6 +490,233 @@ int db_delete_urecord(urecord_t* _r)
 	return 0;
 }
 
+int cdb_add_ct_update(cdb_dict_t *updates, const ucontact_t *ct, char remove)
+{
+	static str ctkey_pkg_buf, ctkeyb64_pkg_buf;
+	cdb_pair_t *pair;
+	cdb_dict_t *ct_fields;
+	str subkey;
+	cdb_key_t contacts_key;
+	str printed_flags;
+	int len, base64len;
+
+	cdb_key_init(&contacts_key, "contacts");
+	len = ct->c.len + 1 + ct->callid.len;
+	base64len = calc_base64_encode_len(len);
+
+	if (pkg_str_extend(&ctkey_pkg_buf, len) < 0) {
+		LM_ERR("oom\n");
+		return -1;
+	}
+
+	if (pkg_str_extend(&ctkeyb64_pkg_buf, base64len) < 0) {
+		LM_ERR("oom\n");
+		return -1;
+	}
+
+	memcpy(ctkey_pkg_buf.s, ct->c.s, ct->c.len);
+	ctkey_pkg_buf.s[ct->c.len] = ':';
+	memcpy(ctkey_pkg_buf.s + ct->c.len + 1, ct->callid.s,
+	       ct->callid.len);
+
+	base64encode((unsigned char *)ctkeyb64_pkg_buf.s,
+	             (unsigned char *)ctkey_pkg_buf.s, len);
+
+	subkey.s = ctkeyb64_pkg_buf.s;
+	subkey.len = base64len;
+
+	pair = cdb_mk_pair(&contacts_key, &subkey);
+	if (!pair) {
+		LM_ERR("oom\n");
+		return -1;
+	}
+
+	if (remove) {
+		pair->unset = 1;
+		goto done;
+	}
+
+	pair->val.type = CDB_DICT;
+	ct_fields = &pair->val.val.dict;
+	cdb_dict_init(ct_fields);
+
+	if (CDB_DICT_ADD_STR(ct_fields, "contact", &ct->c) != 0 ||
+	    CDB_DICT_ADD_INT32(ct_fields, "expires", ct->expires) != 0 ||
+	    CDB_DICT_ADD_INT32(ct_fields, "q", ct->q) != 0 ||
+	    CDB_DICT_ADD_STR(ct_fields, "callid", &ct->callid) != 0 ||
+	    CDB_DICT_ADD_INT32(ct_fields, "cseq", ct->cseq) != 0 ||
+	    CDB_DICT_ADD_INT32(ct_fields, "flags", ct->flags) != 0 ||
+	    CDB_DICT_ADD_STR(ct_fields, "ua", &ct->user_agent) != 0 ||
+	    CDB_DICT_ADD_INT64(ct_fields, "last_mod", ct->last_modified) != 0)
+		return -1;
+
+	printed_flags = bitmask_to_flag_list(FLAG_TYPE_BRANCH, ct->cflags);
+	if (CDB_DICT_ADD_STR(ct_fields, "cflags", &printed_flags) != 0)
+		return -1;
+
+	if (ZSTR(ct->received)) {
+		if (CDB_DICT_ADD_NULL(ct_fields, "received") != 0)
+			return -1;
+	} else {
+		if (CDB_DICT_ADD_STR(ct_fields, "received", &ct->received) != 0)
+			return -1;
+	}
+
+	if (ZSTR(ct->path)) {
+		if (CDB_DICT_ADD_NULL(ct_fields, "path") != 0)
+			return -1;
+	} else {
+		if (CDB_DICT_ADD_STR(ct_fields, "path", &ct->path) != 0)
+			return -1;
+	}
+
+	if (!ct->sock) {
+		if (CDB_DICT_ADD_NULL(ct_fields, "sock") != 0)
+			return -1;
+	} else {
+		if (CDB_DICT_ADD_STR(ct_fields, "sock",
+		    !ZSTR(ct->sock->adv_sock_str) ?
+			      &ct->sock->adv_sock_str : &ct->sock->sock_str) != 0)
+			return -1;
+	}
+
+	if (ct->methods == 0xFFFFFFFF) {
+		if (CDB_DICT_ADD_NULL(ct_fields, "methods") != 0)
+			return -1;
+	} else {
+		if (CDB_DICT_ADD_INT32(ct_fields, "methods", ct->methods) != 0)
+			return -1;
+	}
+
+	if (ZSTR(ct->instance)) {
+		if (CDB_DICT_ADD_NULL(ct_fields, "sip_instance") != 0)
+			return -1;
+	} else {
+		if (CDB_DICT_ADD_STR(ct_fields, "sip_instance", &ct->instance) != 0)
+			return -1;
+	}
+
+	if (ZSTR(ct->attr)) {
+		if (CDB_DICT_ADD_NULL(ct_fields, "attr") != 0)
+			return -1;
+	} else {
+		if (CDB_DICT_ADD_STR(ct_fields, "attr", &ct->attr) != 0)
+			return -1;
+	}
+
+done:
+	cdb_dict_add(pair, updates);
+	return 0;
+}
+
+/**
+ * cdb_flush_urecord() - Sync memory state down to cache state in one query.
+ * @_r: record to flush.
+ *
+ * Depending on their state:
+ *  - CS_SYNC contacts of @_r are skipped
+ *  - CS_NEW contacts of @_r are inserted
+ *  - CS_DIRTY contacts of @_r are updated
+ */
+int cdb_flush_urecord(urecord_t *_r)
+{
+	static const cdb_key_t aor_key = {{"aor", 3}, 1};
+	cdb_filter_t *aor_filter = NULL;
+	int_str_t val;
+	ucontact_t *it, *ct;
+	cdb_dict_t ct_changes;
+	cstate_t old_state;
+	int op;
+
+	cdb_dict_init(&ct_changes);
+
+	it = _r->contacts;
+	while (it) {
+		ct = it;
+		it = it->next;
+
+		if (!VALID_CONTACT(ct, act_time)) {
+			/* run callbacks for DELETE event */
+			if (exists_ulcb_type(UL_CONTACT_DELETE))
+				run_ul_callbacks(UL_CONTACT_DELETE, ct);
+
+			LM_DBG("deleting AoR: %.*s, Contact: %.*s.\n",
+				ct->aor->len, ZSW(ct->aor->s),
+				ct->c.len, ZSW(ct->c.s));
+
+			if (have_mem_storage())
+				update_stat( _r->slot->d->expires, 1);
+
+			/* Should we remove the contact from the cache? */
+			if (st_expired_ucontact(ct) == 1 && !(ct->flags & FL_MEM)) {
+				if (cdb_add_ct_update(&ct_changes, ct, 1) < 0) {
+					LM_ERR("failed to prepare ct delete, AoR: %.*s ci: %.*s\n",
+					       ct->aor->len, ct->aor->s, ct->callid.len,
+					       ct->callid.s);
+					goto err_free;
+				}
+			}
+
+			continue;
+		}
+
+		LM_DBG("adding AoR: %.*s, Contact: %.*s.\n",
+		       ct->aor->len, ZSW(ct->aor->s), ct->c.len, ZSW(ct->c.s));
+
+		/* Determine the operation we have to do */
+		old_state = ct->state;
+		op = st_flush_ucontact(ct);
+
+		switch (op) {
+		case 0: /* do nothing, contact is synchronized */
+			break;
+
+		case 1: /* insert */
+		case 2: /* update */
+			if (cdb_add_ct_update(&ct_changes, ct, 0) < 0) {
+				LM_ERR("failed to prepare ct %s, AoR: %.*s ci: %.*s\n",
+				       op == 1 ? "insert" : "update", ct->aor->len, ct->aor->s,
+				       ct->callid.len, ct->callid.s);
+				ct->state = old_state;
+				goto err_free;
+			}
+			break;
+		}
+	}
+
+	dbg_cdb_dict("final ct changes: ", &ct_changes);
+	if (cdb_dict_empty(&ct_changes))
+		goto out;
+
+	if (CDB_DICT_ADD_INT32(&ct_changes, "aorhash", _r->aorhash) != 0) {
+		LM_ERR("oom\n");
+		goto err_free;
+	}
+
+	val.is_str = 1;
+	val.s = _r->aor;
+	aor_filter = cdb_append_filter(NULL, &aor_key, CDB_OP_EQ, &val);
+	if (!aor_filter) {
+		LM_ERR("oom\n");
+		goto err_free;
+	}
+
+	if (cdbf.update(cdbc, aor_filter, &ct_changes) < 0) {
+		LM_ERR("cache update query for AoR %.*s failed!\n",
+		       _r->aor.len, _r->aor.s);
+		goto err_free;
+	}
+
+out:
+	cdb_free_filters(aor_filter);
+	cdb_free_entries(&ct_changes, NULL);
+	return 0;
+
+err_free:
+	cdb_free_filters(aor_filter);
+	cdb_free_entries(&ct_changes, NULL);
+	return -1;
+}
 
 /*! \brief
  * Release urecord previously obtained
@@ -475,18 +724,34 @@ int db_delete_urecord(urecord_t* _r)
  */
 void release_urecord(urecord_t* _r, char is_replicated)
 {
-	if (db_mode==DB_ONLY) {
+	switch (cluster_mode) {
+	case CM_SQL_ONLY:
 		/* force flushing to DB*/
 		if (db_only_timer(_r) < 0)
 			LM_ERR("failed to sync with db\n");
 		/* now simply free everything */
 		free_urecord(_r);
-	} else if (_r->no_clear_ref <= 0 && _r->contacts == 0) {
+		break;
+	case CM_FULL_SHARING_CACHEDB:
+		if (cdb_flush_urecord(_r) < 0)
+			LM_ERR("failed to flush AoR %.*s\n", _r->aor.len, _r->aor.s);
+		free_urecord(_r);
+		break;
+	default:
+		if (_r->is_static || _r->contacts || _r->no_clear_ref > 0)
+			return;
+
 		if (exists_ulcb_type(UL_AOR_DELETE))
 			run_ul_callbacks(UL_AOR_DELETE, _r);
 
-		if (!is_replicated && ul_replicate_cluster)
+		if (!is_replicated && location_cluster) {
+			if (cluster_mode == CM_FEDERATION_CACHEDB &&
+			    cdb_update_urecord_metadata(&_r->aor, 1) != 0)
+				LM_ERR("failed to delete metadata, aor: %.*s\n",
+				       _r->aor.len, _r->aor.s);
+
 			replicate_urecord_delete(_r);
+		}
 
 		mem_delete_urecord(_r->slot->d, _r);
 	}
@@ -511,13 +776,13 @@ int insert_ucontact(urecord_t* _r, str* _contact, ucontact_info_t* _ci,
 		_r->next_clabel = CLABEL_INC_AND_TEST(_r->next_clabel);
 	}
 
-	if ( ((*_c)=mem_insert_ucontact(_r, _contact, _ci)) == 0) {
+	if (!(*_c = mem_insert_ucontact(_r, _contact, _ci))) {
 		LM_ERR("failed to insert contact\n");
 		return -1;
 	}
 
-	if (!is_replicated && ul_replicate_cluster && db_mode != DB_ONLY)
-		replicate_ucontact_insert(_r, _contact, _ci);
+	if (!is_replicated && have_data_replication())
+		replicate_ucontact_insert(_r, _contact, *_c);
 
 	if (exists_ulcb_type(UL_CONTACT_INSERT))
 		run_ul_callbacks(UL_CONTACT_INSERT, *_c);
@@ -525,7 +790,10 @@ int insert_ucontact(urecord_t* _r, str* _contact, ucontact_info_t* _ci,
 	if (!first_contact && exists_ulcb_type(UL_AOR_UPDATE))
 		run_ul_callbacks(UL_AOR_UPDATE, _r);
 
-	if (db_mode == WRITE_THROUGH) {
+	if (sql_wmode == SQL_WRITE_THROUGH) {
+		if (persist_urecord_kv_store(_r) != 0)
+			LM_DBG("failed to persist latest urecord K/V storage\n");
+
 		if (db_insert_ucontact(*_c,0,0) < 0) {
 			LM_ERR("failed to insert in database\n");
 		} else {
@@ -542,12 +810,11 @@ int insert_ucontact(urecord_t* _r, str* _contact, ucontact_info_t* _ci,
  */
 int delete_ucontact(urecord_t* _r, struct ucontact* _c, char is_replicated)
 {
-	if (!is_replicated && ul_replicate_cluster && db_mode != DB_ONLY)
+	if (!is_replicated && have_data_replication())
 		replicate_ucontact_delete(_r, _c);
 
-	if (exists_ulcb_type(UL_CONTACT_DELETE)) {
-		run_ul_callbacks( UL_CONTACT_DELETE, _c);
-	}
+	if (exists_ulcb_type(UL_CONTACT_DELETE))
+		run_ul_callbacks(UL_CONTACT_DELETE, _c);
 
 	if (exists_ulcb_type(UL_AOR_UPDATE))
 		run_ul_callbacks(UL_AOR_UPDATE, _r);
@@ -555,7 +822,7 @@ int delete_ucontact(urecord_t* _r, struct ucontact* _c, char is_replicated)
 	LM_DBG("deleting contact '%.*s'\n", _c->c.len, _c->c.s);
 
 	if (st_delete_ucontact(_c) > 0) {
-		if (db_mode == WRITE_THROUGH) {
+		if (sql_wmode == SQL_WRITE_THROUGH) {
 			if (db_delete_ucontact(_c) < 0) {
 				LM_ERR("failed to remove contact from database\n");
 			}
@@ -563,7 +830,7 @@ int delete_ucontact(urecord_t* _r, struct ucontact* _c, char is_replicated)
 
 		mem_delete_ucontact(_r, _c);
 
-		if (db_mode == DB_ONLY) {
+		if (cluster_mode == CM_SQL_ONLY) {
 			/* force flushing to DB*/
 			if (db_only_timer(_r) < 0)
 				LM_ERR("failed to sync with db\n");
@@ -674,4 +941,56 @@ uint64_t next_contact_id(urecord_t* _r)
 		_r->next_clabel = CLABEL_INC_AND_TEST(_r->next_clabel);
 
 	return contact_id;
+}
+
+int persist_urecord_kv_store(urecord_t* _r)
+{
+	ucontact_t *c;
+	int_str_t val;
+	str packed_kv;
+
+	if (!_r->contacts) {
+		LM_DBG("cannot persist the K/V store - no contacts!\n");
+		return -1;
+	}
+
+	if (map_size(_r->kv_storage) == 0)
+		return 0;
+
+	packed_kv = store_serialize(_r->kv_storage);
+	if (ZSTR(packed_kv)) {
+		LM_ERR("oom\n");
+		return -1;
+	}
+
+	for (c = _r->contacts; c; c = c->next) {
+		if (map_find(c->kv_storage, urec_store_key))
+			goto have_contact;
+	}
+
+	c = _r->contacts;
+
+have_contact:
+	val.is_str = 1;
+	val.s = packed_kv;
+
+	if (!put_ucontact_key(c, &urec_store_key, &val)) {
+		LM_ERR("oom\n");
+		store_free_buffer(&packed_kv);
+		return -1;
+	}
+
+	store_free_buffer(&packed_kv);
+	return 0;
+}
+
+int_str_t *get_urecord_key(urecord_t* _rec, const str* _key)
+{
+	return kv_get(_rec->kv_storage, _key);
+}
+
+int_str_t *put_urecord_key(urecord_t* _rec, const str* _key,
+                           const int_str_t* _val)
+{
+	return kv_put(_rec->kv_storage, _key, _val);
 }

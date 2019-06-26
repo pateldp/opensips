@@ -45,6 +45,7 @@
 #include "parser/parse_via.h"
 #include "parser/parse_to.h"
 #include "parser/sdp/sdp_helpr_funcs.h"
+#include "parser/sdp/sdp.h"
 
 #include "strcommon.h"
 #include "transformations.h"
@@ -478,45 +479,37 @@ int tr_eval_string(struct sip_msg *msg, tr_param_t *tp, int subtype,
 				j = v.ri;
 			}
 			LM_DBG("i=%d j=%d\n", i, j);
-			if(j<0)
+
+			/* adjust negative offset */
+			if (i < 0)
 			{
-				LM_ERR("substr negative offset\n");
+				if (-i > val->rs.len)
+				{
+					/* negative start out of range */
+					goto error;
+				} else {
+					i = val->rs.len + i;
+				}
+			}
+			/* start position out of range ? */
+			if (i >= val->rs.len)
+			{
+				/* return NULL output */
 				goto error;
 			}
+
+			/* adjust negative index */
+			if (j < 1)
+				j = val->rs.len + j - i;
+
+			/* cut if length > string */
+			if (i+j > val->rs.len)
+				j = val->rs.len - i;
+
 			val->flags = PV_VAL_STR;
 			val->ri = 0;
-			if(i>=0)
-			{
-				if(i>=val->rs.len)
-				{
-					LM_ERR("substr out of range\n");
-					goto error;
-				}
-				if(i+j>=val->rs.len) j=0;
-				if(j==0)
-				{ /* to end */
-					val->rs.s += i;
-					val->rs.len -= i;
-					break;
-				}
-				val->rs.s += i;
-				val->rs.len = j;
-				break;
-			}
-			i = -i;
-			if(i>val->rs.len)
-			{
-				LM_ERR("substr out of range\n");
-				goto error;
-			}
-			if(i<j) j=0;
-			if(j==0)
-			{ /* to end */
-				val->rs.s += val->rs.len-i;
-				val->rs.len = i;
-				break;
-			}
-			val->rs.s += val->rs.len-i;
+
+			val->rs.s += i;
 			val->rs.len = j;
 			break;
 
@@ -934,6 +927,28 @@ int tr_eval_string(struct sip_msg *msg, tr_param_t *tp, int subtype,
 			}
 
 			trim_leading(&val->rs);
+			break;
+		case TR_S_REVERSE:
+			if (!(val->flags & PV_VAL_STR))
+			{
+				val->rs.s = int2str(val->ri, &val->rs.len);
+				val->flags |= PV_VAL_STR;
+			}
+
+			/*To big for buffer*/
+			if(val->rs.len>TR_BUFFER_SIZE-1)
+				goto error;
+
+			p = _tr_buffer;
+
+			/*Reverse Order*/
+			for (i=0; i < val->rs.len; i++) {
+				p[val->rs.len - 1 - i] = val->rs.s[i];
+			}
+
+			/*Save Result*/
+			val->rs.s = _tr_buffer;
+			val->flags = PV_VAL_STR;
 			break;
 		default:
 			LM_ERR("unknown subtype %d\n",
@@ -1568,17 +1583,22 @@ error:
 	return -1;
 }
 
-static str _tr_sdp_str = {0,0};
+static str _tr_sdp_str;
 
 int tr_eval_sdp(struct sip_msg *msg, tr_param_t *tp,int subtype,
 		pv_value_t *val)
 {
+	str media;
 	char *bodylimit;
 	char *answer;
 	char *answerEnd;
 	char searchLine;
-	int entryNo,i;
+	int entryNo,i,lenoff;
+
 	pv_value_t v;
+	sdp_info_t sdp;
+	sdp_session_cell_t *session;
+	sdp_stream_cell_t *stream;
 
 	if (!val)
 		return -1;
@@ -1589,26 +1609,22 @@ int tr_eval_sdp(struct sip_msg *msg, tr_param_t *tp,int subtype,
 	if(!(val->flags&PV_VAL_STR) || val->rs.len<=0)
 		goto error;
 
-	if (!tp || !tp->next)
+	if (!tp)
 		goto error;
 
 	if(_tr_sdp_str.len==0 || _tr_sdp_str.len!=val->rs.len ||
 			strncmp(_tr_sdp_str.s, val->rs.s, val->rs.len)!=0)
 	{
-		if(val->rs.len>_tr_sdp_str.len)
+		if (pkg_str_extend(&_tr_sdp_str, val->rs.len + 3 /* \r\n\0 */) != 0)
 		{
-			if(_tr_sdp_str.s) pkg_free(_tr_sdp_str.s);
-				_tr_sdp_str.s = (char*)pkg_malloc((val->rs.len+1));
-			if(_tr_sdp_str.s==NULL)
-			{
-				LM_ERR("no more private memory\n");
-				memset(&_tr_sdp_str, 0, sizeof(str));
-				goto error;
-			}
+			LM_ERR("no more private memory\n");
+			goto error;
 		}
 
-		_tr_sdp_str.len = val->rs.len;
-		memcpy(_tr_sdp_str.s, val->rs.s, val->rs.len);
+		_tr_sdp_str.len = val->rs.len + 2;
+		_tr_sdp_str.s[0] = '\r';
+		_tr_sdp_str.s[1] = '\n';
+		memcpy(_tr_sdp_str.s + 2, val->rs.s, val->rs.len);
 		_tr_sdp_str.s[_tr_sdp_str.len] = '\0';
 
 	}
@@ -1616,6 +1632,10 @@ int tr_eval_sdp(struct sip_msg *msg, tr_param_t *tp,int subtype,
 	switch (subtype)
 	{
 		case TR_SDP_LINEAT:
+
+			/* line index is mandatory */
+			if (!tp->next)
+				goto error;
 			bodylimit = _tr_sdp_str.s + _tr_sdp_str.len;
 			searchLine = *(tp->v.s.s);
 			if(tp->next->type==TR_PARAM_NUMBER)
@@ -1667,12 +1687,104 @@ int tr_eval_sdp(struct sip_msg *msg, tr_param_t *tp,int subtype,
 			val->rs.len = answerEnd - answer;
 
 			break;
+
+		case TR_SDP_STREAM:
+		case TR_SDP_STREAM_DEL:
+			/* determine the media type we are talking about
+			 * either by index or by name */
+			media.s = NULL;
+			entryNo = 0;
+			switch (tp->type) {
+				case TR_PARAM_NUMBER:
+					entryNo = tp->v.n;
+					break;
+				case TR_PARAM_STRING:
+					media = tp->v.s;
+					break;
+				case TR_PARAM_SPEC:
+					media.s = NULL;
+					if(pv_get_spec_value(msg, (pv_spec_p)tp->v.data, &v)!=0)
+					{
+						LM_ERR("cannot get parameter\n");
+						goto error;
+					}
+					if (v.flags & PV_VAL_INT)
+						entryNo = v.ri;
+					else if (str2sint(&v.rs, &entryNo) < 0)
+						media = v.rs;
+					/* else entryNo has the media index */
+					break;
+			}
+
+			memset(&sdp, 0, sizeof(sdp));
+			if (parse_sdp_session(&_tr_sdp_str, 0, NULL, &sdp) < 0)
+				goto error;
+
+			if (media.s == NULL) {
+				if (entryNo < 0) {
+					if (entryNo + sdp.streams_num < 0)
+						/* out of bounds index */
+						goto parse_sdp_free;
+					entryNo += sdp.streams_num;
+				} else if (entryNo >= sdp.streams_num)
+					goto parse_sdp_free;
+				LM_DBG("stream index %d\n", entryNo);
+			} else
+				LM_DBG("stream type %.*s\n", media.len, media.s);
+			lenoff = 0;
+			if (subtype == TR_SDP_STREAM_DEL) {
+				for (session = sdp.sessions; session; session = session->next) {
+					for (stream = session->streams; stream; stream = stream->next) {
+						if ((media.s != NULL && stream->media.len == media.len &&
+								/* hack to update the offset */
+								strncasecmp(stream->media.s, media.s, media.len) == 0) ||
+							(media.s == NULL && entryNo == stream->stream_num)) {
+
+							memmove(stream->body.s - lenoff, stream->body.s - lenoff + stream->body.len,
+									_tr_sdp_str.s + _tr_sdp_str.len - stream->body.s);
+							_tr_sdp_str.len -= stream->body.len;
+
+							if (media.s == NULL)
+								goto success;
+
+							lenoff += stream->body.len;
+						}
+					}
+					if (media.s == NULL)
+						entryNo -= session->streams_num;
+				}
+			} else {
+				for (session = sdp.sessions; session; session = session->next) {
+					for (stream = session->streams; stream; stream = stream->next) {
+						if ((media.s != NULL && stream->media.len == media.len &&
+								strncasecmp(stream->media.s, media.s, media.len) == 0) ||
+							(media.s == NULL && entryNo == stream->stream_num)) {
+
+							val->rs.len = stream->body.len;
+							val->rs.s = stream->body.s;
+							goto ret;
+						}
+					}
+				}
+			}
+			if (!lenoff) /* no stream found */
+				goto parse_sdp_free;
+success:
+			val->rs.len = _tr_sdp_str.len - 2;
+			val->rs.s = _tr_sdp_str.s + 2;
+ret:
+			val->flags = PV_VAL_STR;
+			free_sdp_content(&sdp);
+			break;
 		default:
 			LM_ERR("unknown subtype %d\n",subtype);
 			goto error;
 	}
 
 	return 0;
+
+parse_sdp_free:
+	free_sdp_content(&sdp);
 
 error:
 	val->flags = PV_VAL_NULL;
@@ -1683,11 +1795,16 @@ int tr_eval_ip(struct sip_msg *msg, tr_param_t *tp,int subtype,
 		pv_value_t *val)
 {
 	char *buffer;
-	struct ip_addr *binary_ip;
+	struct ip_addr *p_ip;
 	str inet = str_init("INET");
 	str inet6 = str_init("INET6");
 	struct hostent *server;
 	struct ip_addr ip;
+	unsigned int len;
+	struct net *mask;
+	pv_value_t v;
+	str sv;
+	char *p;
 
 	if (!val)
 		return -1;
@@ -1695,10 +1812,8 @@ int tr_eval_ip(struct sip_msg *msg, tr_param_t *tp,int subtype,
 	if (val->flags & PV_VAL_NULL)
 		return 0;
 
-	if(!(val->flags&PV_VAL_STR) || val->rs.len<=0) {
-		val->flags = PV_VAL_NULL;
-		return -1;
-	}
+	if(!(val->flags&PV_VAL_STR) || val->rs.len<=0)
+		goto error;
 
 	switch (subtype)
 	{
@@ -1715,9 +1830,9 @@ int tr_eval_ip(struct sip_msg *msg, tr_param_t *tp,int subtype,
 			}
 			else
 			{
-				LM_ERR("Invalid ip address provided for ip.family. Binary format expected !\n");
-				val->flags = PV_VAL_NULL;
-				return -1;
+				LM_ERR("Invalid ip address provided for ip.family. "
+					"Binary format expected !\n");
+				goto error;
 			}
 
 			val->flags = PV_VAL_STR;
@@ -1729,9 +1844,9 @@ int tr_eval_ip(struct sip_msg *msg, tr_param_t *tp,int subtype,
 				ip.af = AF_INET6;
 			else
 			{
-				LM_ERR("Invalid ip address provided for ip.ntop. Binary format expected !\n");
-				val->flags = PV_VAL_NULL;
-				return -1;
+				LM_ERR("Invalid ip address provided for ip.ntop. "
+					"Binary format expected !\n");
+				goto error;
 			}
 
 			memcpy(ip.u.addr,val->rs.s,val->rs.len);
@@ -1754,24 +1869,31 @@ int tr_eval_ip(struct sip_msg *msg, tr_param_t *tp,int subtype,
 			val->rs.s = int2str(val->ri, &val->rs.len);
 			break;
 		case TR_IP_PTON:
-			binary_ip = str2ip(&(val->rs));
-			if (!binary_ip)
+			p_ip = str2ip(&(val->rs));
+			if (!p_ip)
 			{
-				binary_ip = str2ip6(&(val->rs));
-				if (!binary_ip)
+				p_ip = str2ip6(&(val->rs));
+				if (!p_ip)
 				{
 					LM_ERR("pton transformation applied to invalid IP\n");
-					val->flags = PV_VAL_NULL;
-					return -1;
+					goto error;
 				}
 			}
-			val->rs.s = (char *)binary_ip->u.addr;
-			val->rs.len = binary_ip->len;
+			val->rs.s = (char *)p_ip->u.addr;
+			val->rs.len = p_ip->len;
 			val->flags = PV_VAL_STR;
 			break;
 		case TR_IP_RESOLVE:
 			val->flags = PV_VAL_STR;
-			server = resolvehost(val->rs.s,0);
+			buffer = pkg_malloc(val->rs.len + 1);
+			if (!buffer) {
+				LM_ERR("out of pkg memory!\n");
+				goto error;
+			}
+			memcpy(buffer, val->rs.s, val->rs.len);
+			buffer[val->rs.len] = '\0';
+			server = resolvehost(buffer, 0);
+			pkg_free(buffer);
 			if (!server || !server->h_addr)
 			{
 				val->flags = PV_VAL_NULL;
@@ -1793,22 +1915,86 @@ int tr_eval_ip(struct sip_msg *msg, tr_param_t *tp,int subtype,
 			else
 			{
 				LM_ERR("Unexpected IP address type \n");
-				val->flags = PV_VAL_NULL;
-				return 0;
+				goto error;
 			}
 
 			buffer = ip_addr2a(&ip);
 			val->rs.s = buffer;
 			val->rs.len = strlen(buffer);
 			break;
+		case TR_IP_MATCHES:
+			/* get the input which must be an IP addr as string */
+			if ( (p_ip=str2ip(&val->rs))==NULL &&
+			(p_ip=str2ip6(&val->rs)) ) {
+				LM_ERR("Invalid input IP address <%.*s>\n",
+					val->rs.len,val->rs.s);
+				goto error;
+			}
+			ip = *p_ip;
+			/* get the parameter which must be IP/netlen */
+			if (tp->type == TR_PARAM_STRING) {
+				sv = tp->v.s;
+			} else {
+				if(pv_get_spec_value(msg, (pv_spec_p)tp->v.data, &v)!=0
+						|| (!(v.flags&PV_VAL_STR)) || v.rs.len<=0) {
+					LM_ERR("cannot get value from spec\n");
+					goto error;
+				}
+				sv = v.rs;
+			}
+			/* the value must be in "ip/marsklen" format */
+			if ( (p=q_memchr(sv.s, '/', sv.len))==NULL) {
+				LM_ERR("value not in ip/len format, separator not found\n");
+				goto error;
+			}
+			val->rs.s = sv.s;
+			val->rs.len = p-sv.s;
+			if ( (p_ip=str2ip(&val->rs))==NULL &&
+			(p_ip=str2ip6(&val->rs)) ) {
+				LM_ERR("Invalid parameter IP address <%.*s>\n",
+					val->rs.len,val->rs.s);
+				goto error;
+			}
+			val->rs.s = p+1;
+			val->rs.len = sv.s+sv.len-p-1;
+			if (str2int(&val->rs, &len)!=0 || len>p_ip->len*8) {
+				LM_ERR("Invalid mask len in parameter <%.*s>\n",
+					val->rs.len,val->rs.s);
+				goto error;
+			}
+			mask = mk_net_bitlen(p_ip, len);
+			switch ( matchnet( &ip, mask) ) {
+				case 1: /* matches */
+					val->ri = 1; break;
+				case 0: /* does not matches */
+					val->ri = 0; break;
+				default:
+					LM_ERR("cannot compare, different AF?\n");
+					goto error;
+			}
+
+			val->flags = PV_TYPE_INT|PV_VAL_INT|PV_VAL_STR;
+			val->rs.s = int2str(val->ri, &val->rs.len);
+			break;
+		case TR_IP_ISPRIVATE:
+			if(!(val->flags&PV_VAL_STR))
+				val->rs.s = int2str(val->ri, &val->rs.len);
+
+			val->ri = (ip_addr_is_1918(&(val->rs))==1) ? 1 : 0;
+
+			val->flags = PV_TYPE_INT|PV_VAL_INT|PV_VAL_STR;
+			val->rs.s = int2str(val->ri, &val->rs.len);
+			break;
 
 		default:
 			LM_ERR("unknown subtype %d\n",subtype);
-			val->flags = PV_VAL_NULL;
-			return -1;
+			goto error;
 	}
 
 	return 0;
+error:
+	val->flags = PV_VAL_NULL;
+	return -1;
 }
 
 #define RE_MAX_SIZE 1024
@@ -1870,7 +2056,8 @@ int tr_eval_re(struct sip_msg *msg, tr_param_t *tp, int subtype,
 
 				LM_DBG("Trying to apply regexp [%.*s] on : [%.*s]\n",
 						sv.len,sv.s,val->rs.len, val->rs.s);
-				if (!buf_re.s || buf_re.len != sv.len || memcmp(buf_re.s, sv.s, sv.len) != 0) {
+				if (subst_re==NULL || !buf_re.s || buf_re.len != sv.len ||
+				memcmp(buf_re.s, sv.s, sv.len) != 0) {
 					LM_DBG("we must compile the regexp\n");
 					if (subst_re != NULL) {
 						LM_DBG("freeing prev regexp\n");
@@ -2351,7 +2538,7 @@ char* parse_transformation(str *in, trans_t **tr)
 	str s;
 	trans_export_t *tr_export;
 	trans_extra_t *tr_extra;
-	int i;
+	int i, nesting_level = 0;
 
 	if(in==NULL || in->s==NULL || tr==NULL)
 		return NULL;
@@ -2415,7 +2602,16 @@ char* parse_transformation(str *in, trans_t **tr)
 		t->trf = tr_export->eval_func;
 
 		s.s = p;
-		while(is_in_str(p, in) && *p != TR_RBRACKET) p++;
+		/* allow nested transformations! */
+		while(is_in_str(p, in) && (nesting_level > 0 || *p != TR_RBRACKET)) {
+			if (*p == TR_LBRACKET)
+				nesting_level++;
+
+			if (*p == TR_RBRACKET)
+				nesting_level--;
+			p++;
+		}
+
 		if(*p == '\0') {
 			LM_ERR("invalid transformation: %.*s\n", in->len, in->s);
 			goto error;
@@ -2745,11 +2941,6 @@ int tr_parse_string(str* in, trans_t *t)
 		p++;
 		if (tr_parse_nparam(p, in, &tp) == NULL)
 			goto error;
-		if(tp->type==TR_PARAM_NUMBER && tp->v.n<0)
-		{
-			LM_ERR("substr negative offset\n");
-			goto error;
-		}
 		t->params->next = tp;
 		tp = 0;
 
@@ -2913,7 +3104,11 @@ int tr_parse_string(str* in, trans_t *t)
 		}
 
 		return 0;
+	} else if(name.len==7 && strncasecmp(name.s, "reverse", 7)==0) {
+		t->subtype = TR_S_REVERSE;
+		return 0;
 	}
+
 
 	LM_ERR("unknown transformation: %.*s/%.*s/%d!\n", in->len, in->s,
 			name.len, name.s, name.len);
@@ -3293,6 +3488,7 @@ error:
 
 int tr_parse_sdp(str *in, trans_t *t)
 {
+	int tmp;
 	char *p;
 	str name;
 	tr_param_t *tp = NULL;
@@ -3357,6 +3553,32 @@ int tr_parse_sdp(str *in, trans_t *t)
 		tp = 0;
 
 		return 0;
+	} else if ((name.len==13 && strncasecmp(name.s,"stream-delete",13)==0) ||
+				(name.len==6 && strncasecmp(name.s,"stream",6)==0)) {
+		if (name.len == 6)
+			t->subtype = TR_SDP_STREAM;
+		else
+			t->subtype = TR_SDP_STREAM_DEL;
+		if(*p!=TR_PARAM_MARKER)
+		{
+			LM_ERR("media delete without type or index: %.*s!\n", in->len, in->s);
+			goto error;
+		}
+		p++;
+		if ((p = tr_parse_sparam(p, in, &tp, 0)) == NULL)
+			goto error;
+		/* if it is a static numeric, convert it now */
+		if (tp->type == TR_PARAM_STRING) {
+			/* try to convert it now to an int, if possible */
+			if (str2sint(&tp->v.s, &tmp) >= 0) {
+				tp->v.n = tmp;
+				tp->type = TR_PARAM_NUMBER;
+			}
+		}
+		t->params = tp;
+		tp = 0;
+
+		return 0;
 	}
 
 	LM_ERR("unknown transformation: %.*s/%.*s/%d!\n", in->len, in->s,
@@ -3387,17 +3609,13 @@ int tr_parse_ip(str *in, trans_t *t)
 	name.len = p - name.s;
 	trim(&name);
 
-	if (name.len==6 && strncasecmp(name.s,"family",6)==0)
-	{
+	if (name.len==6 && strncasecmp(name.s,"family",6)==0) {
 		t->subtype = TR_IP_FAMILY;
 		return 0;
-	}
-	else if (name.len==4 && strncasecmp(name.s,"ntop",4)==0)
-	{
+	} else if (name.len==4 && strncasecmp(name.s,"ntop",4)==0) {
 		t->subtype = TR_IP_NTOP;
 		return 0;
-	}
-	else if (name.len == 4 && strncasecmp(name.s,"isip",4) == 0) {
+	} else if (name.len == 4 && strncasecmp(name.s,"isip",4) == 0) {
 		t->subtype = TR_IP_ISIP;
 		return 0;
 	} else if (name.len == 4 && strncasecmp(name.s,"pton",4) == 0) {
@@ -3406,7 +3624,24 @@ int tr_parse_ip(str *in, trans_t *t)
 	} else if (name.len == 7 && strncasecmp(name.s,"resolve",7) == 0) {
 		t->subtype = TR_IP_RESOLVE;
 		return 0;
+	} else if (name.len == 7 && strncasecmp(name.s,"matches",5) == 0) {
+		t->subtype = TR_IP_MATCHES;
+		if(*p!=TR_PARAM_MARKER)
+		{
+			LM_ERR("invalid value transformation: %.*s\n",
+					in->len, in->s);
+			goto error;
+		}
+		p++;
+		LM_DBG("preparing to parse param\n");
+		if (tr_parse_sparam(p, in, &t->params, 0) == NULL)
+			goto error;
+		return 0;
+	} else if (name.len == 9 && strncasecmp(name.s,"isprivate",9) == 0) {
+		t->subtype = TR_IP_ISPRIVATE;
+		return 0;
 	}
+
 
 	LM_ERR("unknown transformation: %.*s/%.*s/%d!\n", in->len, in->s,
 			name.len, name.s, name.len);
@@ -3448,7 +3683,7 @@ int tr_parse_re(str *in,trans_t *t)
 			goto error;
 		}
 		p++;
-		LM_INFO("preparing to parse param\n");
+		LM_DBG("preparing to parse param\n");
 		if (tr_parse_sparam(p, in, &tp, 0) == NULL)
 			goto error;
 		t->params = tp;

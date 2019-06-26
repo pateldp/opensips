@@ -60,8 +60,10 @@ struct nh_table* init_hash_table(void)
 		n_table->entries[i].next_via_label = rand();
 		n_table->entries[i].first = n_table->entries[i].last = 0;
 	}
-	lock_init(&n_table->timer_list.mutex);
 
+	lock_init(&n_table->timer_list.mutex);
+	INIT_LIST_HEAD(&n_table->timer_list.wt_timer);
+	INIT_LIST_HEAD(&n_table->timer_list.pg_timer);
 
 	return n_table;
 
@@ -71,10 +73,18 @@ error:
 
 void free_hash_table(void)
 {
+	struct ping_cell *cell,*next_cell;
 	int i;
 
-	for (i=0; i < NH_TABLE_ENTRIES; i++)
+	for (i=0; i < NH_TABLE_ENTRIES; i++) {
+		cell=n_table->entries[i].first;
+		while(cell) {
+			next_cell = cell->next;
+			shm_free(cell);
+			cell = next_cell;
+		}
 		lock_destroy(&n_table->entries[i].mutex);
+	}
 
 	lock_destroy(&n_table->timer_list.mutex);
 
@@ -86,7 +96,8 @@ struct nh_table* get_htable(void)
 	return n_table;
 }
 
-struct ping_cell *build_p_cell(int hash_id, udomain_t* d, uint64_t contact_id)
+struct ping_cell *build_p_cell(int hash_id, udomain_t* d,
+                               ucontact_coords ct_coords)
 {
 	struct ping_cell *cell;
 
@@ -101,7 +112,7 @@ struct ping_cell *build_p_cell(int hash_id, udomain_t* d, uint64_t contact_id)
 	cell->hash_id   = hash_id;
 	cell->timestamp = now;
 	cell->d         = d;
-	cell->contact_id = contact_id;
+	cell->ct_coords = ct_coords;
 
 	return cell;
 }
@@ -125,29 +136,28 @@ void insert_into_hash( struct ping_cell* p_cell)
 	entry->first = p_cell;
 }
 
-struct ping_cell *get_cell(int hash_id, uint64_t contact_id)
+struct ping_cell *get_cell(int hash_id, ucontact_coords coords)
 {
 	struct nh_entry *entry;
-	struct ping_cell* cell=NULL;
+	struct ping_cell *cell;
 
 	entry = &n_table->entries[hash_id];
 	cell = entry->first;
 
 	for (cell=entry->first; cell; cell = cell->next) {
-		if (cell->contact_id == contact_id)
+		if (!ul.ucontact_coords_cmp(cell->ct_coords, coords))
 			return cell;
 	}
 
 	return NULL;
 }
 
-/*
- * needs to be called under lock
- * only removes cell from hash
- * also frees the cell
- */
-void remove_given_cell(struct ping_cell *cell, struct nh_entry *entry)
+/* must be called under lock */
+void remove_from_hash(struct ping_cell *cell)
 {
+	struct nh_entry *entry;
+
+	entry = &n_table->entries[cell->hash_id];
 
 	if (cell == entry->first && cell == entry->last) {
 		entry->first = entry->last = 0;
@@ -162,4 +172,3 @@ void remove_given_cell(struct ping_cell *cell, struct nh_entry *entry)
 		cell->next->prev = cell->prev;
 	}
 }
-

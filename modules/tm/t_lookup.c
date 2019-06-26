@@ -87,6 +87,7 @@
 #include "dlg.h" /* for t_lookup_callid */
 #include "t_msgbuilder.h" /* for t_lookup_callid */
 #include "t_fwd.h" /* for get_on_branch */
+#include "cluster.h" /*for messages replication */
 
 #define EQ_VIA_LEN(_via)\
 	( (p_msg->via1->bsize-(p_msg->_via->name.s-(p_msg->_via->hdr.s+p_msg->_via->hdr.len)))==\
@@ -157,7 +158,7 @@ static struct cell *e2eack_T;
 struct tm_id* remote_T = NULL;
 
 
-static str relay_reason_100 = str_init("Giving a try");
+static str relay_reason_100 = str_init("Giving it a try");
 
 
 struct cell *get_t(void) { return T; }
@@ -694,9 +695,9 @@ found:
 int t_reply_matching( struct sip_msg *p_msg , int *p_branch )
 {
 	struct cell*  p_cell;
-	int hash_index   = 0;
-	int entry_label  = 0;
-	int branch_id    = 0;
+	unsigned int hash_index   = 0;
+	unsigned int entry_label  = 0;
+	unsigned int branch_id    = 0;
 	char  *hashi, *branchi, *p, *n;
 	int hashl, branchl;
 	int scan_space;
@@ -765,19 +766,19 @@ int t_reply_matching( struct sip_msg *p_msg , int *p_branch )
 	branchi=p;
 
 	/* sanity check */
-	if ((hash_index=reverse_hex2int(hashi, hashl))<0
+	if (reverse_hex2int(hashi, hashl, &hash_index)<0
 		||hash_index>=TM_TABLE_ENTRIES
-		|| (branch_id=reverse_hex2int(branchi, branchl))<0
+		|| reverse_hex2int(branchi, branchl, &branch_id)<0
 		||branch_id>=MAX_BRANCHES
-		|| (syn_branch ? (entry_label=reverse_hex2int(syni, synl))<0
+		|| (syn_branch ? reverse_hex2int(syni, synl, &entry_label)<0
 			: loopl!=MD5_LEN )
 	) {
-		LM_DBG("poor reply labels %d label %d branch %d\n",
+		LM_DBG("poor reply labels %u label %u branch %u\n",
 				hash_index, entry_label, branch_id );
 		goto nomatch2;
 	}
 
-	LM_DBG("hash %d label %d branch %d\n",hash_index, entry_label, branch_id);
+	LM_DBG("hash %u label %d branch %u\n",hash_index, entry_label, branch_id);
 
 	cseq = get_cseq(p_msg);
 
@@ -838,14 +839,6 @@ int t_reply_matching( struct sip_msg *p_msg , int *p_branch )
 				LM_ERR("to parsing failed\n");
 			}
 		}
-		if (!is_local(p_cell) &&
-		!(cseq->method_id==METHOD_CANCEL && is_invite(p_cell)) ) {
-			run_trans_callbacks( TMCB_RESPONSE_IN, T, T->uas.request, p_msg,
-				p_msg->REPLY_STATUS);
-		}
-		if (has_tran_tmcbs( T, TMCB_MSG_MATCHED_IN) )
-			run_trans_callbacks( TMCB_MSG_MATCHED_IN, T, 0,
-				p_msg, p_msg->REPLY_STATUS);
 
 		return 1;
 	} /* for cycle */
@@ -914,9 +907,13 @@ int t_check( struct sip_msg* p_msg , int *param_branch )
 						return -1;
 					}
 			}
-
-			t_reply_matching( p_msg ,
-				param_branch!=0?param_branch:&local_branch );
+			/* first check if the transaction is addressed to us */
+			if (!tm_reply_replicate(p_msg))
+				t_reply_matching(p_msg ,
+						param_branch!=0?param_branch:&local_branch);
+			else
+				T = NULL; /* reply replicated
+					should have never got here */
 
 		}
 #ifdef EXTRA_DEBUG

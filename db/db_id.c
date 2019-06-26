@@ -40,6 +40,8 @@
  */
 static int dupl_string(char** dst, const char* begin, const char* end)
 {
+	str old, new;
+
 	if (*dst) pkg_free(*dst);
 
 	*dst = pkg_malloc(end - begin + 1);
@@ -47,15 +49,19 @@ static int dupl_string(char** dst, const char* begin, const char* end)
 		return -1;
 	}
 
-	memcpy(*dst, begin, end - begin);
-	(*dst)[end - begin] = '\0';
+	old.s = (char*)begin;
+	old.len = end - begin;
+	new.s = *dst;
+	un_escape(&old, &new );
+
+	new.s[new.len] = '\0';
 	return 0;
 }
 
 
 /**
  * Parse a database URL of form
- * scheme://[username[:password]@]hostname[:port]/database
+ * scheme://[username[:password]@]hostname[:port]/database[?parameters]
  *
  * \param id filled id struct
  * \param url parsed URL
@@ -73,14 +79,16 @@ static int parse_db_url(struct db_id* id, const str* url)
 		ST_USER_HOST,  /* Username or hostname */
 		ST_PASS_PORT,  /* Password or port part */
 		ST_HOST,       /* Hostname part */
+		ST_HOST6,      /* Hostname part IPv6 */
 		ST_PORT,       /* Port part */
-		ST_DB          /* Database part */
+		ST_DB,         /* Database part */
+		ST_PARAMS       /* Parameters part */
 	};
 
 	enum state st;
-	unsigned int len, i;
+	unsigned int len, i, ipv6_flag = 0;
 	const char* begin;
-	char* prev_token;
+	char* prev_token = NULL;
 
 	if (!id || !url || !url->s) {
 		return -1;
@@ -95,7 +103,6 @@ static int parse_db_url(struct db_id* id, const str* url)
 	memset(id, 0, sizeof(struct db_id));
 	st = ST_SCHEME;
 	begin = url->s;
-	prev_token = 0;
 
 	for(i = 0; i < len; i++) {
 		switch(st) {
@@ -145,10 +152,15 @@ static int parse_db_url(struct db_id* id, const str* url)
 				begin = url->s + i + 1;
 				break;
 
+			case '[':
+				st = ST_HOST6;
+				begin = url->s + i + 1;
+				break;
+
 			case '/':
+				st = ST_DB;
 				if (dupl_string(&id->host, begin, url->s + i) < 0) goto err;
-				if (dupl_string(&id->database, url->s + i + 1, url->s + len) < 0) goto err;
-				return 0;
+				begin = url->s + i + 1;
 			}
 			break;
 
@@ -156,31 +168,46 @@ static int parse_db_url(struct db_id* id, const str* url)
 			switch(url->s[i]) {
 			case '@':
 				st = ST_HOST;
-				id->username = prev_token;
+				id->username = prev_token; prev_token = NULL;
 				if (dupl_string(&id->password, begin, url->s + i) < 0) goto err;
 				begin = url->s + i + 1;
 				break;
 
 			case '/':
-				id->host = prev_token;
+				id->host = prev_token; prev_token = NULL;
 				id->port = str2s(begin, url->s + i - begin, 0);
-				if (dupl_string(&id->database, url->s + i + 1, url->s + len) < 0) goto err;
-				return 0;
+				st = ST_DB;
+				begin = url->s + i + 1;
 			}
 			break;
 
 		case ST_HOST:
 			switch(url->s[i]) {
+			case '[':
+				st = ST_HOST6;
+				begin = url->s + i + 1;
+				break;
+
 			case ':':
 				st = ST_PORT;
-				if (dupl_string(&id->host, begin, url->s + i) < 0) goto err;
+				if (dupl_string(&id->host, begin, url->s + i - ipv6_flag) < 0) goto err;
 				begin = url->s + i + 1;
 				break;
 
 			case '/':
-				if (dupl_string(&id->host, begin, url->s + i) < 0) goto err;
-				if (dupl_string(&id->database, url->s + i + 1, url->s + len) < 0) goto err;
-				return 0;
+				if (dupl_string(&id->host, begin, url->s + i - ipv6_flag) < 0) goto err;
+				st = ST_DB;
+				begin = url->s + i + 1;
+			}
+			break;
+
+		case ST_HOST6:
+			switch(url->s[i]) {
+			case ']':
+				ipv6_flag = 1;
+				st = ST_HOST;
+				break;
+
 			}
 			break;
 
@@ -188,17 +215,33 @@ static int parse_db_url(struct db_id* id, const str* url)
 			switch(url->s[i]) {
 			case '/':
 				id->port = str2s(begin, url->s + i - begin, 0);
-				if (dupl_string(&id->database, url->s + i + 1, url->s + len) < 0) goto err;
-				return 0;
+				st = ST_DB;
+				begin = url->s + i + 1;
 			}
 			break;
 
 		case ST_DB:
+			switch(url->s[i]) {
+			case '?':
+				st = ST_PARAMS;
+				if (dupl_string(&id->database, begin, url->s + i) < 0) goto err;
+				begin = url->s + i + 1;
+			}
+			break;
+
+		case ST_PARAMS:
 			break;
 		}
 	}
 
-	if (st != ST_DB) goto err;
+	if (st != ST_DB && st != ST_PARAMS) goto err;
+
+	if (st == ST_DB) {
+		if (dupl_string(&id->database, begin, url->s + len) < 0) goto err;
+	} else {
+		if (dupl_string(&id->parameters, begin, url->s + len) < 0) goto err;
+	}
+
 	return 0;
 
  err:
@@ -233,7 +276,6 @@ struct db_id* new_db_id(const str* url)
 	}
 	memset(ptr, 0, sizeof(struct db_id));
 
-
 	if (parse_db_url(ptr, url) < 0) {
 		LM_ERR("error while parsing database URL: '%.*s' \n", url->len, url->s);
 		goto err;
@@ -260,21 +302,33 @@ struct db_id* new_db_id(const str* url)
 unsigned char cmp_db_id(const struct db_id* id1, const struct db_id* id2)
 {
 	if (!id1 || !id2) return 0;
+
 	if (id1->port != id2->port) return 0;
 
 	if (strcmp(id1->scheme, id2->scheme)) return 0;
+
 	if (id1->username != 0 && id2->username != 0) {
 		if (strcmp(id1->username, id2->username)) return 0;
 	} else {
 		if (id1->username!=0 || id2->username!=0) return 0;
 	}
+
 	if (id1->password!=0 && id2->password!=0) {
 		if(strcmp(id1->password, id2->password)) return 0;
 	} else {
 		if (id1->password!=0 || id2->password!=0) return 0;
 	}
+
 	if (strcasecmp(id1->host, id2->host)) return 0;
+
 	if (strcmp(id1->database, id2->database)) return 0;
+
+	if (id1->parameters != 0 && id2->parameters != 0) {
+		if(strcmp(id1->parameters, id2->parameters)) return 0;
+	} else {
+		if (id1->parameters!=0 || id2->parameters!=0) return 0;
+	}
+
 	return 1;
 }
 
@@ -292,5 +346,6 @@ void free_db_id(struct db_id* id)
 	if (id->password) pkg_free(id->password);
 	if (id->host) pkg_free(id->host);
 	if (id->database) pkg_free(id->database);
+	if (id->parameters) pkg_free(id->parameters);
 	pkg_free(id);
 }

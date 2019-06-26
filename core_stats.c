@@ -40,6 +40,7 @@
 #include <sys/types.h>
 #include <signal.h>
 #include "socket_info.h"
+#include "ipc.h"
 
 
 #ifdef STATISTICS
@@ -56,6 +57,7 @@ stat_var* err_rpls;
 stat_var* bad_URIs;
 stat_var* unsupported_methods;
 stat_var* bad_msg_hdr;
+stat_var* slow_msgs;
 
 
 stat_export_t core_stats[] = {
@@ -70,7 +72,9 @@ stat_export_t core_stats[] = {
 	{"bad_URIs_rcvd",         0,  &bad_URIs              },
 	{"unsupported_methods",   0,  &unsupported_methods   },
 	{"bad_msg_hdr",           0,  &bad_msg_hdr           },
-	{"timestamp",  STAT_IS_FUNC, (stat_var**)get_ticks   }, {0,0,0}
+	{"slow_messages" ,        0,  &slow_msgs             },
+	{"timestamp",  STAT_IS_FUNC, (stat_var**)get_ticks   },
+	{0,0,0}
 };
 
 
@@ -108,18 +112,34 @@ static pkg_status_holder *pkg_status = NULL;
 static time_t *marker_t = NULL;
 static int no_pkg_status = 0;
 
-pkg_status_holder * get_pkg_status_holder(int proc_id)
+static void rpc_get_pkg_stats(int sender_id, void *foo)
 {
-	return (pkg_status && proc_id<no_pkg_status)?&(pkg_status[proc_id]):NULL;
+#ifdef PKG_MALLOC
+	pkg_status_holder *holder;
+
+	holder = (pkg_status && process_no<no_pkg_status)?
+		&(pkg_status[process_no]) : NULL ;
+
+	set_pkg_stats( holder );
+#endif
+	return;
 }
 
 static inline void signal_pkg_status(unsigned long proc_id)
 {
 	time_t t;
 
+	if (IPC_FD_WRITE(proc_id)<=0)
+		return;
+
 	t = time(NULL);
 	if (t>marker_t[proc_id]+1) {
-		if (pt[proc_id].pid) kill(pt[proc_id].pid, SIGUSR2);
+
+		if (ipc_send_rpc( proc_id, rpc_get_pkg_stats, NULL)<0) {
+			LM_ERR("failed to trigger pkg stats for process %ld\n", proc_id );
+			return;
+		}
+
 		marker_t[proc_id] = t;
 		usleep(20);
 	}
@@ -162,26 +182,27 @@ static unsigned long get_pkg_fragments( void*proc_id)
 }
 
 
-int init_pkg_stats(int no_procs)
+int init_pkg_stats(int procs_no)
 {
 	unsigned short n;
 	str n_str;
 	char *name;
+	str sname;
 
-	LM_DBG("setting stats for %d processes\n",no_procs);
+	LM_DBG("setting stats for %d processes\n",procs_no);
 
-	pkg_status = shm_malloc(no_procs*sizeof(pkg_status_holder));
-	marker_t = shm_malloc(no_procs*sizeof(time_t));
+	pkg_status = shm_malloc(procs_no*sizeof(pkg_status_holder));
+	marker_t = shm_malloc(procs_no*sizeof(time_t));
 	if (pkg_status==NULL || marker_t==NULL) {
 		LM_ERR("no more pkg mem for stats\n");
 		return -1;
 	}
-	memset( pkg_status, 0, no_procs*sizeof(pkg_status_holder));
-	memset( marker_t, 0, no_procs*sizeof(time_t));
-	no_pkg_status = no_procs;
+	memset( pkg_status, 0, procs_no*sizeof(pkg_status_holder));
+	memset( marker_t, 0, procs_no*sizeof(time_t));
+	no_pkg_status = procs_no;
 
 	/* build the stats and register them */
-	for( n=0 ; n<no_procs ; n++) {
+	for( n=0 ; n<procs_no ; n++) {
 		n_str.s = int2str( n, &n_str.len);
 
 		if ( (name=build_stat_name( &n_str,"total_size"))==0 ||
@@ -190,6 +211,10 @@ int init_pkg_stats(int no_procs)
 			LM_ERR("failed to add stat variable\n");
 			return -1;
 		}
+		sname.s = name;
+		sname.len = strlen(name);
+		pt[n].pkg_total = get_stat(&sname);
+		pt[n].pkg_total->flags |= STAT_HIDDEN;
 
 		if ( (name=build_stat_name( &n_str,"used_size"))==0 ||
 		register_stat2("pkmem", name, (stat_var**)get_pkg_used_size,
@@ -197,6 +222,10 @@ int init_pkg_stats(int no_procs)
 			LM_ERR("failed to add stat variable\n");
 			return -1;
 		}
+		sname.s = name;
+		sname.len = strlen(name);
+		pt[n].pkg_used = get_stat(&sname);
+		pt[n].pkg_used->flags |= STAT_HIDDEN;
 
 		if ( (name=build_stat_name( &n_str,"real_used_size"))==0 ||
 		register_stat2("pkmem", name, (stat_var**)get_pkg_real_used_size,
@@ -204,6 +233,10 @@ int init_pkg_stats(int no_procs)
 			LM_ERR("failed to add stat variable\n");
 			return -1;
 		}
+		sname.s = name;
+		sname.len = strlen(name);
+		pt[n].pkg_rused = get_stat(&sname);
+		pt[n].pkg_rused->flags |= STAT_HIDDEN;
 
 		if ( (name=build_stat_name( &n_str,"max_used_size"))==0 ||
 		register_stat2("pkmem", name, (stat_var**)get_pkg_max_used_size,
@@ -211,6 +244,10 @@ int init_pkg_stats(int no_procs)
 			LM_ERR("failed to add stat variable\n");
 			return -1;
 		}
+		sname.s = name;
+		sname.len = strlen(name);
+		pt[n].pkg_mused = get_stat(&sname);
+		pt[n].pkg_mused->flags |= STAT_HIDDEN;
 
 		if ( (name=build_stat_name( &n_str,"free_size"))==0 ||
 		register_stat2("pkmem", name, (stat_var**)get_pkg_free_size,
@@ -218,6 +255,10 @@ int init_pkg_stats(int no_procs)
 			LM_ERR("failed to add stat variable\n");
 			return -1;
 		}
+		sname.s = name;
+		sname.len = strlen(name);
+		pt[n].pkg_free = get_stat(&sname);
+		pt[n].pkg_free->flags |= STAT_HIDDEN;
 
 		if ( (name=build_stat_name( &n_str,"fragments"))==0 ||
 		register_stat2("pkmem", name, (stat_var**)get_pkg_fragments,
@@ -225,6 +266,10 @@ int init_pkg_stats(int no_procs)
 			LM_ERR("failed to add stat variable\n");
 			return -1;
 		}
+		sname.s = name;
+		sname.len = strlen(name);
+		pt[n].pkg_frags = get_stat(&sname);
+		pt[n].pkg_frags->flags |= STAT_HIDDEN;
 
 	}
 

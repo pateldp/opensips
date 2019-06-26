@@ -1,16 +1,4 @@
 httpd Module
-
-Ovidiu Sas
-
-   <osas@voipembedded.com>
-
-Edited by
-
-Ovidiu Sas
-
-   Copyright © 2012-2013 VoIP Embedded, Inc.
-   Revision History
-   Revision $Rev: 8580 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -44,6 +32,22 @@ Ovidiu Sas
               2.1.1. register_httpdcb (module, root_path,
                       httpd_acces_handler_cb, httpd_flush_data_cb,
                       httpd_init_proc_cb)
+
+   3. Contributors
+
+        3.1. By Commit Statistics
+        3.2. By Commit Activity
+
+   4. Documentation
+
+        4.1. Contributors
+
+   List of Tables
+
+   3.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   3.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -143,8 +147,7 @@ modparam("httpd", "post_buf_size", 4096)
    Parameters: none
 
    MI FIFO Command Format:
-:httpd_list_root_path:_reply_fifo_file_
-_empty_line_
+opensips-cli -x mi httpd_list_root_path
 
 1.5. Exported Functions
 
@@ -188,3 +191,68 @@ httpd_flush_data_cb, httpd_init_proc_cb)
        be called for sending extra data (at a later time);
      * httpd_init_proc_cb f3 - handler to the callback method to
        be called during httpd process init;
+
+Chapter 3. Contributors
+
+3.1. By Commit Statistics
+
+   Table 3.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Ovidiu Sas (@ovidiusas) 47 30 1667 147
+   2. Razvan Crainea (@razvancrainea) 16 14 45 49
+   3. Liviu Chircu (@liviuchircu) 11 9 26 49
+   4. Bogdan-Andrei Iancu (@bogdan-iancu) 10 8 37 19
+   5. Vlad Patrascu (@rvlad-patrascu) 10 7 52 89
+   6. Ionut Ionita (@ionutrazvanionita) 8 6 65 21
+   7. Stephane Alnet 3 1 39 3
+   8. Stas Kobzar 3 1 2 2
+   9. Dusan Klinec 3 1 1 1
+   10. Peter Lemenkov (@lemenkov) 3 1 1 1
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+3.2. By Commit Activity
+
+   Table 3.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Liviu Chircu (@liviuchircu)         Mar 2014 - Jun 2019
+   2.  Razvan Crainea (@razvancrainea)     Mar 2015 - May 2019
+   3.  Bogdan-Andrei Iancu (@bogdan-iancu) Jan 2013 - Apr 2019
+   4.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   5.  Ovidiu Sas (@ovidiusas)             Jan 2012 - Jan 2019
+   6.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   7.  Ionut Ionita (@ionutrazvanionita)   Jan 2017 - Feb 2017
+   8.  Dusan Klinec                        Dec 2015 - Dec 2015
+   9.  Stas Kobzar                         Feb 2015 - Feb 2015
+   10. Stephane Alnet                      Nov 2013 - Nov 2013
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 4. Documentation
+
+4.1. Contributors
+
+   Last edited by: Razvan Crainea (@razvancrainea), Peter Lemenkov
+   (@lemenkov), Liviu Chircu (@liviuchircu), Vlad Patrascu
+   (@rvlad-patrascu), Ovidiu Sas (@ovidiusas), Bogdan-Andrei Iancu
+   (@bogdan-iancu).
+
+   Documentation Copyrights:
+
+   Copyright © 2012-2013 VoIP Embedded, Inc.

@@ -42,10 +42,9 @@ static int db_oracle_bind_api(const str* mod, db_func_t *dbb);
  * Oracle database module interface
  */
 static cmd_export_t cmds[] = {
-	{"db_bind_api",         (cmd_function)db_oracle_bind_api,    0, 0, 0, 0},
-	{0, 0, 0, 0, 0, 0}
+	{"db_bind_api",         (cmd_function)db_oracle_bind_api, {{0,0,0}},0},
+	{0,0,{{0,0,0}},0}
 };
-
 
 /*
  * Exported parameters
@@ -62,6 +61,7 @@ struct module_exports exports = {
 	MOD_TYPE_SQLDB,  /* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	cmds,
 	0,
@@ -69,12 +69,13 @@ struct module_exports exports = {
 	0,               /* exported statistics */
 	0,               /* exported MI functions */
 	0,               /* exported pseudo-variables */
-	0,				 /* exported transformations */
+	0,               /* exported transformations */
 	0,               /* extra processes */
 	oracle_mod_init, /* module initialization function */
 	0,               /* response function*/
 	destroy,         /* destroy function */
-	0                /* per-child init function */
+	0,               /* per-child init function */
+	0                /* reload confirm function */
 };
 
 

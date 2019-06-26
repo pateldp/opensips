@@ -1,18 +1,4 @@
 Presence Module
-
-Anca-Maria Vamanu
-
-Edited by
-
-Ovidiu Sas
-
-Anca-Maria Vamanu
-
-Saul Ibarra Corretge
-
-   Copyright © 2006 Voice Sistem SRL
-   Revision History
-   Revision $Revision: 9371 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -20,53 +6,58 @@ Saul Ibarra Corretge
    1. Admin Guide
 
         1.1. Overview
-        1.2. Dependencies
+        1.2. Presence clustering
+        1.3. Dependencies
 
-              1.2.1. OpenSIPS Modules
-              1.2.2. External Libraries or Applications
+              1.3.1. OpenSIPS Modules
+              1.3.2. External Libraries or Applications
 
-        1.3. Exported Parameters
+        1.4. Exported Parameters
 
-              1.3.1. db_url(str)
-              1.3.2. presentity_table(str)
-              1.3.3. active_watchers_table(str)
-              1.3.4. watchers_table(str)
-              1.3.5. clean_period (int)
-              1.3.6. db_update_period (int)
-              1.3.7. expires_offset (int)
-              1.3.8. max_expires_subscribe (int)
-              1.3.9. max_expires_publish (int)
-              1.3.10. server_address (str)
-              1.3.11. fallback2db (int)
-              1.3.12. subs_htable_size (int)
-              1.3.13. pres_htable_size (int)
-              1.3.14. enable_sphere_check (int)
-              1.3.15. waiting_subs_daysno (int)
-              1.3.16. mix_dialog_presence (int)
-              1.3.17. bla_presentity_spec (str)
-              1.3.18. bla_fix_remote_target (int)
-              1.3.19. notify_offline_body (int)
-              1.3.20. end_sub_on_timeout (int)
+              1.4.1. db_url(str)
+              1.4.2. fallback2db (int)
+              1.4.3. cluster_id (int)
+              1.4.4. cluster_federation_mode (int)
+              1.4.5. cluster_pres_events (str)
+              1.4.6. expires_offset (int)
+              1.4.7. max_expires_subscribe (int)
+              1.4.8. max_expires_publish (int)
+              1.4.9. server_address (str)
+              1.4.10. enable_sphere_check (int)
+              1.4.11. waiting_subs_daysno (int)
+              1.4.12. mix_dialog_presence (int)
+              1.4.13. bla_presentity_spec (str)
+              1.4.14. bla_fix_remote_target (int)
+              1.4.15. notify_offline_body (int)
+              1.4.16. end_sub_on_timeout (int)
+              1.4.17. clean_period (int)
+              1.4.18. db_update_period (int)
+              1.4.19. presentity_table(str)
+              1.4.20. active_watchers_table(str)
+              1.4.21. watchers_table(str)
+              1.4.22. subs_htable_size (int)
+              1.4.23. pres_htable_size (int)
 
-        1.4. Exported Functions
+        1.5. Exported Functions
 
-              1.4.1. handle_publish(char* sender_uri)
-              1.4.2. handle_subscribe(char* force_active)
+              1.5.1. handle_publish([sender_uri])
+              1.5.2. handle_subscribe([force_active]
+                      [,sharing_tag])
 
-        1.5. Exported MI Functions
+        1.6. Exported MI Functions
 
-              1.5.1. refreshWatchers
-              1.5.2. cleanup
-              1.5.3. pres_phtable_list
-              1.5.4. subs_phtable_list
-              1.5.5. pres_expose
+              1.6.1. refreshWatchers
+              1.6.2. cleanup
+              1.6.3. pres_phtable_list
+              1.6.4. subs_phtable_list
+              1.6.5. pres_expose
 
-        1.6. Exported Events
+        1.7. Exported Events
 
-              1.6.1. E_PRESENCE_PUBLISH
-              1.6.2. E_PRESENCE_EXPOSED
+              1.7.1. E_PRESENCE_PUBLISH
+              1.7.2. E_PRESENCE_EXPOSED
 
-        1.7. Installation
+        1.8. Installation
 
    2. Developer Guide
 
@@ -87,30 +78,49 @@ Saul Ibarra Corretge
         2.15. get_sphere
         2.16. contains_presence
 
+   3. Contributors
+
+        3.1. By Commit Statistics
+        3.2. By Commit Activity
+
+   4. Documentation
+
+        4.1. Contributors
+
+   List of Tables
+
+   3.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   3.2. Most recently active contributors^(1) to this module
+
    List of Examples
 
    1.1. Set db_url parameter
-   1.2. Set presentity_table parameter
-   1.3. Set active_watchers_table parameter
-   1.4. Set watchers_table parameter
-   1.5. Set clean_period parameter
-   1.6. Set db_update_period parameter
-   1.7. Set expires_offset parameter
-   1.8. Set max_expires_subscribe parameter
-   1.9. Set max_expires_publish parameter
-   1.10. Set server_address parameter
-   1.11. Set fallback2db parameter
-   1.12. Set subs_htable_size parameter
-   1.13. Set pres_htable_size parameter
-   1.14. Set enable_sphere_check parameter
-   1.15. Set waiting_subs_daysno parameter
-   1.16. Set mix_dialog_presence parameter
-   1.17. Set bla_presentity_spec parameter
-   1.18. Set bla_fix_remote_target parameter
-   1.19. Set notify_offline_body parameter
-   1.20. Set end_sub_on_timeout parameter
-   1.21. handle_publish usage
-   1.22. handle_subscribe usage
+   1.2. Set fallback2db parameter
+   1.3. Set cluster_id parameter
+   1.4. Set cluster_federation_mode parameter
+   1.5. Set cluster_pres_events parameter
+   1.6. Set expires_offset parameter
+   1.7. Set max_expires_subscribe parameter
+   1.8. Set max_expires_publish parameter
+   1.9. Set server_address parameter
+   1.10. Set enable_sphere_check parameter
+   1.11. Set waiting_subs_daysno parameter
+   1.12. Set mix_dialog_presence parameter
+   1.13. Set bla_presentity_spec parameter
+   1.14. Set bla_fix_remote_target parameter
+   1.15. Set notify_offline_body parameter
+   1.16. Set end_sub_on_timeout parameter
+   1.17. Set clean_period parameter
+   1.18. Set db_update_period parameter
+   1.19. Set presentity_table parameter
+   1.20. Set active_watchers_table parameter
+   1.21. Set watchers_table parameter
+   1.22. Set subs_htable_size parameter
+   1.23. Set pres_htable_size parameter
+   1.24. handle_publish usage
+   1.25. handle_subscribe usage
    2.1. presence_api_t structure
 
 Chapter 1. Admin Guide
@@ -124,7 +134,7 @@ Chapter 1. Admin Guide
    presence.winfo, dialog;sla from presence_xml module and
    message-summary from presence_mwi module.
 
-   The modules uses database storage. It has later been improved
+   The module uses database storage. It has later been improved
    with memory caching operations to improve performance. The
    Subscribe dialog information are stored in memory and are
    periodically updated in database, while for Publish only the
@@ -145,21 +155,31 @@ Chapter 1. Admin Guide
    The server follows the specifications in: RFC3265, RFC3856,
    RFC3857, RFC3858.
 
-1.2. Dependencies
+1.2. Presence clustering
 
-1.2.1. OpenSIPS Modules
+   To read and understand the presence clustering, its abilities
+   and how to implement scenarios like High-Availability, Load
+   Balancing or Federations, please refer to this article
+   https://blog.opensips.org/2018/03/27/clustering-presence-servic
+   es-with-opensips-2-4/.
+
+1.3. Dependencies
+
+1.3.1. OpenSIPS Modules
 
    The following modules must be loaded before this module:
      * a database module.
      * signaling.
+     * clusterer, if the cluster_id module parameter is set and
+       clustering support activated.
 
-1.2.2. External Libraries or Applications
+1.3.2. External Libraries or Applications
 
      * libxml-dev.
 
-1.3. Exported Parameters
+1.4. Exported Parameters
 
-1.3.1. db_url(str)
+1.4.1. db_url(str)
 
    The database url.
 
@@ -175,111 +195,7 @@ modparam("presence", "db_url",
         "mysql://opensips:opensipsrw@192.168.2.132/opensips")
 ...
 
-1.3.2. presentity_table(str)
-
-   The name of the db table where Publish information are stored.
-
-   Default value is “presentity”.
-
-   Example 1.2. Set presentity_table parameter
-...
-modparam("presence", "presentity_table", "presentity")
-...
-
-1.3.3. active_watchers_table(str)
-
-   The name of the db table where active subscription information
-   are stored.
-
-   Default value is “active_watchers”.
-
-   Example 1.3. Set active_watchers_table parameter
-...
-modparam("presence", "active_watchers_table", "active_watchers")
-...
-
-1.3.4. watchers_table(str)
-
-   The name of the db table where subscription states are stored.
-
-   Default value is “watchers”.
-
-   Example 1.4. Set watchers_table parameter
-...
-modparam("presence", "watchers_table", "watchers")
-...
-
-1.3.5. clean_period (int)
-
-   The period at which to clean the expired subscription dialogs.
-
-   Default value is “100”. A zero or negative value disables this
-   activity.
-
-   Example 1.5. Set clean_period parameter
-...
-modparam("presence", "clean_period", 100)
-...
-
-1.3.6. db_update_period (int)
-
-   The period at which to synchronize cached subscriber info with
-   the database.
-
-   Default value is “100”. A zero or negative value disables
-   synchronization.
-
-   Example 1.6. Set db_update_period parameter
-...
-modparam("presence", "db_update_period", 100)
-...
-
-1.3.7. expires_offset (int)
-
-   The extra time to store a subscription/publication.
-
-   Default value is “0”.
-
-   Example 1.7. Set expires_offset parameter
-...
-modparam("presence", "expires_offset", 10)
-...
-
-1.3.8. max_expires_subscribe (int)
-
-   The the maximum admissible expires value for SUBSCRIBE
-   messages.
-
-   Default value is “3600”.
-
-   Example 1.8. Set max_expires_subscribe parameter
-...
-modparam("presence", "max_expires_subscribe", 3600)
-...
-
-1.3.9. max_expires_publish (int)
-
-   The the maximum admissible expires value for PUBLISH messages.
-
-   Default value is “3600”.
-
-   Example 1.9. Set max_expires_publish parameter
-...
-modparam("presence", "max_expires_publish", 3600)
-...
-
-1.3.10. server_address (str)
-
-   The presence server address which will become the value of
-   Contact header filed for 200OK replies to Subscribe and Publish
-   and in Notify messages.
-
-   Example 1.10. Set server_address parameter
-...
-modparam("presence", "server_address", "sip:10.10.10.10:5060")
-...
-
-1.3.11. fallback2db (int)
+1.4.2. fallback2db (int)
 
    Setting this parameter enables a fallback to db mode of
    operation. In this mode, in case a searched record is not found
@@ -287,38 +203,115 @@ modparam("presence", "server_address", "sip:10.10.10.10:5060")
    architecture in which processing and memory load might be
    divided on more machines using the same database.
 
-   Example 1.11. Set fallback2db parameter
+   Example 1.2. Set fallback2db parameter
 ...
 modparam("presence", "fallback2db", 1)
 ...
 
-1.3.12. subs_htable_size (int)
+1.4.3. cluster_id (int)
 
-   The size of the hash table to store subscription dialogs. This
-   parameter will be used as the power of 2 when computing table
-   size.
+   The ID of the cluster this presence server belongs to. This
+   parameter is to be used only if clustering mode is needed. In
+   order to understand th concept of a cluster ID, please see the
+   clusterer module.
 
-   Default value is “9 (512)”.
+   For more on presence clustering see the Section 1.2, “Presence
+   clustering” chapter.
 
-   Example 1.12. Set subs_htable_size parameter
+   Default value is “None”.
+
+   Example 1.3. Set cluster_id parameter
 ...
-modparam("presence", "subs_htable_size", 11)
-...
-
-1.3.13. pres_htable_size (int)
-
-   The size of the hash table to store publish records. This
-   parameter will be used as the power of 2 when computing table
-   size.
-
-   Default value is “9 (512)”.
-
-   Example 1.13. Set pres_htable_size parameter
-...
-modparam("presence", "pres_htable_size", 11)
+modparam("presence", "cluster_id", 2)
 ...
 
-1.3.14. enable_sphere_check (int)
+1.4.4. cluster_federation_mode (int)
+
+   When enabling the federation mode, the node inside the presence
+   cluster will start partitioning the data (each node will keep
+   its own data set) and exchange the minimimum of needed
+   information via the clustering support. A non-zero value means
+   enabled.
+
+   For more on presence clustering see the Section 1.2, “Presence
+   clustering” chapter.
+
+   Default value is “0” (disabled).
+
+   Example 1.4. Set cluster_federation_mode parameter
+...
+modparam("presence", "cluster_federation_mode", 1)
+...
+
+1.4.5. cluster_pres_events (str)
+
+   Comma Separated Value (CSV) list with the events to considered
+   by the federated cluster - only presentities advertising one of
+   these events will be broadcasted via the cluster.
+
+   For more on presence clustering see the Section 1.2, “Presence
+   clustering” chapter.
+
+   Default value is “empty” (meaning all).
+
+   Example 1.5. Set cluster_pres_events parameter
+...
+modparam("presence", "cluster_pres_events" ,"presence, dialog;sla, messa
+ge-summary")
+...
+
+1.4.6. expires_offset (int)
+
+   The extra time to store a subscription/publication.
+
+   Default value is “0”.
+
+   Example 1.6. Set expires_offset parameter
+...
+modparam("presence", "expires_offset", 10)
+...
+
+1.4.7. max_expires_subscribe (int)
+
+   The the maximum admissible expires value for SUBSCRIBE
+   messages.
+
+   Default value is “3600”.
+
+   Example 1.7. Set max_expires_subscribe parameter
+...
+modparam("presence", "max_expires_subscribe", 3600)
+...
+
+1.4.8. max_expires_publish (int)
+
+   The the maximum admissible expires value for PUBLISH messages.
+
+   Default value is “3600”.
+
+   Example 1.8. Set max_expires_publish parameter
+...
+modparam("presence", "max_expires_publish", 3600)
+...
+
+1.4.9. server_address (str)
+
+   The optional presence server URI address which will become the
+   value of Contact header filed for 200OK replies to Subscribe
+   and Publish and in Notify messages.
+
+   NOTE: this must be a fully formated SIP URI, with port and
+   transport parameter if the case.
+
+   If not set (as it is by default), OpenSIPS will generate the
+   Contact URI based on the interface it received the SIP traffic.
+
+   Example 1.9. Set server_address parameter
+...
+modparam("presence", "server_address", "sip:10.10.10.10:5060")
+...
+
+1.4.10. enable_sphere_check (int)
 
    This parameter is a flag that should be set if permission rules
    include sphere checking. The sphere information is expected to
@@ -329,12 +322,12 @@ modparam("presence", "pres_htable_size", 11)
 
    Default value is “0 ”.
 
-   Example 1.14. Set enable_sphere_check parameter
+   Example 1.10. Set enable_sphere_check parameter
 ...
 modparam("presence", "enable_sphere_check", 1)
 ...
 
-1.3.15. waiting_subs_daysno (int)
+1.4.11. waiting_subs_daysno (int)
 
    The number of days to keep the record of a subscription in
    server database if the subscription is in pending or waiting
@@ -344,12 +337,12 @@ modparam("presence", "enable_sphere_check", 1)
 
    Default value is “3” days. Maximum accepted value is 30 days.
 
-   Example 1.15. Set waiting_subs_daysno parameter
+   Example 1.11. Set waiting_subs_daysno parameter
 ...
 modparam("presence", "waiting_subs_daysno", 2)
 ...
 
-1.3.16. mix_dialog_presence (int)
+1.4.12. mix_dialog_presence (int)
 
    This module parameter enables a very nice feature in the
    presence server - generating presence information from dialogs
@@ -361,32 +354,31 @@ modparam("presence", "waiting_subs_daysno", 2)
 
    Default value is “0”.
 
-   Example 1.16. Set mix_dialog_presence parameter
+   Example 1.12. Set mix_dialog_presence parameter
 ...
 modparam("presence", "mix_dialog_presence", 1)
 ...
 
-1.3.17. bla_presentity_spec (str)
+1.4.13. bla_presentity_spec (str)
 
    By default the presentity uri for BLA subscribes
    (event=dialog;sla) is computed from contact username + from
    domain. In some cases though, this way of computing the
-   presentity might not be right ( for example if you have a SBC
-   in front that masquerades the contact). So we added this
-   parameter that allows defining a custom uri to be used as
-   presentity uri for BLA subscribes. You should set this
-   parameter to the name of a pseudovariable and then set this
-   pseudovariable to the desired URI before calling the function
-   handle_subscribe.
+   presentity might not be right (for example if you have a SBC in
+   front that masquerades the contact). So we added this parameter
+   that allows defining a custom uri to be used as presentity uri
+   for BLA subscribes. You should set this parameter to the name
+   of a pseudovariable and then set this pseudovariable to the
+   desired URI before calling the handle_subscribe() function.
 
    Default value is “NULL”.
 
-   Example 1.17. Set bla_presentity_spec parameter
+   Example 1.13. Set bla_presentity_spec parameter
 ...
 modparam("presence", "bla_presentity_spec", "$var(bla_pres)")
 ...
 
-1.3.18. bla_fix_remote_target (int)
+1.4.14. bla_fix_remote_target (int)
 
    Polycom has a bug in the bla implementation. It inserts the
    remote IP contact in the Notify body and when a phone picks up
@@ -401,12 +393,12 @@ modparam("presence", "bla_presentity_spec", "$var(bla_pres)")
 
    Default value is “1”.
 
-   Example 1.18. Set bla_fix_remote_target parameter
+   Example 1.14. Set bla_fix_remote_target parameter
 ...
 modparam("presence", "bla_fix_remote_target", 0)
 ...
 
-1.3.19. notify_offline_body (int)
+1.4.15. notify_offline_body (int)
 
    If this parameter is set, when no published info is found for a
    user, the presence server will generate a dummy body with
@@ -415,12 +407,12 @@ modparam("presence", "bla_fix_remote_target", 0)
 
    Default value is “0”.
 
-   Example 1.19. Set notify_offline_body parameter
+   Example 1.15. Set notify_offline_body parameter
 ...
 modparam("presence", "notify_offline_body", 1)
 ...
 
-1.3.20. end_sub_on_timeout (int)
+1.4.16. end_sub_on_timeout (int)
 
    If a presence subscription should be automatically terminated
    (destroyed) when receiving a SIP timeout (408) for a sent
@@ -428,26 +420,113 @@ modparam("presence", "notify_offline_body", 1)
 
    Default value is “1” (enabled).
 
-   Example 1.20. Set end_sub_on_timeout parameter
+   Example 1.16. Set end_sub_on_timeout parameter
 ...
 modparam("presence", "end_sub_on_timeout", 0)
 ...
 
-1.4. Exported Functions
+1.4.17. clean_period (int)
 
-1.4.1.  handle_publish(char* sender_uri)
+   The period at which to clean the expired subscription dialogs.
+
+   Default value is “100”. A zero or negative value disables this
+   activity.
+
+   Example 1.17. Set clean_period parameter
+...
+modparam("presence", "clean_period", 100)
+...
+
+1.4.18. db_update_period (int)
+
+   The period at which to synchronize cached subscriber info with
+   the database.
+
+   Default value is “100”. A zero or negative value disables
+   synchronization.
+
+   Example 1.18. Set db_update_period parameter
+...
+modparam("presence", "db_update_period", 100)
+...
+
+1.4.19. presentity_table(str)
+
+   The name of the db table where Publish information are stored.
+
+   Default value is “presentity”.
+
+   Example 1.19. Set presentity_table parameter
+...
+modparam("presence", "presentity_table", "presentity")
+...
+
+1.4.20. active_watchers_table(str)
+
+   The name of the db table where active subscription information
+   are stored.
+
+   Default value is “active_watchers”.
+
+   Example 1.20. Set active_watchers_table parameter
+...
+modparam("presence", "active_watchers_table", "active_watchers")
+...
+
+1.4.21. watchers_table(str)
+
+   The name of the db table where subscription states are stored.
+
+   Default value is “watchers”.
+
+   Example 1.21. Set watchers_table parameter
+...
+modparam("presence", "watchers_table", "watchers")
+...
+
+1.4.22. subs_htable_size (int)
+
+   The size of the hash table to store subscription dialogs. This
+   parameter will be used as the power of 2 when computing table
+   size.
+
+   Default value is “9 (512)”.
+
+   Example 1.22. Set subs_htable_size parameter
+...
+modparam("presence", "subs_htable_size", 11)
+...
+
+1.4.23. pres_htable_size (int)
+
+   The size of the hash table to store publish records. This
+   parameter will be used as the power of 2 when computing table
+   size.
+
+   Default value is “9 (512)”.
+
+   Example 1.23. Set pres_htable_size parameter
+...
+modparam("presence", "pres_htable_size", 11)
+...
+
+1.5. Exported Functions
+
+1.5.1.  handle_publish([sender_uri])
 
    The function handles PUBLISH requests. It stores and updates
    published information in database and calls functions to send
    NOTIFY messages when changes in the published information
-   occur. It takes one argument -> sender_uri. The parameter was
-   added for enabling BLA implementation. If present, Notification
-   of a change in published state is not sent to the respective
-   uri even though a subscription exists. It should be taken from
-   the Sender header. It was left at the decision of the
-   administrator whether or not to transmit the content of this
-   header as parameter for handle_publish, to prevent security
-   problems.
+   occur.
+
+   It may takes one optional string argument, the 'sender_uri' SIP
+   URI. The parameter was added for enabling BLA implementation.
+   If present, Notification of a change in published state is not
+   sent to the respective uri even though a subscription exists.
+   It should be taken from the Sender header. It was left at the
+   decision of the administrator whether or not to transmit the
+   content of this header as parameter for handle_publish, to
+   prevent security problems.
 
    This function can be used from REQUEST_ROUTE.
 
@@ -457,18 +536,18 @@ modparam("presence", "end_sub_on_timeout", 0)
 
    The module sends an appropriate stateless reply in all cases.
 
-   Example 1.21. handle_publish usage
+   Example 1.24. handle_publish usage
 ...
         if(is_method("PUBLISH"))
         {
                 if($hdr(Sender)!= NULL)
-                        handle_publish("$hdr(Sender)");
+                        handle_publish($hdr(Sender));
                 else
                         handle_publish();
         }
 ...
 
-1.4.2.  handle_subscribe(char* force_active)
+1.5.2.  handle_subscribe([force_active] [,sharing_tag])
 
    This function is to be used for handling SUBSCRIBE requests. It
    stores or updates the watcher/subscriber information in
@@ -477,23 +556,30 @@ modparam("presence", "end_sub_on_timeout", 0)
    also sends back the NOTIFY (with the presence information) to
    the wathcer/subscriber.
 
-   The function may take on parameter that controlls what is the
-   default policy (of the presentity) on accepting new
-   subscriptions (accept or reject) - of course, this parameter
-   makes sense only when using a presence configuration with
-   privacy rules enabled (force_active parameter in presence_xml
-   module is not set).
+   The function may take the following parameters:
+     * force_active (int, optional) - optional parameter that
+       controls what is the default policy (of the presentity) on
+       accepting new subscriptions (accept or reject) - of course,
+       this parameter makes sense only when using a presence
+       configuration with privacy rules enabled (force_active
+       parameter in presence_xml module is not set).
+       There are scenarios where the presentity (the party you
+       subscribe to) can not upload an XCAP document with its
+       privacy rules (to control which watchers are allowed to
+       subscribe to it). In such cases, from script level, you can
+       force the presence server to consider the current
+       subscription allowed (with Subscription-Status:active) by
+       calling the handle_subscribe() function with the integer
+       parameter "1".
+     * sharing_tag (string, optional) - optional parameter telling
+       the owner tag (for the subscription) in clusetering
+       scenarios where the subscription data is shared between
+       multiple servers - see the Section 1.2, “Presence
+       clustering” chapter for more details.
 
-   There are scenarios where the presentity (the party you
-   subscribe to) can not upload an XCAP document with it's privacy
-   rules (to controll which watchers are allowed to subscribe to
-   it). In such case, from script level, you can force the
-   presence server to consider the current subscription allowed
-   (with Subscription-Status:active) by calling handle_subscribe()
-   function with the string parameter "1".
    Ex:
         if($ru =~ "kphone@opensips.org")
-                handle_subscribe("1");
+                handle_subscribe(1);
 
    This function can be used from REQUEST_ROUTE.
 
@@ -503,15 +589,15 @@ modparam("presence", "end_sub_on_timeout", 0)
 
    The module sends an appropriate stateless reply in all cases.
 
-   Example 1.22. handle_subscribe usage
+   Example 1.25. handle_subscribe usage
 ...
 if($rm=="SUBSCRIBE")
     handle_subscribe();
 ...
 
-1.5. Exported MI Functions
+1.6. Exported MI Functions
 
-1.5.1.  refreshWatchers
+1.6.1.  refreshWatchers
 
    Triggers sending Notify messages to watchers if a change in
    watchers authorization or in published state occurred.
@@ -531,13 +617,9 @@ if($rm=="SUBSCRIBE")
             is set): refresh type!= 0.
 
    MI FIFO Command Format:
-:refreshWatchers:fifo_reply
-sip:11@192.168.2.132
-presence
-1
-_empty_line_
+opensips-cli -x mi refreshWatchers sip:11@192.168.2.132 presence 1
 
-1.5.2.  cleanup
+1.6.2.  cleanup
 
    Manually triggers the cleanup functions for watchers and
    presentity tables. Useful if you have set clean_period to zero
@@ -545,25 +627,23 @@ _empty_line_
 
    Name: cleanup
 
-   Parameters:none.emphasis>
+   Parameters: none
 
    MI FIFO Command Format:
-:cleanup:fifo_reply
-_empty_line_
+opensips-cli -x mi cleanup
 
-1.5.3.  pres_phtable_list
+1.6.3.  pres_phtable_list
 
    Lists all the presentity records.
 
    Name: pres_phtable_list
 
-   Parameters:none.
+   Parameters: none
 
    MI FIFO Command Format:
-:pres_phtable_list:fifo_reply
-_empty_line_
+opensips-cli -x mi pres_phtable_list
 
-1.5.4.  subs_phtable_list
+1.6.4.  subs_phtable_list
 
    Lists all the subscription records, or the subscriptions for
    which the "To" and "From" URIs match the given parameters.
@@ -575,12 +655,10 @@ _empty_line_
      * to(optional) - wildcard for "To" URI
 
    MI FIFO Command Format:
-:subs_phtable_list:fifo_reply
-sip:222@domain2.com
-sip:user_1@example.com
-_empty_line_
+opensips-cli -x mi subs_phtable_list sip:222@domain2.com sip:user_1@exam
+ple.com
 
-1.5.5.  pres_expose
+1.6.5.  pres_expose
 
    Exposes in the script, by rasing an E_PRESENCE_EXPOSED event,
    all the presentities of a specific event that match a specified
@@ -589,19 +667,18 @@ _empty_line_
    Name: pres_expose
 
    Parameters:
-     * event - the interesting presence event.
+     * event - the desired presence event.
      * filter(optional) - a regular expression (REGEXP) used for
        filtering the presentities for that event. Only the
        presentities that match will be exposed. If not specified,
        all presentities for that event are exposed.
 
    MI FIFO Command Format:
-:pres_expose:fifo_reply
-_empty_line_
+opensips-cli -x mi pres_expose presence ^sip:10\.0\.5\.[0-9]*
 
-1.6. Exported Events
+1.7. Exported Events
 
-1.6.1.  E_PRESENCE_PUBLISH
+1.7.1.  E_PRESENCE_PUBLISH
 
    This event is raised when the presence module receives a
    PUBLISH message.
@@ -614,7 +691,7 @@ _empty_line_
      * etag - the entity tag
      * body - the body of the PUBLISH request
 
-1.6.2.  E_PRESENCE_EXPOSED
+1.7.2.  E_PRESENCE_EXPOSED
 
    This event is raised for each presentity exposeed by the
    pres_expose.
@@ -623,7 +700,7 @@ _empty_line_
 
    Same parameters as the E_PRESENCE_PUBLISH event.
 
-1.7. Installation
+1.8. Installation
 
    The module requires 3 table in OpenSIPS database: presentity,
    active_watchers and watchers tables. The SQL syntax to create
@@ -922,3 +999,91 @@ typedef int (*pres_contains_presence_t)(str* pres_uri);
    This function searches is a presence uri has published any
    presence information. It return 1 if a record is found, -1
    otherwise.
+
+Chapter 3. Contributors
+
+3.1. By Commit Statistics
+
+   Table 3.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Anca Vamanu 663 247 24146 12623
+   2. Bogdan-Andrei Iancu (@bogdan-iancu) 135 80 2853 1761
+   3. Razvan Crainea (@razvancrainea) 28 22 382 135
+   4. Ovidiu Sas (@ovidiusas) 27 19 615 167
+   5. Daniel-Constantin Mierla (@miconda) 24 19 174 165
+   6. Liviu Chircu (@liviuchircu) 24 15 246 371
+   7. Vlad Patrascu (@rvlad-patrascu) 19 9 360 354
+   8. Henning Westerholt (@henningw) 15 6 340 302
+   9. Dan Pascu (@danpascu) 10 8 22 36
+   10. Saúl Ibarra Corretgé (@saghul) 8 6 36 11
+
+   All remaining contributors: Walter Doekes (@wdoekes), Edson
+   Gellert Schubert, Vlad Paiu (@vladpaiu), Juha Heinanen
+   (@juha-h), Stanislaw Pitucha, Damien Sandras (@dsandras), Kobi
+   Eshun (@ekobi), Dusan Klinec, Angel Marin, Klaus Darilion,
+   Carlos Oliva, Sergio Gutierrez, Kennard White, Elena-Ramona
+   Modroiu, Vasil Kolev, Benny Prijono, James Criscuolo, Peter
+   Lemenkov (@lemenkov), Vallimamod Abdullah, UnixDev, Denis
+   Bilenko, Julián Moreno Patiño, John Riordan, Julien Blache.
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+3.2. By Commit Activity
+
+   Table 3.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Bogdan-Andrei Iancu (@bogdan-iancu) Oct 2006 - Jun 2019
+   2.  Dan Pascu (@danpascu)               Nov 2007 - May 2019
+   3.  Liviu Chircu (@liviuchircu)         Mar 2014 - May 2019
+   4.  Razvan Crainea (@razvancrainea)     Sep 2011 - May 2019
+   5.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   6.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   7.  James Criscuolo                     Mar 2016 - Mar 2016
+   8.  Ovidiu Sas (@ovidiusas)             Sep 2010 - Mar 2016
+   9.  Julián Moreno Patiño                Feb 2016 - Feb 2016
+   10. Dusan Klinec                        Dec 2015 - Dec 2015
+
+   All remaining contributors: Carlos Oliva, Damien Sandras
+   (@dsandras), Vlad Paiu (@vladpaiu), Saúl Ibarra Corretgé
+   (@saghul), Anca Vamanu, Walter Doekes (@wdoekes), Vallimamod
+   Abdullah, Kennard White, Stanislaw Pitucha, Angel Marin, John
+   Riordan, Vasil Kolev, UnixDev, Sergio Gutierrez, Kobi Eshun
+   (@ekobi), Klaus Darilion, Denis Bilenko, Henning Westerholt
+   (@henningw), Juha Heinanen (@juha-h), Daniel-Constantin Mierla
+   (@miconda), Edson Gellert Schubert, Julien Blache, Benny
+   Prijono, Elena-Ramona Modroiu.
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 4. Documentation
+
+4.1. Contributors
+
+   Last edited by: Liviu Chircu (@liviuchircu), Vlad Patrascu
+   (@rvlad-patrascu), Bogdan-Andrei Iancu (@bogdan-iancu), Razvan
+   Crainea (@razvancrainea), Peter Lemenkov (@lemenkov), Saúl
+   Ibarra Corretgé (@saghul), Ovidiu Sas (@ovidiusas), Anca
+   Vamanu, Kennard White, Angel Marin, Kobi Eshun (@ekobi), Klaus
+   Darilion, Henning Westerholt (@henningw), Dan Pascu
+   (@danpascu), Daniel-Constantin Mierla (@miconda), Edson Gellert
+   Schubert, Juha Heinanen (@juha-h), Elena-Ramona Modroiu.
+
+   Documentation Copyrights:
+
+   Copyright © 2006 Voice Sistem SRL

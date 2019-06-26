@@ -1,18 +1,4 @@
-Domain Module
-
-Juha Heinanen
-
-   <jh@tutpro.com>
-
-Edited by
-
-Juha Heinanen
-
-   <jh@tutpro.com>
-
-   Copyright © 2002-2008 Juha Heinanen
-   Revision History
-   Revision $Revision: 5901 $ $Date$
+domain Module
      __________________________________________________________
 
    Table of Contents
@@ -31,10 +17,9 @@ Juha Heinanen
 
         1.4. Exported Functions
 
-              1.4.1. is_from_local([attrs_pvar])
-              1.4.2. is_uri_host_local([attrs_pvar])
-              1.4.3. is_domain_local(pseudo_variable [,
-                      attrs_pvar])
+              1.4.1. is_from_local([attrs_var])
+              1.4.2. is_uri_host_local([attrs_var])
+              1.4.3. is_domain_local(domain, [attrs_var])
 
         1.5. Exported MI Functions
 
@@ -48,6 +33,22 @@ Juha Heinanen
         2.1. Available Functions
 
               2.1.1. is_domain_local(domain)
+
+   3. Contributors
+
+        3.1. By Commit Statistics
+        3.2. By Commit Activity
+
+   4. Documentation
+
+        4.1. Contributors
+
+   List of Tables
+
+   3.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   3.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -140,13 +141,13 @@ modparam("domain", "attrs_col", "attributes")
 
 1.4. Exported Functions
 
-1.4.1. is_from_local([attrs_pvar])
+1.4.1. is_from_local([attrs_var])
 
    Checks based on domain table if host part of From header uri is
    one of the local domains that the proxy is responsible for. The
    argument is optional and if present it should contain a
-   writable pseudo variable that will be populated with the
-   attributes from the database.
+   writable variable that will be populated with the attributes
+   from the database.
 
    This function can be used from REQUEST_ROUTE.
 
@@ -156,13 +157,13 @@ if (is_from_local()) {
         ...
 };
 ...
-if (is_from_local("$var(attrs)")) {
+if (is_from_local($var(attrs))) {
         xlog("Domain attributes are $var(attrs)\n");
         ...
 };
 ...
 
-1.4.2. is_uri_host_local([attrs_pvar])
+1.4.2. is_uri_host_local([attrs_var])
 
    If called from route or failure route block, checks based on
    domain table if host part of Request-URI is one of the local
@@ -170,8 +171,8 @@ if (is_from_local("$var(attrs)")) {
    branch route, the test is made on host part of URI of first
    branch, which thus must have been appended to the transaction
    before is_uri_host_local() is called. The argument is optional
-   and if present it should contain a writable pseudo variable
-   that will be populated with the attributes from the database.
+   and if present it should contain a writable variable that will
+   be populated with the attributes from the database.
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
    BRANCH_ROUTE.
@@ -182,49 +183,50 @@ if (is_uri_host_local()) {
         ...
 };
 ...
-if (is_uri_host_local("$var(attrs)")) {
+if (is_uri_host_local($var(attrs))) {
         xlog("Domain attributes are $var(attrs)\n");
         ...
 };
 
-1.4.3. is_domain_local(pseudo_variable [, attrs_pvar])
+1.4.3. is_domain_local(domain, [attrs_var])
 
-   This function checks if the domain contained in the
-   pseudo_variable is local.
+   This function checks if the domain contained in the first
+   parameter is local.
 
    This function is a generalized form of the is_from_local() and
    is_uri_host_local() functions, being able to completely replace
    them and also extends them by allowing the domain to be taken
    from any of the above mentioned sources. The following
    equivalences exist:
-     * is_domain_local("$rd") is same as is_uri_host_local()
-     * is_domain_local("$fd") is same as is_from_local()
+     * is_domain_local($rd) is same as is_uri_host_local()
+     * is_domain_local($fd) is same as is_from_local()
 
-   The second argument is optional and if present it should
-   contain a writable pseudo variable that will be populated with
-   the attributes from the database.
+   Parameters:
+     * domain (string)
+     * attrs_var (var, optional) - a writable variable that will
+       be populated with the attributes from the database.
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
    BRANCH_ROUTE.
 
    Example 1.8. is_domain_local usage
 ...
-if (is_domain_local("$rd")) {
+if (is_domain_local($rd)) {
         ...
 };
-if (is_domain_local("$fd")) {
+if (is_domain_local($fd)) {
         ...
 };
-if (is_domain_local("$avp(some_avp_alias)")) {
+if (is_domain_local($avp(some_avp_alias))) {
         ...
 };
-if (is_domain_local("$avp(850)")) {
+if (is_domain_local($avp(850))) {
         ...
 };
-if (is_domain_local("$avp(some_avp)")) {
+if (is_domain_local($avp(some_avp))) {
         ...
 };
-if (is_domain_local("$avp(some_avp)", "$avp(attrs)")) {
+if (is_domain_local($avp(some_avp), $avp(attrs))) {
         xlog("Domain attributes are $avp(attrs)\n");
         ...
 };
@@ -242,8 +244,7 @@ if (is_domain_local("$avp(some_avp)", "$avp(attrs)")) {
    Parameters: none
 
    MI FIFO Command Format:
-                :domain_reload:_reply_fifo_file_
-                _empty_line_
+                opensips-cli -x mi domain_reload
 
 1.5.2. domain_dump
 
@@ -255,8 +256,7 @@ if (is_domain_local("$avp(some_avp)", "$avp(attrs)")) {
    Parameters: none
 
    MI FIFO Command Format:
-                :domain_dump:_reply_fifo_file_
-                _empty_line_
+                opensips-cli -x mi domain_dump
 
 1.6. Known Limitations
 
@@ -278,3 +278,83 @@ Chapter 2. Developer Guide
 
    The function returns 1 if domain is local and -1 if domain is
    not local or if an error occurred.
+
+Chapter 3. Contributors
+
+3.1. By Commit Statistics
+
+   Table 3.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Bogdan-Andrei Iancu (@bogdan-iancu) 54 40 424 551
+   2. Jan Janak (@janakj) 32 21 999 113
+   3. Juha Heinanen (@juha-h) 31 20 700 233
+   4. Daniel-Constantin Mierla (@miconda) 19 16 92 79
+   5. Razvan Crainea (@razvancrainea) 18 11 283 219
+   6. Liviu Chircu (@liviuchircu) 11 8 45 109
+   7. Vlad Patrascu (@rvlad-patrascu) 9 5 96 123
+   8. Andrei Pelinescu-Onciul 9 4 186 121
+   9. Dan Pascu (@danpascu) 8 4 232 101
+   10. Henning Westerholt (@henningw) 7 5 44 48
+
+   All remaining contributors: Edson Gellert Schubert,
+   Elena-Ramona Modroiu, Jiri Kuthan (@jiriatipteldotorg), @coxx,
+   Konstantin Bokarius, Klaus Darilion, Anca Vamanu, Norman
+   Brandinger (@NormB), Peter Lemenkov (@lemenkov), UnixDev,
+   Andreas Granig.
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+3.2. By Commit Activity
+
+   Table 3.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Razvan Crainea (@razvancrainea)     Jun 2011 - May 2019
+   2.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   3.  Bogdan-Andrei Iancu (@bogdan-iancu) Oct 2005 - Apr 2019
+   4.  Liviu Chircu (@liviuchircu)         Mar 2014 - Nov 2018
+   5.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   6.  @coxx                               Mar 2010 - Mar 2010
+   7.  Anca Vamanu                         Sep 2009 - Sep 2009
+   8.  UnixDev                             Feb 2009 - Feb 2009
+   9.  Juha Heinanen (@juha-h)             Jan 2003 - May 2008
+   10. Henning Westerholt (@henningw)      May 2007 - May 2008
+
+   All remaining contributors: Daniel-Constantin Mierla
+   (@miconda), Konstantin Bokarius, Edson Gellert Schubert,
+   Elena-Ramona Modroiu, Dan Pascu (@danpascu), Norman Brandinger
+   (@NormB), Andreas Granig, Klaus Darilion, Jan Janak (@janakj),
+   Andrei Pelinescu-Onciul, Jiri Kuthan (@jiriatipteldotorg).
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 4. Documentation
+
+4.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Razvan Crainea
+   (@razvancrainea), Peter Lemenkov (@lemenkov), Liviu Chircu
+   (@liviuchircu), Bogdan-Andrei Iancu (@bogdan-iancu),
+   Daniel-Constantin Mierla (@miconda), Konstantin Bokarius, Edson
+   Gellert Schubert, Juha Heinanen (@juha-h), Elena-Ramona
+   Modroiu, Dan Pascu (@danpascu), Klaus Darilion, Jan Janak
+   (@janakj).
+
+   Documentation Copyrights:
+
+   Copyright © 2002-2008 Juha Heinanen

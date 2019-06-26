@@ -1,16 +1,4 @@
 pi_http Module
-
-Ovidiu Sas
-
-   <osas@voipembedded.com>
-
-Edited by
-
-Ovidiu Sas
-
-   Copyright © 2012-2013 VoIP Embedded, Inc.
-   Revision History
-   Revision $Rev: 8688 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -40,6 +28,22 @@ Ovidiu Sas
         1.8. Exported MI Functions
 
               1.8.1. pi_reload_tbls_and_cmds
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -73,17 +77,18 @@ Chapter 1. Admin Guide
 
 1.2. Usage
 
-   The layout of the provisionning interface is controlled via an
+   The layout of the provisioning interface is controlled via an
    external xml file (see the framework parameter). An example of
    a framework xml file is provided inside the examples directory
    of the pi_http module. A simple framework file can be generated
-   by the opensipsdbctl command:
-opensipsdbctl pframework create
+   by the opensips-cli command:
+opensips-cli pframework create
 
    The generated framework will be saved inside OpenSIPS's config
    directory as pi_framework_sample. The list of configurable
-   tables will be based on the STANDARD_MODULES and EXTRA_MODULES
-   vars from opensipsctlrc file.
+   tables will be based on the "database_modules" setting of
+   opensips-cli.cfg if present, otherwise a default set of
+   configurable tables will be used.
 
 1.3. Framework
 
@@ -256,5 +261,65 @@ modparam("pi_http", "pi_http_method", 1)
    Parameters: none
 
    MI FIFO Command Format:
-:pi_reload_tbls_and_cmds:_reply_fifo_file_
-_empty_line_
+opensips-cli -x mi pi_reload_tbls_and_cmds
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Ovidiu Sas (@ovidiusas) 70 31 4389 206
+   2. Liviu Chircu (@liviuchircu) 13 11 37 53
+   3. Razvan Crainea (@razvancrainea) 11 9 28 30
+   4. Vlad Patrascu (@rvlad-patrascu) 6 4 21 19
+   5. Bogdan-Andrei Iancu (@bogdan-iancu) 6 4 5 2
+   6. Ionut Ionita (@ionutrazvanionita) 4 2 53 28
+   7. Vlad Paiu (@vladpaiu) 4 2 5 2
+   8. Peter Lemenkov (@lemenkov) 3 1 1 1
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                     Name                   Commit Activity
+   1. Razvan Crainea (@razvancrainea)     Aug 2015 - May 2019
+   2. Liviu Chircu (@liviuchircu)         Mar 2014 - May 2019
+   3. Bogdan-Andrei Iancu (@bogdan-iancu) Jan 2013 - Apr 2019
+   4. Vlad Patrascu (@rvlad-patrascu)     May 2017 - Jan 2019
+   5. Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   6. Ionut Ionita (@ionutrazvanionita)   Nov 2015 - Jan 2017
+   7. Ovidiu Sas (@ovidiusas)             Oct 2012 - Apr 2016
+   8. Vlad Paiu (@vladpaiu)               May 2013 - May 2013
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Liviu Chircu (@liviuchircu), Razvan Crainea
+   (@razvancrainea), Peter Lemenkov (@lemenkov), Vlad Patrascu
+   (@rvlad-patrascu), Ovidiu Sas (@ovidiusas), Bogdan-Andrei Iancu
+   (@bogdan-iancu).
+
+   Documentation Copyrights:
+
+   Copyright © 2012-2013 VoIP Embedded, Inc.

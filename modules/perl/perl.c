@@ -54,10 +54,6 @@ char *filename = NULL;
  * installed */
 char *modpath = NULL;
 
-/* Allow unsafe module functions - functions with fixups. This will create
- * memory leaks, the variable thus is not documented! */
-int unsafemodfnc = 0;
-
 /* Reference to the running Perl interpreter instance */
 PerlInterpreter *my_perl = NULL;
 
@@ -83,7 +79,8 @@ static int mod_init(void);
 /*
  * Reload perl interpreter - reload perl script. Forward declaration.
  */
-struct mi_root* perl_mi_reload(struct mi_root *cmd_tree, void *param);
+mi_response_t *perl_mi_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 
 
 
@@ -91,21 +88,16 @@ struct mi_root* perl_mi_reload(struct mi_root *cmd_tree, void *param);
  * Exported functions
  */
 static cmd_export_t cmds[] = {
-	{ "perl_exec_simple", (cmd_function)perl_exec_simple1, 1,  perl_fixup, 0,
-							     REQUEST_ROUTE | FAILURE_ROUTE
-							   | ONREPLY_ROUTE | BRANCH_ROUTE },
-	{ "perl_exec_simple", (cmd_function)perl_exec_simple2, 2,  perl_fixup, 0,
-							     REQUEST_ROUTE | FAILURE_ROUTE
-							   | ONREPLY_ROUTE | BRANCH_ROUTE },
-	{ "perl_exec", (cmd_function)perl_exec1, 1,  perl_fixup, 0,
-							     REQUEST_ROUTE | FAILURE_ROUTE
-							   | ONREPLY_ROUTE | BRANCH_ROUTE },
-	{ "perl_exec", (cmd_function)perl_exec2, 2, perl_fixup, 0,
-							     REQUEST_ROUTE | FAILURE_ROUTE
-							   | ONREPLY_ROUTE | BRANCH_ROUTE },
-	{ 0, 0, 0, 0, 0, 0 }
+	{"perl_exec_simple", (cmd_function)perl_exec_simple, {
+		{CMD_PARAM_STR,0,0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE},
+	{"perl_exec", (cmd_function)perl_exec, {
+		{CMD_PARAM_STR,0,0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE},
+	{0,0,{{0,0,0}},0}
 };
-
 
 /*
  * Exported parameters
@@ -113,7 +105,6 @@ static cmd_export_t cmds[] = {
 static param_export_t params[] = {
 	{"filename", STR_PARAM, &filename},
 	{"modpath", STR_PARAM, &modpath},
-	{"unsafemodfnc", INT_PARAM, &unsafemodfnc},
 	{ 0, 0, 0 }
 };
 
@@ -123,9 +114,12 @@ static param_export_t params[] = {
  */
 static mi_export_t mi_cmds[] = {
 	/* FIXME This does not yet work...
-	{ "perl_reload",  perl_mi_reload, MI_NO_INPUT_FLAG,  0,  0  },*/
-	{ 0, 0, 0, 0, 0, 0}
-
+	{ "perl_reload", 0,0,0, {
+		{perl_mi_reload, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	*/
+	{EMPTY_MI_EXPORT}
 };
 
 static dep_export_t deps = {
@@ -160,6 +154,7 @@ struct module_exports exports = {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	RTLD_NOW | RTLD_GLOBAL,
+	0,          /* load function */
 	&deps,      /* OpenSIPS module dependencies */
 	cmds,       /* Exported functions */
 	0,          /* Exported async functions */
@@ -172,7 +167,8 @@ struct module_exports exports = {
 	mod_init,   /* module initialization function */
 	0,          /* response function */
 	destroy,    /* destroy function */
-	child_init  /* child initialization function */
+	child_init, /* child initialization function */
+	0           /* reload confirm function */
 };
 
 
@@ -294,14 +290,14 @@ int perl_reload(struct sip_msg *m, char *a, char *b) {
  * Reinit through fifo.
  * Currently does not seem to work :((
  */
-struct mi_root* perl_mi_reload(struct mi_root *cmd_tree, void *param)
+mi_response_t *perl_mi_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
 	if (perl_reload(NULL, NULL, NULL)) {
-		return init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
+		return init_mi_result_ok();
 	} else {
-		return init_mi_tree( 500, "Perl reload failed", 18);
+		return init_mi_error(500, MI_SSTR("Perl reload failed"));
 	}
-
 }
 
 

@@ -1,19 +1,4 @@
 userblacklist Module
-
-Hardy Kahl
-
-   1&1 Internet AG
-
-Edited by
-
-Henning Westerholt
-
-   1&1 Internet AG
-   <henning.westerholt@1und1.de>
-
-   Copyright © 2008 1&1 Internet AG
-   Revision History
-   Revision $Revision: 5901 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -34,18 +19,34 @@ Henning Westerholt
 
         1.4. Exported Functions
 
-              1.4.1. check_user_blacklist (string user, string
-                      domain, string number, string table)
+              1.4.1. check_user_blacklist (user, domain, [number],
+                      [table])
 
-              1.4.2. check_blacklist (string table)
+              1.4.2. check_blacklist (table)
 
-        1.5. MI Commands
+        1.5. Exported MI Functions
 
               1.5.1. reload_blacklist
 
         1.6. Installation and Running
 
               1.6.1. Database setup
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -137,41 +138,48 @@ modparam("userblacklist", "use_domain", 0)
 
 1.4. Exported Functions
 
-1.4.1.  check_user_blacklist (string user, string domain, string
-number, string table)
+1.4.1.  check_user_blacklist (user, domain, [number], [table])
 
    Finds the longest prefix that matches the request URI user (or
    the number parameter) for the given user and domain name in the
    database. If a match is found and it is not set to whitelist,
-   false is returned. Otherwise, true is returned.
-   Pseudo-variables or AVPs can be used for the user, domain and
-   number parameters. The number and table variables are optional,
-   the defaults are used if they are ommited. The number parameter
-   can be used to check for example against the from URI user.
+   false is returned. Otherwise, true is returned. The number
+   parameter can be used to check for example against the from URI
+   user.
+
+   Parameters:
+     * user (string) - description
+     * domain (string) - description
+     * number (string, optional) - If ommited, the defalut is
+       used.
+     * table (string, optional) - If ommited, the defalut is used.
 
    Example 1.4. check_user_blacklist usage
 ...
 if (!check_user_blacklist("user", "domain.com"))
-        sl_send_reply("403", "Forbidden");
+        sl_send_reply(403, "Forbidden");
         exit;
 }
 ...
 
-1.4.2.  check_blacklist (string table)
+1.4.2.  check_blacklist (table)
 
    Finds the longest prefix that matches the request URI for the
    given table. If a match is found and it is not set to
    whitelist, false is returned. Otherwise, true is returned.
 
+   Parameters:
+     * table (string)
+
    Example 1.5. check_blacklist usage
 ...
 if (!check_blacklist("global_blacklist")))
-        sl_send_reply("403", "Forbidden");
+        sl_send_reply(403, "Forbidden");
         exit;
 }
 ...
 
-1.5. MI Commands
+1.5. Exported MI Functions
 
 1.5.1.  reload_blacklist
 
@@ -181,7 +189,7 @@ if (!check_blacklist("global_blacklist")))
 
    Example 1.6. reload_blacklists usage
 ...
-opensipsctl fifo reload_blacklist
+opensips-cli -x mi reload_blacklist
 ...
 
 1.6. Installation and Running
@@ -237,3 +245,75 @@ opensipsctl fifo reload_blacklist
    “1234” will be not allowed, but the number “123456788” is
    allowed. Additionally a domain could be specified that is used
    for username matching if the “use_domain” parameter is set.
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Bogdan-Andrei Iancu (@bogdan-iancu) 16 14 54 48
+   2. Liviu Chircu (@liviuchircu) 12 10 36 53
+   3. Hardy Kahl 11 1 1191 0
+   4. Henning Westerholt (@henningw) 9 5 204 72
+   5. Daniel-Constantin Mierla (@miconda) 8 6 17 12
+   6. Razvan Crainea (@razvancrainea) 8 6 15 11
+   7. Vlad Patrascu (@rvlad-patrascu) 8 4 82 151
+   8. Ruslan Bukin 3 1 21 10
+   9. Julián Moreno Patiño 3 1 1 1
+   10. Peter Lemenkov (@lemenkov) 3 1 1 1
+
+   All remaining contributors: UnixDev, Edson Gellert Schubert,
+   Vlad Paiu (@vladpaiu).
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Razvan Crainea (@razvancrainea)     Sep 2011 - May 2019
+   2.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   3.  Bogdan-Andrei Iancu (@bogdan-iancu) Feb 2008 - Apr 2019
+   4.  Liviu Chircu (@liviuchircu)         Mar 2014 - Nov 2018
+   5.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   6.  Julián Moreno Patiño                Feb 2016 - Feb 2016
+   7.  Vlad Paiu (@vladpaiu)               Apr 2011 - Apr 2011
+   8.  Ruslan Bukin                        Oct 2009 - Oct 2009
+   9.  UnixDev                             Feb 2009 - Feb 2009
+   10. Henning Westerholt (@henningw)      Feb 2008 - May 2008
+
+   All remaining contributors: Daniel-Constantin Mierla
+   (@miconda), Edson Gellert Schubert, Hardy Kahl.
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Razvan Crainea
+   (@razvancrainea), Peter Lemenkov (@lemenkov), Liviu Chircu
+   (@liviuchircu), Bogdan-Andrei Iancu (@bogdan-iancu), Henning
+   Westerholt (@henningw), Daniel-Constantin Mierla (@miconda),
+   Edson Gellert Schubert, Hardy Kahl.
+
+   Documentation Copyrights:
+
+   Copyright © 2008 1&1 Internet AG

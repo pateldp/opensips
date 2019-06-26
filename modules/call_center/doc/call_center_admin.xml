@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 	The Call Center module implements an inbound call center system with call 
@@ -34,7 +34,7 @@
 		<ulink url='http://www.opensips.org/Documentation/Install-DBSchema-1-11#AEN2361'>DB schema</ulink>.
 		Data is loaded at startup and cached into memory ; runtime reload is 
 		possible via the MI commands (see the <emphasis>cc_reload</emphasis> 
-		command in <xref linkend="cc_mi_commands"/>).
+		command in <xref linkend="exported_mi_functions"/>).
 		</para>
 		<para>
 		Additionally there is a table <emphasis>cc_cdrs</emphasis> for writing 
@@ -105,7 +105,7 @@
 		if he is logged in or not (being logged in is a must in order to
 		receive calls). The log state may be changed at runtime via a 
 		dedicated MI command <emphasis>cc_agent_login</emphasis>, see 
-		<xref linkend="cc_mi_commands"/>.
+		<xref linkend="exported_mi_functions"/>.
 		</para>
 		<para>
 		There is a <emphasis>wrapup_time</emphasis> defined, saying the 
@@ -117,7 +117,7 @@
 	</section>
 
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -156,10 +156,10 @@
 	</section>
 
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
 
-	<section>
+	<section id="param_db_url" xreflabel="db_url">
 		<title><varname>db_url</varname> (string)</title>
 		<para>
 		SQL address to the DB server -- database specific. This must be
@@ -180,7 +180,7 @@ modparam("call_center", "db_url",
 		</example>
 	</section>
 
-	<section>
+	<section id="param_acc_db_url" xreflabel="acc_db_url">
 		<title><varname>acc_db_url</varname> (string)</title>
 		<para>
 		SQL address to the DB server -- database specific. This must be
@@ -200,7 +200,7 @@ modparam("call_center", "acc_db_url",
 		</example>
 	</section>
 
-	<section>
+	<section id="param_b2b_scenario" xreflabel="b2b_scenario">
 		<title><varname>b2b_scenario</varname> (string)</title>
 		<para>
 		The name of the B2B scenario that is used by the module for handling
@@ -229,7 +229,7 @@ modparam("call_center", "b2b_scenario", "call center")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_wrapup_time" xreflabel="wrapup_time">
 		<title><varname>wrapup_time</varname> (integer)</title>
 		<para>
 		Time for an agent between finishing a call and receiving the next
@@ -250,7 +250,7 @@ modparam("call_center", "wrapup_time", 45)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_queue_pos_param" xreflabel="queue_pos_param">
 		<title><varname>queue_pos_param</varname> (string)</title>
 		<para>
 		The name of an SIP URI parameter to be used to report the position
@@ -275,9 +275,9 @@ modparam("call_center", "queue_pos_param", "cc_pos")
 </section>
 
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_cc_handle_call" xreflabel="cc_handle_call">
 		<title>
 		<function>cc_handle_call(flowID)</function>
 		</title>
@@ -289,11 +289,13 @@ modparam("call_center", "queue_pos_param", "cc_pos")
 		<para>
 		This function can be used from REQUEST_ROUTE.
 		</para>
-		<para>
-		The <emphasis role='bold'>flowID</emphasis> mandatory parameter is
-		the ID of the flow to handle this call (push the call to that flow).
-		This can be a variable or a static string.
-		</para>
+		<para>Parameters:</para>
+		<itemizedlist>
+			<listitem><para>
+				<emphasis>flowID (string)</emphasis> - the ID of the flow to
+				handle this call (push the call to that flow).
+			</para></listitem>
+		</itemizedlist>
 		<para>
 		The function returns TRUE back to the script if the call was 
 		successfully pushed and handled by the Call Center engine. IMPORTANT: 
@@ -328,7 +330,7 @@ modparam("call_center", "queue_pos_param", "cc_pos")
 ...
 if (is_method("INVITE") and !has_totag()) {
 	if (!cc_handle_call("tech_support")) {
-		send_reply("403","Cannot handle call");
+		send_reply(403,"Cannot handle call");
 		exit;
 	}
 }
@@ -337,7 +339,7 @@ if (is_method("INVITE") and !has_totag()) {
 		</example>
 	</section>
 
-	<section>
+	<section id="func_cc_agent_login" xreflabel="cc_agent_login">
 		<title>
 		<function>cc_agent_login(agentID, state)</function>
 		</title>
@@ -347,18 +349,22 @@ if (is_method("INVITE") and !has_totag()) {
 		<para>
 		This function can be used from REQUEST_ROUTE.
 		</para>
-		<para>
-		The <emphasis role='bold'>agentID</emphasis> mandatory parameter is
-		the ID of the agent and the <emphasis role='bold'>state</emphasis>
-		is an integer value giving the new state - 0 means logged off, 
-		anything else means logged in.
-		</para>
+		<para>Parameters:</para>
+		<itemizedlist>
+			<listitem><para>
+				<emphasis>agentID (string)</emphasis> - the ID of the agent
+			</para></listitem>
+			<listitem><para>
+				<emphasis>state (int)</emphasis> - an integer value giving
+				the new state - 0 means logged off, anything else means logged in.
+			</para></listitem>
+		</itemizedlist>
 		<example>
 		<title><function>cc_agent_login</function> usage</title>
 		<programlisting format="linespecific">
 ...
 # log off the 'agentX' agent
-cc_agent_login("agentX","0");
+cc_agent_login("agentX",0);
 ...
 </programlisting>
 		</example>
@@ -372,42 +378,42 @@ cc_agent_login("agentX","0");
 
 	<section>
 	<title>Global statistics</title>
-		<section>
+		<section id="stat_ccg_incalls" xreflabel="ccg_incalls">
 		<title>ccg_incalls</title>
 			<para>
 			Total number of received calls. (counter type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccg_awt" xreflabel="ccg_awt">
 		<title>ccg_awt</title>
 			<para>
 			Global avg. waiting time for calls. (realtime type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccg_load" xreflabel="ccg_load">
 		<title>ccg_load</title>
 			<para>
 			Global load (across all flows). (realtime type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccg_distributed_incalls" xreflabel="ccg_distributed_incalls">
 		<title>ccg_distributed_incalls</title>
 			<para>
 			Total number of distributed calls. (counter type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccg_answered_incalls" xreflabel="ccg_answered_incalls">
 		<title>ccg_answered_incalls</title>
 			<para>
 			Total number of calls answered by agents. (counter type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccg_abandonned_incalls" xreflabel="ccg_abandonned_incalls">
 		<title>ccg_abandonned_incalls</title>
 			<para>
 			Total number of calls terminated by caller before being
@@ -415,14 +421,14 @@ cc_agent_login("agentX","0");
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccg_onhold_calls" xreflabel="ccg_onhold_calls">
 		<title>ccg_onhold_calls</title>
 			<para>
 			Total number of calls in the queues (onhold). (realtime type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccg_free_agents" xreflabel="ccg_free_agents">
 		<title>ccg_free_agents</title>
 			<para>
 			Total number of free agents (across all flows). (realtime type)
@@ -432,28 +438,28 @@ cc_agent_login("agentX","0");
 
 	<section>
 	<title>Per-flow statistics (one set for each flow)</title>
-		<section>
+		<section id="stat_ccf_incalls_flowID" xreflabel="ccf_incalls_flowID">
 		<title>ccf_incalls_flowID</title>
 			<para>
 			Number of received calls for the flow. (counter type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccf_dist_incalls_flowID" xreflabel="ccf_dist_incalls_flowID">
 		<title>ccf_dist_incalls_flowID</title>
 			<para>
 			Number of distributed calls in this flow. (counter type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccf_answ_incalls_flowID" xreflabel="ccf_answ_incalls_flowID">
 		<title>ccf_answ_incalls_flowID</title>
 			<para>
 			Nnumber of calls from the flow answered by agents. (counter type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccf_aban_incalls_flowID" xreflabel="ccf_aban_incalls_flowID">
 		<title>ccf_aban_incalls_flowID</title>
 			<para>
 			Number of calls (from the flow) terminated by caller before being
@@ -461,7 +467,7 @@ cc_agent_login("agentX","0");
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccf_onhold_incalls_flowID" xreflabel="ccf_onhold_incalls_flowID">
 		<title>ccf_onhold_incalls_flowID</title>
 			<para>
 			Number of calls (from the flow) which were put onhold.
@@ -469,35 +475,35 @@ cc_agent_login("agentX","0");
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccf_queued_calls_flowID" xreflabel="ccf_queued_calls_flowID">
 		<title>ccf_queued_calls_flowID</title>
 			<para>
 			Number of calls which are queued for this flow. (realtime type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccf_free_agents_flowID" xreflabel="ccf_free_agents_flowID">
 		<title>ccf_free_agents_flowID</title>
 			<para>
 			Number of free agents serving this flow. (realtime type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccf_etw_flowID" xreflabel="ccf_etw_flowID">
 		<title>ccf_etw_flowID</title>
 			<para>
 			Estimated Time to Wait for this flow. (realtime type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccf_awt_flowID" xreflabel="ccf_awt_flowID">
 		<title>ccf_awt_flowID</title>
 			<para>
 			Avg. Wating Time for this flow. (realtime type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_ccg_load_flowID" xreflabel="ccg_load_flowID">
 		<title>ccg_load_flowID</title>
 			<para>
 			The load on the flow (number of queued calls versus number of
@@ -508,21 +514,21 @@ cc_agent_login("agentX","0");
 
 	<section>
 	<title>Per-agent statistics (one set for each agent)</title>
-		<section>
+		<section id="stat_cca_dist_incalls_agnetID" xreflabel="cca_dist_incalls_agnetID">
 		<title>cca_dist_incalls_agnetID</title>
 			<para>
 			Number of distributed calls to this agent. (counter type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_cca_answ_incalls_agentID" xreflabel="cca_answ_incalls_agentID">
 		<title>cca_answ_incalls_agentID</title>
 			<para>
 			Nnumber of calls answered by the agent. (counter type)
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_cca_aban_incalls_agentID" xreflabel="cca_aban_incalls_agentID">
 		<title>cca_aban_incalls_agentID</title>
 			<para>
 			Number of calls (sent to this agent) terminated by caller before 
@@ -530,7 +536,7 @@ cc_agent_login("agentX","0");
 			</para>
 		</section>
 
-		<section>
+		<section id="stat_cca_att_agentID" xreflabel="cca_att_agentID">
 		<title>cca_att_agentID</title>
 			<para>
 			Avg. Talk Time for this agent (realtime type)
@@ -541,10 +547,10 @@ cc_agent_login("agentX","0");
 	</section>
 
 
-	<section id="cc_mi_commands">
+	<section id="exported_mi_functions" xreflabel="Exported MI Functions">
 	<title>Exported MI Functions</title>
 
-	<section>
+	<section id="mi_cc_reload" xreflabel="cc_reload">
 		<title>
 		<function moreinfo="none">cc_reload</function>
 		</title>
@@ -558,30 +564,35 @@ cc_agent_login("agentX","0");
 		MI FIFO Command usage:
 		</para>
 		<programlisting  format="linespecific">
-opensipsctl fifo cc_reload
+opensips-cli -x mi cc_reload
 </programlisting>
 	</section>
 
-	<section>
+	<section id="mi_cc_agent_login" xreflabel="cc_agent_login">
 		<title>
 		<function moreinfo="none">cc_agent_login</function>
 		</title>
 		<para>
 		Command to login an agent into the Call Center engine.
 		</para>
-		<para>
-		It takes two mandatory parameters, the ID of the agent and the 
-		new login state (0 - log off, 1 - log in)
-		</para>
+		<para>Parameters:</para>
+		<itemizedlist>
+			<listitem><para>
+				<emphasis>agent_id</emphasis> - ID of the agent
+			</para></listitem>
+			<listitem><para>
+				<emphasis>state</emphasis> - the new login state (0 - log off, 1 - log in)
+			</para></listitem>
+		</itemizedlist>
 		<para>
 		MI FIFO Command usage:
 		</para>
 		<programlisting  format="linespecific">
-opensipsctl fifo cc_agent_login agentX 0
+opensips-cli -x mi cc_agent_login agentX 0
 </programlisting>
 	</section>
 
-	<section>
+	<section id="mi_cc_list_queue" xreflabel="cc_list_queue">
 		<title>
 		<function moreinfo="none">cc_list_queue</function>
 		</title>
@@ -598,11 +609,11 @@ opensipsctl fifo cc_agent_login agentX 0
 		MI FIFO Command usage:
 		</para>
 		<programlisting  format="linespecific">
-opensipsctl fifo cc_list_queue
+opensips-cli -x mi cc_list_queue
 </programlisting>
 	</section>
 
-	<section>
+	<section id="mi_cc_list_flows" xreflabel="cc_list_flows">
 		<title>
 		<function moreinfo="none">cc_list_flows</function>
 		</title>
@@ -619,11 +630,11 @@ opensipsctl fifo cc_list_queue
 		MI FIFO Command usage:
 		</para>
 		<programlisting  format="linespecific">
-opensipsctl fifo cc_list_flows
+opensips-cli -x mi cc_list_flows
 </programlisting>
 	</section>
 
-	<section>
+	<section id="mi_cc_list_agents" xreflabel="cc_list_agents">
 		<title>
 		<function moreinfo="none">cc_list_agents</function>
 		</title>
@@ -639,11 +650,11 @@ opensipsctl fifo cc_list_flows
 		MI FIFO Command usage:
 		</para>
 		<programlisting  format="linespecific">
-opensipsctl fifo cc_list_agents
+opensips-cli -x mi cc_list_agents
 </programlisting>
 	</section>
 
-	<section>
+	<section id="mi_cc_list_calls" xreflabel="cc_list_calls">
 		<title>
 		<function moreinfo="none">cc_list_calls</function>
 		</title>
@@ -660,11 +671,11 @@ opensipsctl fifo cc_list_agents
 		MI FIFO Command usage:
 		</para>
 		<programlisting  format="linespecific">
-opensipsctl fifo cc_list_agents
+opensips-cli -x mi cc_list_agents
 </programlisting>
 	</section>
 
-	<section>
+	<section id="mi_cc_reset_stats" xreflabel="cc_reset_stats">
 		<title>
 		<function moreinfo="none">cc_reset_stats</function>
 		</title>
@@ -678,15 +689,15 @@ opensipsctl fifo cc_list_agents
 		MI FIFO Command usage:
 		</para>
 		<programlisting  format="linespecific">
-opensipsctl fifo cc_reset_stats
+opensips-cli -x mi cc_reset_stats
 </programlisting>
 	</section>
 
 	</section>
 
 
-	<section>
-	<title>Exported pseudo-variables</title>
+	<section id="exported_pseudo_variables">
+	<title>Exported Pseudo-Variables</title>
 	<para>
 	NONE
 	</para>

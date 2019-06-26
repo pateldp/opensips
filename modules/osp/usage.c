@@ -34,6 +34,7 @@
 
 #include <osp/osp.h>
 #include "../rr/api.h"
+#include "../../socket_info.h"
 #include "../../usr_avp.h"
 #include "../../mod_fix.h"
 #include "destination.h"
@@ -237,11 +238,15 @@ static int ospReportUsageFromCookie(
     char todisplay[OSP_STRBUF_SIZE];
     char touser[OSP_STRBUF_SIZE];
     char paiuser[OSP_STRBUF_SIZE];
+    char paihost[OSP_STRBUF_SIZE];
     char rpiduser[OSP_STRBUF_SIZE];
+    char rpidhost[OSP_STRBUF_SIZE];
     char pciuser[OSP_STRBUF_SIZE];
+    char pcihost[OSP_STRBUF_SIZE];
     char divuser[OSP_STRBUF_SIZE];
     char divhost[OSP_STRBUF_SIZE];
     char pcvicid[OSP_STRBUF_SIZE];
+    char contacthost[OSP_STRBUF_SIZE];
     char nexthop[OSP_STRBUF_SIZE];
     char* snid = NULL;
     char* dnid = NULL;
@@ -344,10 +349,14 @@ static int ospReportUsageFromCookie(
     ospGetToDisplay(msg, todisplay, sizeof(todisplay));
     ospGetToUser(msg, touser, sizeof(touser));
     ospGetPaiUser(msg, paiuser, sizeof(paiuser));
+    ospGetPaiHost(msg, paihost, sizeof(paihost));
     ospGetRpidUser(msg, rpiduser, sizeof(rpiduser));
+    ospGetRpidHost(msg, rpidhost, sizeof(rpidhost));
     ospGetPciUser(msg, pciuser, sizeof(pciuser));
+    ospGetPciHost(msg, pcihost, sizeof(pcihost));
     ospGetDiversion(msg, divuser, sizeof(divuser), divhost, sizeof(divhost));
     ospGetPcvIcid(msg, pcvicid, sizeof(pcvicid));
+    ospGetContactHost(msg, contacthost, sizeof(contacthost));
     ospGetNextHop(msg, nexthop, sizeof(nexthop));
 
     LM_DBG("first via '%s' from '%s' to '%s' next hop '%s'\n",
@@ -457,11 +466,16 @@ static int ospReportUsageFromCookie(
         OSPPTransactionSetDestNetworkId(transaction, dnid);
 
         OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_FROM, OSPC_NFORMAT_DISPLAYNAME, display);
+
         OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_RPID, OSPC_NFORMAT_E164, rpiduser);
+        OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_RPID, OSPC_NFORMAT_TRANSPORT, rpidhost);
         OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_PAI, OSPC_NFORMAT_E164, paiuser);
+        OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_PAI, OSPC_NFORMAT_TRANSPORT, paihost);
         OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_PCI, OSPC_NFORMAT_E164, pciuser);
+        OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_PCI, OSPC_NFORMAT_TRANSPORT, pcihost);
         OSPPTransactionSetDiversion(transaction, divuser, divhost);
         OSPPTransactionSetChargingVector(transaction, pcvicid, NULL, NULL, NULL);
+        OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_CONTACT, OSPC_NFORMAT_TRANSPORT, contacthost);
 
         OSPPTransactionSetProxyIngressAddr(transaction, ingress);
         OSPPTransactionSetProxyEgressAddr(transaction, egress);
@@ -493,8 +507,7 @@ static int ospReportUsageFromCookie(
  */
 int ospReportUsage(
     struct sip_msg* msg,
-    char* whorelease,
-    char* ignore2)
+    int* whorelease)
 {
     str relstr;
     OSPE_RELEASE release;
@@ -508,8 +521,8 @@ int ospReportUsage(
 
     if (callid != NULL) {
         /* Who releases the call first, 0 orig, 1 term */
-        if (fixup_get_svalue(msg, (gparam_p)whorelease, &relstr) == 0) {
-            if ((relstr.len <= 0) || (sscanf(relstr.s, "%d", &release) != 1) || ((release != OSPC_RELEASE_SOURCE) && (release != OSPC_RELEASE_DESTINATION))) {
+            release = *whorelease;
+            if (((release != OSPC_RELEASE_SOURCE) && (release != OSPC_RELEASE_DESTINATION))) {
                 release = OSPC_RELEASE_UNKNOWN;
             }
             LM_DBG("who releases the call first '%d'\n", release);
@@ -549,7 +562,7 @@ int ospReportUsage(
                 ospReportUsageFromCookie(msg, NULL, callid, release, OSPC_ROLE_SOURCE);
                 result = MODULE_RETURNCODE_TRUE;
             }
-        }
+
         OSPPCallIdDelete(&callid);
     }
 
@@ -635,18 +648,25 @@ static int ospReportUsageFromDestination(
     osp_dest* dest)
 {
     OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_FROM, OSPC_NFORMAT_DISPLAYNAME, inbound->fromdisplay);
-    OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_FROM, OSPC_NFORMAT_DISPLAYNAME, inbound->fromdisplay);
 
     OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_RPID, OSPC_NFORMAT_E164, inbound->rpiduser);
+    OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_RPID, OSPC_NFORMAT_TRANSPORT, inbound->rpidhost);
     OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_PAI, OSPC_NFORMAT_E164, inbound->paiuser);
+    OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_PAI, OSPC_NFORMAT_TRANSPORT, inbound->paihost);
     OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_PCI, OSPC_NFORMAT_E164, inbound->pciuser);
+    OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_PCI, OSPC_NFORMAT_TRANSPORT, inbound->pcihost);
     OSPPTransactionSetDiversion(transaction, inbound->divuser, inbound->divhost);
+    OSPPTransactionSetSIPHeader(transaction, OSPC_SIPHEADER_CONTACT, OSPC_NFORMAT_TRANSPORT, inbound->contacthost);
 
     OSPPTransactionSetChargingVector(transaction, inbound->pcvicid, NULL, NULL, NULL);
 
     OSPPTransactionSetSrcAudioAddr(transaction, inbound->srcmedia);
 
     OSPPTransactionSetProxyIngressAddr(transaction, inbound->ingressaddr);
+
+    OSPPTransactionSetSrcServiceProvider(transaction, inbound->sp);
+
+    OSPPTransactionSetCallPartyInfo(transaction, OSPC_CPARTY_SOURCE, NULL, inbound->userid, inbound->usergroup);
 
     OSPPTransactionSetCDRProxy(transaction, _osp_in_device, OSP_OPENSIPS, NULL);
 

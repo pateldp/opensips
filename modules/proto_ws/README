@@ -1,12 +1,4 @@
 proto_ws Module
-
-OpenSIPS Project
-
-Edited by
-
-Razvan Crainea
-
-   Copyright © 2015 OpenSIPS Project
      __________________________________________________________
 
    Table of Contents
@@ -33,6 +25,21 @@ Razvan Crainea
               1.4.1. ws_trace
 
    2. Frequently Asked Questions
+   3. Contributors
+
+        3.1. By Commit Statistics
+        3.2. By Commit Activity
+
+   4. Documentation
+
+        4.1. Contributors
+
+   List of Tables
+
+   3.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   3.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -175,9 +182,8 @@ modparam("proto_ws", "trace_destination", "hep_dest")
 1.3.5. trace_on (int)
 
    This controls whether tracing for ws is on or not. You still
-   need to define Section 1.3.4, “trace_destination (string)”in
-   order to work, but this value will be controlled using mi
-   function Section 1.4.1, “ ws_trace ”.
+   need to define trace_destinationin order to work, but this
+   value will be controlled using mi function ws_trace.
    Default value is 0(tracing inactive).
 
    Example 1.5. Set trace_on parameter
@@ -194,8 +200,8 @@ modparam("proto_ws", "trace_on", 1)
    disable tracing for a specific connection the last call in this
    route must be drop, any other exit mode resulting in tracing
    the current connection ( of course you still have to define a
-   Section 1.3.4, “trace_destination (string)” and trace must be
-   on at the time this connection is opened.
+   trace_destination and trace must be on at the time this
+   connection is opened.
 
    IMPORTANT Filtering on ip addresses and ports can be made using
    $si and $sp for matching either the entity that is connecting
@@ -206,9 +212,8 @@ modparam("proto_ws", "trace_on", 1)
    (either the one that accepted the connection or the one that
    initiated a connection) $Ri (ip) and $Rp (port) can be used.
 
-   WARNING: IF Section 1.3.5, “trace_on (int)” is set to 0 or
-   tracing is deactived via the mi command Section 1.4.1, “
-   ws_trace ” this route won't be called.
+   WARNING: IF trace_on is set to 0 or tracing is deactived via
+   the mi command ws_trace this route won't be called.
    Default value is none(no route is set).
 
    Example 1.6. Set trace_filter_route parameter
@@ -245,21 +250,82 @@ route[ws_filter] {
           + off
 
    MI FIFO Command Format:
-                        :ws_trace:_reply_fifo_file_
-                        trace_mode
-                        _empty_line_
+                        opensips-cli -x mi ws_trace on
 
 Chapter 2. Frequently Asked Questions
 
    2.1.
 
-   Can OpenSIPS act as a WebSocket client?
+       Can OpenSIPS act as a WebSocket client?
 
-   Yes, starting with OpenSIPS 2.2, it can act as a WebSocket
-   client.
+       Yes, starting with OpenSIPS 2.2, it can act as a WebSocket
+       client.
 
    2.2.
 
-   Does OpenSIPS support WebSocket message fragmentation?
+       Does OpenSIPS support WebSocket message fragmentation?
 
-   No, WebSocket fragmentation mechanism is not supported.
+       No, WebSocket fragmentation mechanism is not supported.
+
+Chapter 3. Contributors
+
+3.1. By Commit Statistics
+
+   Table 3.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Razvan Crainea (@razvancrainea) 78 35 3888 628
+   2. Ionut Ionita (@ionutrazvanionita) 22 14 609 114
+   3. Bogdan-Andrei Iancu (@bogdan-iancu) 13 11 104 19
+   4. Liviu Chircu (@liviuchircu) 10 7 61 91
+   5. Vlad Patrascu (@rvlad-patrascu) 7 4 95 72
+   6. Vlad Paiu (@vladpaiu) 4 2 3 1
+   7. Peter Lemenkov (@lemenkov) 3 1 2 2
+   8. Julián Moreno Patiño 3 1 1 1
+   9. Maksym Sobolyev (@sobomax) 2 1 3 0
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+3.2. By Commit Activity
+
+   Table 3.2. Most recently active contributors^(1) to this module
+                     Name                   Commit Activity
+   1. Bogdan-Andrei Iancu (@bogdan-iancu) Mar 2017 - May 2019
+   2. Razvan Crainea (@razvancrainea)     Mar 2015 - May 2019
+   3. Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   4. Liviu Chircu (@liviuchircu)         Mar 2015 - Nov 2018
+   5. Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   6. Ionut Ionita (@ionutrazvanionita)   Jul 2015 - Apr 2017
+   7. Maksym Sobolyev (@sobomax)          Feb 2017 - Feb 2017
+   8. Julián Moreno Patiño                Feb 2016 - Feb 2016
+   9. Vlad Paiu (@vladpaiu)               Mar 2015 - May 2015
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 4. Documentation
+
+4.1. Contributors
+
+   Last edited by: Razvan Crainea (@razvancrainea), Peter Lemenkov
+   (@lemenkov), Liviu Chircu (@liviuchircu), Vlad Patrascu
+   (@rvlad-patrascu), Bogdan-Andrei Iancu (@bogdan-iancu), Ionut
+   Ionita (@ionutrazvanionita).
+
+   Documentation Copyrights:
+
+   Copyright © 2015 www.opensips-solutions.com

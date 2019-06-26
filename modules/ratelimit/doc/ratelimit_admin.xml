@@ -4,7 +4,7 @@
 
 	<title>&adminguide;</title>
 
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		This module implements rate limiting for SIP requests. In contrast to
@@ -15,14 +15,17 @@
 		tunables while running OpenSIPS.
 	</para>
 	<para>
-		This module is also integrated with the &osips; Key-Value Interface,
+		This module is integrated with the &osips; Key-Value Interface,
 		providing support for distributed rate limiting using Redis or Memcached
-		CacheDB backends.
+		CacheDB backends. The internal limiting data will no longer be kept on each
+		&osips; instance. It will be stored in the distributed Key-Value database
+		and queried by each instance before deciding if a SIP message should be
+		blocked or not.
 	</para>
 	<para>
-		To achieve a distributed ratelimit feature, the module can replicate
-		its pipes counters to different &osips; interfaces using the binary replicate
-		interface (BIN). To do that, define the <emphasis>repl_*</emphasis> parameters
+		To achieve a distributed ratelimit feature, the module can also replicate
+		its pipes counters to different &osips; instances using the clusterer module.
+		To do that, define the <emphasis>pipe_replication_cluster</emphasis> parameter
 		in your configuration script.
 	</para>
 	</section>
@@ -37,10 +40,6 @@
 	<para>
 		Distributed limiting is useful when the rate limit should be
 		performed not only on a specific node, but on the entire platform.
-		The internal limiting data will no longer be kept on each &osips;
-		instance. It will be stored in a distributed Key-Value database and
-		queried by each instance before deciding if a SIP message
-		should be blocked or not.
 	</para>
 	<para>
 		NOTE: that this behavior only makes sense when the pipe algorithm
@@ -51,8 +50,8 @@
 	</para>
 	<programlisting format="linespecific">
 ...
-	if (!rl_check("$rU", "50", "TAILDROP")) {
-		sl_send_reply("503", "Server Unavailable");
+	if (!rl_check($rU, 50, "TAILDROP")) {
+		sl_send_reply(503, "Server Unavailable");
 		exit;
 	};
 ...
@@ -118,8 +117,8 @@
 			If, for example, you have <emphasis>window_size</emphasis>=
 			<emphasis>slot_period</emphasis>=1 second, then after each second
 			you shall lose the call count, but if you set the
-			<emphasis>slot_period</emphasis> to 100 microseconds, then when your
-			call will be outside the window, the calls in the first 100 microseconds
+			<emphasis>slot_period</emphasis> to 100 milliseconds, then when your
+			call will be outside the window, the calls in the first 100 milliseconds
 			shall be dropped, and the rest in the next 900 shall be kept.
 		</para>
 	</section>
@@ -174,7 +173,7 @@
 		</para>
 	</section>
 	</section>
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -204,9 +203,9 @@
 		</para>
 	</section>
 	</section>
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_timer_interval" xreflabel="timer_interval">
 		<title><varname>timer_interval</varname> (integer)</title>
 		<para>
 			The timer interval in seconds when the Network and Feedback algorithms
@@ -230,10 +229,35 @@ modparam("ratelimit", "timer_interval", 5)
 </programlisting>
 		</example>
 	</section>
-	<section>
+
+	<section id="param_limit_per_interval" xreflabel="limit_per_interval">
+		<title><varname>limit_per_interval</varname> (integer)</title>
+		<para>
+			This parameter configures the way that a pipe's limit is specified
+			in the <emphasis>rl_check</emphasis> function and only affects the
+			Taildrop and RED algorithms. A value of 1 means that the limit is
+			set per-<emphasis>timer_interval</emphasis> while a value of 0 means per-second.
+		</para>
+		<para>
+		<emphasis>
+			Default value is 0(limit per-second).
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>limit_per_interval</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("ratelimit", "limit_per_interval", 1)
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="param_expire_time" xreflabel="expire_time">
 		<title><varname>expire_time</varname> (integer)</title>
 		<para>
 		This parameter specifies how long a pipe should be kept in memory
+		after it becomes idle (no more operations are performed on the pipe)
 		until deleted.
 		</para>
 		<para>
@@ -250,7 +274,7 @@ modparam("ratelimit", "expire_time", 1800)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_hash_size" xreflabel="hash_size">
 		<title><varname>hash_size</varname> (integer)</title>
 		<para>
 		The size of the hash table internally used to keep the pipes.
@@ -271,7 +295,7 @@ modparam("ratelimit", "hash_size", 512)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_default_algorithm" xreflabel="default_algorithm">
 		<title><varname>default_algorithm</varname> (string)</title>
 		<para>
 		Specifies which algorithm should be assumed in case it isn't
@@ -291,7 +315,7 @@ modparam("ratelimit", "default_algorithm", "RED")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_cachedb_url" xreflabel="cachedb_url">
 		<title><varname>cachedb_url</varname> (string)</title>
 		<para>
 		Enables distributed rate limiting and specifies the backend
@@ -311,7 +335,7 @@ modparam("ratelimit", "cachedb_url", "redis://root:root@127.0.0.1/")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_db_prefix" xreflabel="db_prefix">
 		<title><varname>db_prefix</varname> (string)</title>
 		<para>
 		Specifies what prefix should be added to the pipe name. This is
@@ -331,7 +355,7 @@ modparam("ratelimit", "db_prefix", "ratelimit_")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_repl_buffer_threshold" xreflabel="repl_buffer_threshold">
 		<title><varname>repl_buffer_threshold</varname> (string)</title>
 		<para>
 		Used to specify the length of the buffer used by the binary
@@ -354,7 +378,7 @@ modparam("ratelimit", "repl_buffer_threshold", 500)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_repl_timer_interval" xreflabel="repl_timer_interval">
 		<title><varname>repl_timer_interval</varname> (string)</title>
 		<para>
 		Timer in milliseconds, used to specify how often the module
@@ -374,7 +398,7 @@ modparam("ratelimit", "repl_timer_interval", 100)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_repl_timer_expire" xreflabel="repl_timer_expire">
 		<title><varname>repl_timer_expire</varname> (string)</title>
 		<para>
 		Timer in seconds, used to specify when the counter received
@@ -396,89 +420,28 @@ modparam("ratelimit", "repl_timer_expire", 10)
 </programlisting>
 		</example>
 	</section>
-	<section>
-		<title><varname>replicate_pipes_to</varname> (integer)</title>
+	<section id="param_pipe_replication_cluster" xreflabel="pipe_replication_cluster">
+		<title><varname>pipe_replication_cluster</varname> (integer)</title>
 		<para>
-                   Used to specify the instances, that belong to a certain cluster,
-                where the pipes should be replicated.
+			Specifies the cluster ID where pipes will be replicated to and
+			received from.
 		</para>
 		<para>
 		<emphasis>
-			Default value is 0. (no replication destinations)
+			Default value is 0. (no replication)
 		</emphasis>
 		</para>
 		<example>
-		<title>Set <varname>replicate_pipes_to</varname> parameter</title>
+		<title>Set <varname>pipe_replication_cluster</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("ratelimit", "replicate_pipes_to", 1)
+modparam("ratelimit", "pipe_replication_cluster", 1)
 ...
 </programlisting>
 		</example>
 	</section>
 
-        <section>
-		<title><varname>accept_pipes_from</varname> (integer)</title>
-		<para>
-                   Used to specify the instances, that belong to a certain cluster,
-                from which we should expect incoming packets.
-		</para>
-		<para>
-		<emphasis>
-			Default value is 0. (disabled)
-		</emphasis>
-		</para>
-		<example>
-		<title>Set <varname>accept_pipes_from</varname> parameter</title>
-		<programlisting format="linespecific">
-...
-modparam("ratelimit", "accept_pipes_from", 1)
-...
-</programlisting>
-		</example>
-	</section>
-
-        <section>
-		<title><varname>accept_pipes_timeout</varname> (integer)</title>
-		<para>
-                   The time between two succesive incoming packets.
-		</para>
-		<para>
-		<emphasis>
-			Default value is 10.
-		</emphasis>
-		</para>
-		<example>
-		<title>Set <varname>accept_pipes_timeout</varname> parameter</title>
-		<programlisting format="linespecific">
-...
-modparam("ratelimit", "accept_pipes_timeout", 1)
-...
-</programlisting>
-		</example>
-	</section>
-
-        <section>
-		<title><varname>repl_pipes_auth_check</varname> (int)</title>
-		<para>
-			Authentication check for incoming packets.
-		</para>
-		<para>
-		<emphasis>
-			Default value is <quote>0</quote> (disabled).
-		</emphasis>
-		</para>
-		<example>
-		<title>Set <varname>repl_pipes_auth_check</varname> parameter</title>
-		<programlisting format="linespecific">
-...
-modparam("ratelimit", "repl_pipes_auth_check", 1)
-...
-</programlisting>
-		</example>
-	</section>
-
-        <section>
+        <section id="param_window_size" xreflabel="window_size">
 		<title><varname>window_size</varname> (int)</title>
 		<para>
 			How long the history in SBT should be in seconds.
@@ -498,10 +461,10 @@ modparam("ratelimit", "window_size", 5)
 		</example>
 	</section>
 
-        <section>
+        <section id="param_slot_period" xreflabel="slot_period">
 		<title><varname>slot_period</varname> (int)</title>
 		<para>
-			Value of one slot in microseconds. This parameter determines
+			Value of one slot in milliseconds. This parameter determines
 		how granular the algorithm should be. The number of slots will be
 		determined by window_size/slot_period.
 		</para>
@@ -515,7 +478,7 @@ modparam("ratelimit", "window_size", 5)
 		<programlisting format="linespecific">
 ...
 modparam("ratelimit", "window_size", 5)
-#we will have 50 slots of 100 microseconds
+#we will have 50 slots of 100 milliseconds
 modparam("ratelimit", "slot_period", 100)
 ...
 </programlisting>
@@ -525,9 +488,9 @@ modparam("ratelimit", "slot_period", 100)
 
 
 	</section>
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_rl_check" xreflabel="rl_check()">
 		<title>
 			<function moreinfo="none">rl_check(name, limit[, algorithm])
 			</function>
@@ -543,6 +506,13 @@ modparam("ratelimit", "slot_period", 100)
 		specified when the pipe was created will be considered.
 		</para>
 		<para>
+		NOTE: This function increments the pipe's counter every time it is
+		called, even if the call should be declined. Therefore If you are using
+		ratelimit to limit only successful traffic, you need to explicitely
+		decrease the counter for the declined calls using the
+		<emphasis>rl_dec_count()</emphasis> function.
+		</para>
+		<para>
 		The method will return an error code if the limit for the
 		matched pipe is reached.
 		</para>
@@ -550,32 +520,30 @@ modparam("ratelimit", "slot_period", 100)
 		<itemizedlist>
 			<listitem>
 				<para>
-				<emphasis>name</emphasis> - this is the name that identifies
-				the pipe which should be checked. This parameter accepts both
-				strings and pseudovariables.
+				<emphasis>name</emphasis> (string) - this is the name that identifies
+				the pipe which should be checked.
 				</para>
 			</listitem>
 			<listitem>
 				<para>
-				<emphasis>limit</emphasis> - this specifies the threshold
+				<emphasis>limit</emphasis> (int) - this specifies the threshold
 				limit of the pipe. It is strongly related to the algorithm
-				used. This parameter accepts an integer or a pseudovariable.
-				Note that the limit should be specified as per-second, not
+				used. Note that the limit should be specified as per-second, not
 				per-timer_interval.
 				</para>
 			</listitem>
 			<listitem>
 				<para>
-				<emphasis>algorithm</emphasis> - this is parameter is optional
-				and reffers to the algorithm used to check the pipe. If it is
-				not set, the default value is used. It accepts a string or a
-				pseudovariable.
+				<emphasis>algorithm</emphasis> (string, optional) - this parameter
+				reffers to the algorithm used to check the pipe. If it is
+				not set, the default value is used.
 				</para>
 			</listitem>
 
 		</itemizedlist>
 		<para>
-		This function can be used from REQUEST_ROUTE.
+			This function can be used from REQUEST_ROUTE, FAILURE_ROUTE, ONREPLY_ROUTE,
+			BRANCH_ROUTE, ERROR_ROUTE, LOCAL_ROUTE, TIMER_ROUTE and EVENT_ROUTE.
 		</para>
 		<example>
 		<title><function>rl_check</function> usage</title>
@@ -583,23 +551,30 @@ modparam("ratelimit", "slot_period", 100)
 ...
 	# perform a pipe match for all INVITE methods using RED algorithm
 	if (is_method("INVITE")) {
-		if (!rl_check("pipe_INVITE", "100", "RED")) {
-			sl_send_reply("503", "Server Unavailable");
+		if (!rl_check("pipe_INVITE", 100, "RED")) {
+			sl_send_reply(503, "Server Unavailable");
 			exit;
 		};
 	};
 ...
 	# use default algorithm for each different gateway
 	$var(limit) = 10;
-	if (!rl_check("gw_$ru", "$var(limit)")) {
-		sl_send_reply("503", "Server Unavailable");
+	if (!rl_check("gw_$ru", $var(limit))) {
+		sl_send_reply(503, "Server Unavailable");
+		exit;
+	};
+...
+	# count only successful calls
+	if (!rl_check("gw_$ru", 100)) {
+		rl_dec_count("gw_$ru");
+		sl_send_reply(503, "Server Unavailable");
 		exit;
 	};
 ...
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_rl_dec_count" xreflabel="rl_dec_count()">
 		<title>
 		<function moreinfo="none">rl_dec_count(name)</function>
 		</title>
@@ -610,18 +585,19 @@ modparam("ratelimit", "slot_period", 100)
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 			<listitem><para>
-			<emphasis>name</emphasis> - identifies the name of the pipe.
+			<emphasis>name</emphasis> (string) - identifies the name of the pipe.
 			</para>
 			</listitem>
 		</itemizedlist>
 		<para>
-		This function can be used from REQUEST_ROUTE.
+			This function can be used from REQUEST_ROUTE, FAILURE_ROUTE, ONREPLY_ROUTE,
+			BRANCH_ROUTE, ERROR_ROUTE, LOCAL_ROUTE, TIMER_ROUTE and EVENT_ROUTE.
 		</para>
 		<example>
 		<title><function>rl_dec_count</function> usage</title>
 		<programlisting format="linespecific">
 ...
-	if (!rl_check("gw_$ru", "100", "TAILDROP")) {
+	if (!rl_check("gw_$ru", 100, "TAILDROP")) {
 		exit;
 	} else {
 		rl_dec_count("gw_$ru");
@@ -630,7 +606,7 @@ modparam("ratelimit", "slot_period", 100)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_rl_reset_count" xreflabel="rl_reset_count()">
 		<title>
 		<function moreinfo="none">rl_reset_count(name)</function>
 		</title>
@@ -646,13 +622,14 @@ modparam("ratelimit", "slot_period", 100)
 			</listitem>
 		</itemizedlist>
 		<para>
-		This function can be used from REQUEST_ROUTE.
+			This function can be used from REQUEST_ROUTE, FAILURE_ROUTE, ONREPLY_ROUTE,
+			BRANCH_ROUTE, ERROR_ROUTE, LOCAL_ROUTE, TIMER_ROUTE and EVENT_ROUTE.
 		</para>
 		<example>
 		<title><function>rl_reset_count</function> usage</title>
 		<programlisting format="linespecific">
 ...
-	if (!rl_check("gw_$ru", "100", "TAILDROP")) {
+	if (!rl_check("gw_$ru", 100, "TAILDROP")) {
 		exit;
 	} else {
 		rl_reset_count("gw_$ru");
@@ -664,9 +641,9 @@ modparam("ratelimit", "slot_period", 100)
 
 	</section>
 
-	<section>
+	<section id="exported_mi_functions" xreflabel="Exported MI Functions">
 	<title>Exported MI Functions</title>
-	<section>
+	<section id="mi_rl_list" xreflabel="rl_list">
 		<title>
 		<function moreinfo="none">rl_list</function>
 		</title>
@@ -679,8 +656,8 @@ modparam("ratelimit", "slot_period", 100)
 		<para>Parameters:</para>
 		<itemizedlist>
 			<listitem><para>
-			<emphasis>pipe</emphasis> - indicates the name of the pipe. This
-			parameter is optional. If it doesn't exist, all the active pipes
+			<emphasis>pipe</emphasis> (optional) - indicates the name of the pipe.
+			If the parameter doesn't exist, all the active pipes
 			are listed. Otherwise only the one specified.
 			</para></listitem>
 		</itemizedlist>
@@ -688,16 +665,10 @@ modparam("ratelimit", "slot_period", 100)
 		MI FIFO Command Format:
 		</para>
 		<programlisting  format="linespecific">
-		:rl_list:_reply_fifo_file_
-		gw_10.0.0.1
-		_empty_line_
-		</programlisting>
-		<programlisting  format="linespecific">
-		:rl_list:_reply_fifo_file_
-		_empty_line_
+		opensips-cli -x mi rl_list gw_10.0.0.1
 		</programlisting>
 	</section>
-	<section>
+	<section id="mi_rl_reset_pipe" xreflabel="rl_reset_pipe">
 		<title>
 		<function moreinfo="none">rl_reset_pipe</function>
 		</title>
@@ -711,19 +682,17 @@ modparam("ratelimit", "slot_period", 100)
 		<itemizedlist>
 			<listitem><para>
 			<emphasis>pipe</emphasis> - indicates the name of the pipe whose
-			couter should be reset.
+			counter should be reset.
 			</para></listitem>
 		</itemizedlist>
 		<para>
 		MI FIFO Command Format:
 		</para>
 		<programlisting  format="linespecific">
-		:rl_reset_pipe:_reply_fifo_file_
-		gw_10.0.0.1
-		_empty_line_
+		opensips-cli -x mi rl_reset_pipe gw_10.0.0.1
 		</programlisting>
 	</section>
-	<section>
+	<section id="mi_rl_set_pid" xreflabel="rl_set_pid">
 		<title>
 		<function moreinfo="none">rl_set_pid</function>
 		</title>
@@ -749,14 +718,10 @@ modparam("ratelimit", "slot_period", 100)
 		MI FIFO Command Format:
 		</para>
 		<programlisting  format="linespecific">
-		:rl_set_pid:_reply_fifo_file_
-		0.5
-		0.5
-		0.5
-		_empty_line_
+		opensips-cli -x mi rl_set_pid 0.5 0.5 0.5
 		</programlisting>
 	</section>
-	<section>
+	<section id="mi_rl_get_pid" xreflabel="rl_get_pid">
 		<title>
 		<function moreinfo="none">rl_get_pid</function>
 		</title>
@@ -771,11 +736,10 @@ modparam("ratelimit", "slot_period", 100)
 		MI FIFO Command Format:
 		</para>
 		<programlisting  format="linespecific">
-		:rl_get_pid:_reply_fifo_file_
-		_empty_line_
+		opensips-cli -x mi rl_get_pid
 		</programlisting>
 	</section>
-	<section>
+	<section id="mi_rl_bin_status" xreflabel="rl_bin_status">
 		<title>
 		<function moreinfo="none">rl_bin_status</function>
 		</title>
@@ -791,16 +755,15 @@ modparam("ratelimit", "slot_period", 100)
 		MI FIFO Command Format:
 		</para>
 		<programlisting  format="linespecific">
-		:rl_bin_status:_reply_fifo_file_
-		_empty_line_
+		opensips-cli -x mi rl_bin_status
 		</programlisting>
 	</section>
 	</section>
 
-	<section>
-	<title>Exported pseudo-variables</title>
+	<section id="exported_pseudo_variables">
+	<title>Exported Pseudo-Variables</title>
 
-		<section>
+		<section id="pv_rl_count" xreflabel="$rl_count">
 			<title><varname>$rl_count(name)</varname></title>
 			<para>
 			Returns the counter of a pipe. The variable is read-only.

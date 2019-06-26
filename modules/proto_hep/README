@@ -1,10 +1,4 @@
 proto_hep Module
-
-Ionut-Razvan Ionita
-
-   OpenSIPS Solutions
-
-   Copyright © 2015 OpenSIPS Project
      __________________________________________________________
 
    Table of Contents
@@ -45,6 +39,22 @@ Ionut-Razvan Ionita
 
               2.1.2. register_hep_cb(cb)
               2.1.3. hep_version
+
+   3. Contributors
+
+        3.1. By Commit Statistics
+        3.2. By Commit Activity
+
+   4. Documentation
+
+        4.1. Contributors
+
+   List of Tables
+
+   3.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   3.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -271,31 +281,30 @@ modparam("proto_hep", "tcp_async_local_write_timeout", 100)
 
    Send a hep message with an extra correlation id containing the
    two correlation given as arguments. The two types must differ.
-   All parameters are mandatory. This will help on the capturing
-   side to correlate two calls for example, being given their
-   callid as correlation ids.
+   This will help on the capturing side to correlate two calls for
+   example, being given their callid as correlation ids.
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
    ONREPLY_ROUTE, BRANCH_ROUTE, LOCAL_ROUTE.
 
    Meaning of the parameters is as follows:
-     * hep_id (string, pvar) the name of the hep_id defined in
-       modparam section, specifying where to do the tracing.
+     * hep_id (string) the name of the hep_id defined in modparam
+       section, specifying where to do the tracing.
      * type1 (string) the key name identify the first correlation
        id.
-     * correlation1 (string, pvar) the first extra correlation id
-       that will be put in the extra correlation chunk.
+     * correlation1 (string) the first extra correlation id that
+       will be put in the extra correlation chunk.
      * type2 (string) the key name identify the second correlation
        id.
-     * correlation2 (string, pvar) the second extra correlation id
-       that will be put in the extra correlation chunk.
+     * correlation2 (string) the second extra correlation id that
+       will be put in the extra correlation chunk.
 
    Example 1.12. correlate usage
 ...
 /* see declaration of hep_dst in trace_id section */
 /* we suppose we have two correlations in two varibles: cor1 and cor2 */
-        correlate("hep_dst", "correlation-no-1","$var(cor1)","correlatio
-n-no-2", "$var(cor2)");
+        correlate("hep_dst", "correlation-no-1",$var(cor1),"correlation-
+no-2", $var(cor2));
 ...
 
 Chapter 2. Developer Guide
@@ -333,3 +342,61 @@ Chapter 2. Developer Guide
 2.1.3.  hep_version
 
    Current version of hep used.
+
+Chapter 3. Contributors
+
+3.1. By Commit Statistics
+
+   Table 3.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Ionut Ionita (@ionutrazvanionita) 148 66 8047 998
+   2. Razvan Crainea (@razvancrainea) 21 19 53 32
+   3. Bogdan-Andrei Iancu (@bogdan-iancu) 19 13 358 151
+   4. Liviu Chircu (@liviuchircu) 10 8 39 49
+   5. Vlad Patrascu (@rvlad-patrascu) 7 4 36 84
+   6. Dan Pascu (@danpascu) 3 1 1 1
+   7. Peter Lemenkov (@lemenkov) 3 1 1 1
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+3.2. By Commit Activity
+
+   Table 3.2. Most recently active contributors^(1) to this module
+                     Name                   Commit Activity
+   1. Razvan Crainea (@razvancrainea)     Nov 2015 - Jun 2019
+   2. Bogdan-Andrei Iancu (@bogdan-iancu) Jan 2017 - May 2019
+   3. Dan Pascu (@danpascu)               May 2019 - May 2019
+   4. Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   5. Liviu Chircu (@liviuchircu)         Mar 2016 - Nov 2018
+   6. Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   7. Ionut Ionita (@ionutrazvanionita)   Oct 2015 - Apr 2017
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 4. Documentation
+
+4.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Peter Lemenkov
+   (@lemenkov), Liviu Chircu (@liviuchircu), Ionut Ionita
+   (@ionutrazvanionita), Bogdan-Andrei Iancu (@bogdan-iancu).
+
+   Documentation Copyrights:
+
+   Copyright © 2015 www.opensips-solutions.com

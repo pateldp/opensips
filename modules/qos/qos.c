@@ -52,9 +52,9 @@ struct dlg_binds dialog_st;
 struct dlg_binds *dlg_binds = &dialog_st;
 
 
-static cmd_export_t cmds[]={
-	{"load_qos", (cmd_function)load_qos, 0, 0, 0, 0},
-	{0,0,0,0,0,0}
+static cmd_export_t cmds[] = {
+	{"load_qos", (cmd_function)load_qos, {{0,0,0}},0},
+	{0,0,{{0,0,0}},0}
 };
 
 /*
@@ -62,7 +62,6 @@ static cmd_export_t cmds[]={
  */
 static param_export_t mod_params[]={
 	{ "qos_flag",		STR_PARAM, &qos_flag_str},
-	{ "qos_flag",		INT_PARAM, &qos_flag},
 	{ 0,0,0 }
 };
 
@@ -81,6 +80,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,            /* exported functions */
 	NULL,            /* exported async functions */
@@ -93,7 +93,8 @@ struct module_exports exports= {
 	mod_init,        /* module initialization function */
 	0,               /* reply processing function */
 	mod_destroy,     /* Destroy function */
-	0                /* per-child init function */
+	0,               /* per-child init function */
+	0                /* reload confirm function */
 };
 
 int load_qos( struct qos_binds *qosb)
@@ -112,8 +113,6 @@ int load_qos( struct qos_binds *qosb)
  */
 static int mod_init(void)
 {
-	fix_flag_name(qos_flag_str, qos_flag);
-
 	qos_flag = get_flag_id_by_name(FLAG_TYPE_MSG, qos_flag_str);
 
 	if (qos_flag == -1) {

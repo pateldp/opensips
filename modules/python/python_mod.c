@@ -55,13 +55,11 @@ static param_export_t params[]={
  * Exported functions
  */
 static cmd_export_t cmds[] = {
-    { "python_exec", (cmd_function)python_exec1, 1,  NULL, 0,
-      REQUEST_ROUTE | FAILURE_ROUTE
-      | ONREPLY_ROUTE | BRANCH_ROUTE },
-    { "python_exec", (cmd_function)python_exec2, 2,  NULL, 0,
-      REQUEST_ROUTE | FAILURE_ROUTE
-      | ONREPLY_ROUTE | BRANCH_ROUTE },
-    { 0, 0, 0, 0, 0, 0 }
+    {"python_exec", (cmd_function)python_exec, {
+        {CMD_PARAM_STR,0,0},
+        {CMD_PARAM_STR|CMD_PARAM_OPT,0,0}, {0,0,0}},
+        REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE},
+    {0,0,{{0,0,0}},0}
 };
 
 /** module exports */
@@ -70,6 +68,7 @@ struct module_exports exports = {
     MOD_TYPE_DEFAULT,/* class of this module */
     MODULE_VERSION,
     RTLD_NOW | RTLD_GLOBAL,         /* dlopen flags */
+    0,                              /* load function */
     NULL,                           /* OpenSIPS module dependencies */
     cmds,                           /* exported functions */
     0,                              /* exported async functions */
@@ -82,7 +81,8 @@ struct module_exports exports = {
     mod_init,                       /* module initialization function */
     (response_function) NULL,       /* response handling function */
     (destroy_function) mod_destroy, /* destroy function */
-    child_init                      /* per-child init function */
+    child_init,                     /* per-child init function */
+    0                               /* reload confirm function */
 };
 
 static int

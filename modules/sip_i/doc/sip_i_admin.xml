@@ -4,7 +4,7 @@
 
 	<title>&adminguide;</title>
 
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		This module offers the possibility of processing ISDN User Part(ISUP) messages encapsulated in SIP. The available operations are: reading and modifying parameters from an ISUP message, removing or adding new optional parameters, adding an ISUP part to a SIP message body. This is done explicitly via script pseudovariables and functions.
@@ -16,7 +16,7 @@
 		The format and specification of the ISUP messages and parameters follow the recomandations from ITU-T Rec. Q.763.
 	</para>
 	</section>
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -48,7 +48,7 @@
 	</section>
 	<section>
 	<title>Parameters</title>
-	<section>
+	<section id="param_param_subfield_separator" xreflabel="param_subfield_separator">
 		<title><varname>param_subfield_separator</varname> (str)</title>
 		<para>
 		The character to be used as separator in the subname of the <emphasis>$isup_param</emphasis> and <emphasis>$isup_param_str</emphasis> pseudovariables between the ISUP parameter name and subfield name.
@@ -67,7 +67,7 @@ modparam("sip_i", "param_subfield_separator", ":")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_isup_mime_str" xreflabel="isup_mime_str">
 		<title><varname>isup_mime_str</varname> (str)</title>
 		<para>
 			The string to be used for the Content-Type header field of the ISUP MIME body when creating a new ISUP part.
@@ -87,15 +87,63 @@ modparam("sip_i", "isup_mime_str", "application/ISUP;base=itu-t92+;version=itu-t
 </programlisting>
 		</example>
 	</section>
+	<section id="param_default_part_headers" xreflabel="default_part_headers">
+		<title><varname>default_part_headers</varname> (str)</title>
+		<para>
+		The default set of headers (fully defined, including the header
+		termination) to be pushed into the ISUP part together 
+		with the <emphasis>Content-Type</emphasis> header.
+		</para>
+		<para>
+		<emphasis>
+			Default value is "Content-Disposition:signal;handling=optional\r\n".
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>default_part_headers</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("sip_i", "default_part_headers", "Content-Disposition:signal;handling=required\r\n")
+...
+
+</programlisting>
+		</example>
+	</section>
+	<section id="param_country_code" xreflabel="country_code">
+		<title><varname>country_code</varname> (str)</title>
+		<para>
+			Country Code that the first part of the number from
+			P-Asserted-Identity is tested against when trying to map the
+			Calling Party Number ISUP parameter from SIP by default. If there
+			is a match, the value assigned to the Nature of Address Indicator
+			subfield is <emphasis>3</emphasis>(national), otherwise it is
+			<emphasis>4</emphasis>(international).
+		</para>
+		<para>
+		<emphasis>
+			Default value is "+1".
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>country_code</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("sip_i", "country_code", "+4")
+...
+
+</programlisting>
+		</example>
+	</section>
+
 
 </section>
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
 
-		<section>
+		<section id="func_add_isup_part" xreflabel="add_isup_part()">
 		<title>
-			<function moreinfo="none">add_isup_part([isup_msg_type])</function>
+			<function moreinfo="none">add_isup_part([isup_msg_type][,extra_headers])</function>
 		</title>
 		<para>
 			Adds a new ISUP part to the SIP message body.
@@ -106,7 +154,11 @@ modparam("sip_i", "isup_mime_str", "application/ISUP;base=itu-t92+;version=itu-t
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>isup_msg_type (string)</emphasis> - name of the ISUP message to be added, exactly as it appears in ITU-T Rec. Q.763 or an abbreviation(eg. <emphasis>IAM</emphasis> for "Initial address").
+			<para><emphasis>isup_msg_type (string, optional)</emphasis> - name of the ISUP message to be added, exactly as it appears in ITU-T Rec. Q.763 or an abbreviation(eg. <emphasis>IAM</emphasis> for "Initial address").
+			</para>
+		</listitem>
+		<listitem>
+			<para><emphasis>extra_headers (string, string, optional)</emphasis> - a chunk of fully defined SIP headers (including header terminatior) to be inserted into the ISUP part next to the <emphasis>Content-Type</emphasis> header. It overrides the global module parameter <emphasis>default_part_headers</emphasis>. If not specified, the <emphasis>default_part_headers</emphasis> value will be used.
 			</para>
 		</listitem>
 		</itemizedlist>
@@ -125,7 +177,7 @@ modparam("sip_i", "isup_mime_str", "application/ISUP;base=itu-t92+;version=itu-t
 			</listitem>
 			<listitem>
 			<para>
-				180, 183 - REL
+				180, 183 - ACM
 			</para>
 			</listitem>
 			<listitem>
@@ -170,17 +222,17 @@ modparam("sip_i", "isup_mime_str", "application/ISUP;base=itu-t92+;version=itu-t
 			</listitem>
 			<listitem>
 			<para>
-				Connect - <emphasis>CON</emphasis>
-			</para>
-			</listitem>
-			<listitem>
-			<para>
 				Release - <emphasis>REL</emphasis>
 			</para>
 			</listitem>
 			<listitem>
 			<para>
 				Release complete - <emphasis>RLC</emphasis>
+			</para>
+			</listitem>
+			<listitem>
+			<para>
+				Call progress - <emphasis>CPG</emphasis>
 			</para>
 			</listitem>
 			<listitem>
@@ -286,10 +338,10 @@ if ($rs == "183") {
 
 	</section>
 
-	<section>
-	<title>Exported PseudoVariables</title>
+	<section id="exported_pseudo_variables">
+	<title>Exported Pseudo-Variables</title>
 
-	<section>
+	<section id="pv_isup_param" xreflabel="$isup_param">
 	<title>
 		<varname>$(isup_param(param_name{sep}subfield_name)[byte_index])</varname>
 	</title>
@@ -352,7 +404,7 @@ if ($rs == "183") {
 	</example>
 	</section>
 
-	<section>
+	<section id="pv_isup_param_str" xreflabel="$isup_param_str">
 	<title>
 		<varname>$isup_param_str(param_name{sep}subfield_name)</varname>
 	</title>
@@ -387,7 +439,7 @@ if ($rs == "183") {
 	</example>
 	</section>
 
-	<section>
+	<section id="pv_isup_msg_type" xreflabel="$isup_msg_type">
 	<title>
 		<varname>$isup_msg_type</varname>
 	</title>
@@ -398,7 +450,7 @@ if ($rs == "183") {
 	<title><varname>isup_msg_type</varname> usage</title>
 	<programlisting format="linespecific">
 ...
-	# may print: "ISUP msg is: Initial address"
+	# may print: "ISUP msg is: IAM"
 	xlog("ISUP msg is: $isup_msg_type");
 ...
 	</programlisting>
@@ -407,13 +459,13 @@ if ($rs == "183") {
 
 </section>
 
-<section>
+<section id="exported_transformations">
 	<title>Exported script transformations</title>
 	<para>
 		The module also provides a way for accessing the value of ISUP parameters and their subfields from an ISUP message contained in a arbitrary script variable as opposed to directly from the processed SIP (with encapsulated ISUP) message. This is done by aplying a transformation to a script variable containing the ISUP message body. The value of the original variable is not altered and a corresponding integer or string value (representing an ISUP parameter or subfield as the exact value or string alias) is returned.
 	</para>
 
-	<section>
+	<section id="tran_isup.param" xreflabel="isup.param">
 		<title>
 			<varname>{isup.param,param_name,[subfield_name]}</varname>
 		</title>
@@ -455,7 +507,7 @@ if ($rs == "183") {
 
 	</section>
 
-	<section>
+	<section id="tran_isup.param.str" xreflabel="isup.param.str">
 		<title>
 			<varname>{isup.param.str,param_name,[subfield_name]}</varname>
 		</title>
@@ -1011,7 +1063,7 @@ if ($rs == "183") {
 							<para><emphasis>no indication</emphasis>- 0</para>
 						</listitem>
 						<listitem>
-							<para><emphasis>available</emphasis> - 2</para>
+							<para><emphasis>available</emphasis> - 1</para>
 						</listitem>
 					</itemizedlist>
 				</listitem>
@@ -1122,6 +1174,170 @@ if ($rs == "183") {
 				</listitem>
 				<listitem>
 					<para>Address signal</para>
+				</listitem>
+			</itemizedlist>
+		</listitem>
+		<listitem>
+			<para>Original Called Number</para>
+			<itemizedlist>
+				<listitem>
+					<para>Odd/even indicator</para>
+					<itemizedlist>
+						<listitem>
+							<para><emphasis>even</emphasis> - 0</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>odd</emphasis> - 1</para>
+						</listitem>
+					</itemizedlist>
+				</listitem>
+				<listitem>
+					<para>Nature of address indicator</para>
+					<itemizedlist>
+						<listitem>
+							<para><emphasis>subscriber</emphasis> - 1</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>unknown</emphasis> - 2</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>national</emphasis> - 3</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>international</emphasis> - 4</para>
+						</listitem>
+					</itemizedlist>
+				</listitem>
+				<listitem>
+					<para>Numbering plan indicator</para>
+					<itemizedlist>
+						<listitem>
+							<para><emphasis>ISDN</emphasis> - 1</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>Data</emphasis> - 3</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>Telex</emphasis> - 4</para>
+						</listitem>
+					</itemizedlist>
+				</listitem>
+				<listitem>
+					<para>Address presentation restricted indicator</para>
+					<itemizedlist>
+						<listitem>
+							<para><emphasis>allowed</emphasis> - 0</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>restricted</emphasis> - 1</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>not available</emphasis> - 2</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>reserved</emphasis> - 3</para>
+						</listitem>
+					</itemizedlist>
+				</listitem>
+			</itemizedlist>
+		</listitem>
+		<listitem>
+			<para>Redirecting Number - same as <emphasis>Original Called Number</emphasis></para>
+		</listitem>
+		<listitem>
+			<para>Redirection Number - same as <emphasis>Called Party Number</emphasis></para>
+		</listitem>
+		<listitem>
+			<para>Redirection information</para>
+			<itemizedlist>
+				<listitem>
+					<para>Redirecting indicator</para>
+					<itemizedlist>
+						<listitem>
+							<para><emphasis>no redirection</emphasis> - 0</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>call rerouted</emphasis> - 1</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>call rerouted, all information restricted</emphasis> - 2</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>call diverted</emphasis> - 3</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>Call diverted, all information restricted</emphasis> - 4</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>call rerouted, redirection number restricted</emphasis> - 5</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>call diversion, redirection number restricted</emphasis> - 6</para>
+						</listitem>
+					</itemizedlist>
+				</listitem>
+				<listitem>
+					<para>Original redirection reason</para>
+					<itemizedlist>
+						<listitem>
+							<para><emphasis>unknown/not available</emphasis> - 0</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>user busy</emphasis> - 1</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>no reply</emphasis> - 2</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>unconditional</emphasis> - 3</para>
+						</listitem>
+					</itemizedlist>
+				</listitem>
+				<listitem>
+					<para>Redirection counter</para>
+					<itemizedlist>
+						<listitem>
+							<para>1</para>
+						</listitem>
+						<listitem>
+							<para>2</para>
+						</listitem>
+						<listitem>
+							<para>3</para>
+						</listitem>
+						<listitem>
+							<para>4</para>
+						</listitem>
+						<listitem>
+							<para>5</para>
+						</listitem>
+					</itemizedlist>
+				</listitem>
+				<listitem>
+					<para>Redirecting reason</para>
+					<itemizedlist>
+						<listitem>
+							<para><emphasis>unknown/not available</emphasis> - 0</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>user busy</emphasis> - 1</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>no reply</emphasis> - 2</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>unconditional</emphasis> - 3</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>deflection alerting</emphasis> - 4</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>deflection response</emphasis> - 5</para>
+						</listitem>
+						<listitem>
+							<para><emphasis>mobile not reachable</emphasis> - 6</para>
+						</listitem>
+					</itemizedlist>
 				</listitem>
 			</itemizedlist>
 		</listitem>

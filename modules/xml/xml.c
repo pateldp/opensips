@@ -91,6 +91,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	NULL,            /* exported functions */
 	0,               /* exported async functions */
@@ -103,7 +104,8 @@ struct module_exports exports= {
 	mod_init,        /* module initialization function */
 	0,               /* reply processing function */
 	mod_destroy,
-	child_init       /* per-child init function */
+	child_init,      /* per-child init function */
+	0                /* reload confirm function */
 };
 
 
@@ -526,7 +528,7 @@ int pv_get_xml(struct sip_msg* msg,  pv_param_t* pvp, pv_value_t* res)
 			}
 		}
 
-		if (pkg_str_resize(&res_buf, xml_buf_len) != 0) {
+		if (pkg_str_extend(&res_buf, xml_buf_len) != 0) {
 			LM_ERR("No more pkg mem\n");
 			if (xml_buf)
 				xmlBufferFree(xml_buf);
@@ -558,7 +560,7 @@ int pv_get_xml(struct sip_msg* msg,  pv_param_t* pvp, pv_value_t* res)
 		}
 
 		xml_buf_len = xmlBufferLength(xml_buf);
-		if (pkg_str_resize(&res_buf, xml_buf_len) != 0) {
+		if (pkg_str_extend(&res_buf, xml_buf_len) != 0) {
 			LM_ERR("No more pkg mem\n");
 			goto err_free_xml_buf;
 		}

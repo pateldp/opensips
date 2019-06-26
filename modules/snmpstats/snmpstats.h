@@ -133,6 +133,7 @@ struct module_exports exports =
 	MOD_TYPE_DEFAULT,        /* class of this module */
 	MODULE_VERSION,          /* module's version */
 	DEFAULT_DLFLAGS,         /* dlopen flags */
+	0,				         /* load function */
 	&deps,                   /* OpenSIPS module dependencies */
 	0,                       /* exported functions */
 	0,                       /* exported async functions */
@@ -145,7 +146,8 @@ struct module_exports exports =
 	mod_init,                /* module initialization function */
 	0,                       /* reply processing function */
 	mod_destroy,   /* Destroy function */
-	mod_child_init /* per-child init function */
+	mod_child_init,/* per-child init function */
+	0                        /* reload confirm function */
 };
 
 #endif

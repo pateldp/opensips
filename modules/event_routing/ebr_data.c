@@ -542,7 +542,7 @@ void handle_ebr_ipc(int sender, void *payload)
 
 		/* route the notification route */
 		set_route_type( REQUEST_ROUTE );
-		run_top_route( rlist[(int)(long)job->data].a, &req);
+		run_top_route( sroutes->request[(int)(long)job->data].a, &req);
 
 		if (ebr_tmb.t_set_remote_t)
 			ebr_tmb.t_set_remote_t( NULL );
@@ -563,7 +563,7 @@ void handle_ebr_ipc(int sender, void *payload)
 		((async_ctx*)job->data)->resume_param = job->avps;
 
 		/* invoke the global resume ASYNC function */
-		async_script_resume_f( NULL, job->data /*the async ctx*/ );
+		async_script_resume_f(ASYNC_FD_NONE, job->data /*the async ctx*/ );
 
 		shm_free(job);
 

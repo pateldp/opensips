@@ -44,7 +44,9 @@ enum rps {
 	/* transaction completed */
 	RPS_COMPLETED,
 	/* provisional reply not affecting transaction state */
-	RPS_PROVISIONAL
+	RPS_PROVISIONAL,
+	/* just relay the reply*/
+	RPS_RELAY
 };
 
 extern char tm_tags[TOTAG_VALUE_LEN];
@@ -52,7 +54,7 @@ extern char *tm_tag_suffix;
 
 extern int disable_6xx_block;
 
-/* flag for marching minor branches */
+/* flag for marking minor branches */
 extern int minor_branch_flag;
 extern char *minor_branch_flag_str;
 
@@ -102,7 +104,8 @@ int t_reply( struct cell *t, struct sip_msg * , unsigned int , str * );
    processing
 */
 
-int w_t_reply_body(struct sip_msg* msg,str* code,str *text, str *body);
+int w_t_reply_body(struct sip_msg* msg, unsigned int* code, str *text,
+				str *body);
 
 int t_reply_unsafe( struct cell *t, struct sip_msg * , unsigned int , str * );
 

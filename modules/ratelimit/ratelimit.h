@@ -96,15 +96,13 @@ typedef struct {
 extern gen_lock_t * rl_lock;
 extern rl_big_htable rl_htable;
 extern int rl_timer_interval;
+extern int rl_limit_per_interval;
 extern int rl_expire_time;
 extern unsigned int rl_hash_size;
 extern int *rl_network_count;
 extern int *rl_network_load;
 extern str rl_default_algo_s;
 extern str db_prefix;
-extern int accept_repl_pipes;
-extern int accept_repl_pipes_timeout;
-extern int repl_pipes_auth_check;
 extern int rl_repl_cluster;
 extern int rl_window_size;
 extern int rl_slot_period;
@@ -116,12 +114,11 @@ void mod_destroy(void);
 int init_rl_table(unsigned int size);
 
 /* exported functions */
-int w_rl_check_2(struct sip_msg*, char *, char *);
-int w_rl_check_3(struct sip_msg*, char *, char *, char *);
-int w_rl_dec(struct sip_msg*, char *);
-int w_rl_reset(struct sip_msg*, char *);
+int w_rl_check(struct sip_msg*, str *, int *, str *);
+int w_rl_dec(struct sip_msg*, str *);
+int w_rl_reset(struct sip_msg*, str *);
 int w_rl_set_count(str, int);
-int rl_stats(struct mi_root *, str *);
+int rl_stats(mi_item_t *, str *);
 int rl_pipe_check(rl_pipe_t *);
 int rl_get_counter_value(str *);
 /* update load */
@@ -143,7 +140,9 @@ extern unsigned int rl_repl_timer_expire;
 int rl_repl_init(void);
 int rl_get_all_counters(rl_pipe_t *pipe);
 int rl_add_repl_dst(modparam_t type, void *val);
-int rl_bin_status(struct mi_node *root, int cluster_id, char *type, int type_len);
+
+void hist_set_count(rl_pipe_t *pipe, long int value);
+int hist_get_count(rl_pipe_t *pipe);
 
 #define RL_PIPE_COUNTER		0
 #define RL_EXPIRE_TIMER		10

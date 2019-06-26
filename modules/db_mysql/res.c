@@ -23,7 +23,7 @@
 
 
 #include <string.h>
-#include <mysql/mysql.h>
+#include <mysql.h>
 #include "../../db/db_res.h"
 #include "../../mem/mem.h"
 #include "../../dprint.h"
@@ -112,6 +112,9 @@ int db_mysql_get_columns(const db_con_t* _h, db_res_t* _r)
 
 			case MYSQL_TYPE_STRING:
 			case MYSQL_TYPE_VAR_STRING:
+			#if (defined LIBMYSQL_VERSION_ID) && (MYSQL_VERSION_ID > 50700)
+			case MYSQL_TYPE_JSON:
+			#endif
 				LM_DBG("use DB_STRING result type\n");
 				RES_TYPES(_r)[col] = DB_STRING;
 				break;

@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section id="siprec_overview">
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		This module provides the means to do calls recording using an
@@ -96,12 +96,12 @@
 	<para>
 		The <emphasis>siprec</emphasis> module supports failover between
 		multiple SRS servers - when calling the <emphasis><xref
-				linkend="siprec_start_recording"/></emphasis> function, one
+				linkend="func_siprec_start_recording"/></emphasis> function, one
 		can provision more SRS URIs, separated by comma. In this case, &osips;
 		will try to use them in the same order specified, one by one, until
 		either one of them responds with a positive reply (200 OK), or the
 		response code is one of the codes matched by the <emphasis><xref
-				linkend="skip_failover_codes"/></emphasis> regular expression.
+				linkend="param_skip_failover_codes"/></emphasis> regular expression.
 		In the latter case the call is not recorded at all.
 	</para>
 	</section>
@@ -149,7 +149,7 @@
 	</para>
 	</section>
 
-	<section id="siprec_dependencies">
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section id="siprec_modules_dependencies">
 		<title>&osips; Modules</title>
@@ -196,9 +196,9 @@
 	</section>
 	</section>
 	
-	<section id="siprec_parameters">
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 		<title>Exported Parameters</title>
-		<section id="media_port_min">
+		<section id="param_media_port_min" xreflabel="media_port_min">
 		<title><varname>media_port_min</varname> (integer)</title>
 		<para>
 			The minimum value of the port used in the SDP sent to the SRS.
@@ -219,7 +219,7 @@ modparam("siprec", "media_port_min", 10000)
 		</example>
 		</section>
 
-		<section id="media_port_max">
+		<section id="param_media_port_max" xreflabel="media_port_max">
 		<title><varname>media_port_max</varname> (integer)</title>
 		<para>
 			The maximum value of the port used in the SDP sent to the SRS.
@@ -240,7 +240,7 @@ modparam("siprec", "media_port_max", 20000)
 		</example>
 		</section>
 
-		<section id="skip_failover_codes" xreflabel="skip_failover_codes">
+		<section id="param_skip_failover_codes" xreflabel="skip_failover_codes">
 		<title><varname>skip_failover_codes</varname> (string)</title>
 		<para>
 			A regular expression used to specify the codes that should prevent
@@ -269,11 +269,12 @@ modparam("siprec", "skip_failover_codes", "[34][0-9][0-9]")
 		</section>
 	</section>
 
-	<section id="siprec_functions">
+	<section id="exported_functions" xreflabel="exported_functions">
 		<title>Exported Functions</title>
-		<section id="siprec_start_recording" xreflabel="siprec_start_recording">
+		<section id="func_siprec_start_recording" xreflabel="siprec_start_recording()">
 			<title>
-			<function moreinfo="none">siprec_start_recording([srs [, group [, caller [, callee [, rtpproxy_set] ]]]])</function>
+			<function moreinfo="none">siprec_start_recording(srs, [group], [caller],
+				[callee], [rtpproxy_sock], [media_ip])</function>
 			</title>
 			<para>
 				Calling this function on an initial
@@ -293,31 +294,37 @@ modparam("siprec", "skip_failover_codes", "[34][0-9][0-9]")
 				Parameters:
 				<itemizedlist>
 				<listitem><para>
-					<emphasis>srs</emphasis> - a comma-separated list of SRS
+					<emphasis>srs</emphasis> (string) - a comma-separated list of SRS
 					URIs. These URIs are used in the order specified. See
 					<xref linkend="siprec_srs_failover"/> for more
 					information.
 				</para></listitem>
 				<listitem><para>
-					<emphasis>group</emphasis> (optional) - an opaque values
+					<emphasis>group</emphasis> (string, optional) - an opaque values
 					used by the SIPREC protocol to group calls in certain
 					profiles.
 				</para></listitem>
 				<listitem><para>
-					<emphasis>caller</emphasis> (optional) - a nameaddr header
+					<emphasis>caller</emphasis> (string, optional) - an XML block
 					containing information about the caller. If absent, the
-					<emphasis>From</emphasis> header is used.
+					<emphasis>From</emphasis> header is used to build the value from.
 				</para></listitem>
 				<listitem><para>
-					<emphasis>callee</emphasis> (optional) - a nameaddr header
+					<emphasis>callee</emphasis> (string, optional) - an XML block
 					containing information about the callee. If absent, the
-					<emphasis>To</emphasis> header is used.
+					<emphasis>To</emphasis> header is used to build the value from.
 				</para></listitem>
 				<listitem><para>
-					<emphasis>rtpproxy_set</emphasis> (optional) - the
-					RTPProxy set used for this call. If absent, the default
-					set provisioned in the <emphasis>rtpproxy</emphasis>
-					module is used.
+					<emphasis>rtpproxy_sock</emphasis> (string, optional) - the
+					RTPProxy soscket used for this call. If absent, the rtpproxy
+					module will try to detect the proxy used for the initial call,
+					based on the default set provisioned in the
+					<emphasis>rtpproxy</emphasis> module.
+				</para></listitem>
+				<listitem><para>
+					<emphasis>media_ip</emphasis> (string, optional) - the IP that
+					RTPProxy will be streaming media from. If absent
+					 <emphasis>127.0.0.1</emphasis> will be used.
 				</para></listitem>
 				</itemizedlist>
 			</para>
@@ -336,7 +343,7 @@ modparam("siprec", "skip_failover_codes", "[34][0-9][0-9]")
 	if (!has_totag() &amp;&amp; is_method("INVITE")) {
 		$var(srs) = "sip:127.0.0.1";
 		xlog("Engage SIPREC call recording to $var(srs) for $ci\n");
-		siprec_start_recording("$var(srs)");
+		siprec_start_recording($var(srs));
 	}
 	...
 	</programlisting>
@@ -349,11 +356,24 @@ modparam("siprec", "skip_failover_codes", "[34][0-9][0-9]")
 	if (!has_totag() &amp;&amp; is_method("INVITE")) {
 		$var(srs) = "sip:127.0.0.1, sip:127.0.0.1;transport=TCP";
 		xlog("Engage SIPREC call recording to servers $var(srs) for $ci in inbound group\n");
-		siprec_start_recording("$var(srs)", "inbound");
+		siprec_start_recording($var(srs), "inbound");
 	}
 	...
 	</programlisting>
 			</example>
+
+			<example>
+			<title>Use <function>siprec_start_recording()</function> function with custom XML values for participants</title>
+			<programlisting format="linespecific">
+	...
+	$xml(caller_xml) = "&lt;nameID&gt;&lt;/nameID&gt;";
+	$xml(caller_xml/nameID.attr/aor) = "sip:6024151234@10.0.0.11:5090";
+	$xml(caller_xml/nameID) = "&lt;name&gt;test&lt;/name&gt;";
+	siprec_start_recording($var(srs),,$xml(caller_xml/nameID));
+	...
+	</programlisting>
+			</example>
+
 		</section>
 	</section>
 

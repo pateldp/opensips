@@ -36,6 +36,7 @@
 
 #include "cJSON.h"
 #include "../mem/mem.h"
+#include "osips_malloc.h"
 
 /* Determine the number of bits that an integer has using the preprocessor */
 #if INT_MAX == 32767
@@ -81,6 +82,12 @@ typedef int cjbool;
 
 static const unsigned char *global_ep = NULL;
 
+int cJSON_NumberIsInt(cJSON *item)
+{
+   return ((FABS((double)item->valueint - item->valuedouble) <= DBL_EPSILON) &&
+   (item->valuedouble <= INT_MAX) && (item->valuedouble >= INT_MIN));
+}
+
 const char *cJSON_GetErrorPtr(void)
 {
     return (const char*) global_ep;
@@ -116,18 +123,8 @@ static int cJSON_strcasecmp(const unsigned char *s1, const unsigned char *s2)
     return tolower(*s1) - tolower(*s2);
 }
 
-static void* osip_malloc( size_t sz )
-{
-	return pkg_malloc( sz );
-}
-
-static void osip_free( void *ptr )
-{
-	pkg_free( ptr );
-}
-
-static void *(*cJSON_malloc)(size_t sz) = osip_malloc;
-static void (*cJSON_free)(void *ptr) = osip_free;
+static void *(*cJSON_malloc)(size_t sz) = osips_pkg_malloc;
+static void (*cJSON_free)(void *ptr) = osips_pkg_free;
 
 static unsigned char* cJSON_strdup(const unsigned char* str)
 {
@@ -172,13 +169,13 @@ void cJSON_InitHooks(cJSON_Hooks* hooks)
     if (!hooks)
     {
         /* Reset hooks */
-        cJSON_malloc = malloc;
-        cJSON_free = free;
+        cJSON_malloc = osips_pkg_malloc;
+        cJSON_free = osips_pkg_free;
         return;
     }
 
-    cJSON_malloc = (hooks->malloc_fn) ? hooks->malloc_fn : malloc;
-    cJSON_free = (hooks->free_fn) ? hooks->free_fn : free;
+    cJSON_malloc = (hooks->malloc_fn) ? hooks->malloc_fn : osips_pkg_malloc;
+    cJSON_free = (hooks->free_fn) ? hooks->free_fn : osips_pkg_free;
 }
 
 /* Internal constructor. */
@@ -196,7 +193,7 @@ static cJSON *cJSON_New_Item(void)
 /* Delete a cJSON structure. */
 void cJSON_Delete(cJSON *c)
 {
-    cJSON *next = NULL;
+    cJSON *next;
     while (c)
     {
         next = c->next;
@@ -301,6 +298,8 @@ typedef struct
     size_t length;
     size_t offset;
     cjbool noalloc;
+	flush_fn *flush;
+	void *flush_p;
 } printbuffer;
 
 /* realloc printbuffer if necessary to have at least "needed" bytes more */
@@ -308,6 +307,8 @@ static unsigned char* ensure(printbuffer *p, size_t needed)
 {
     unsigned char *newbuffer = NULL;
     size_t newsize = 0;
+	int written;
+	int flushed = 0;
 
     if (needed > INT_MAX)
     {
@@ -319,16 +320,29 @@ static unsigned char* ensure(printbuffer *p, size_t needed)
     {
         return NULL;
     }
-    needed += p->offset;
-    if (needed <= p->length)
+
+retry:
+    if (p->offset + needed <= p->length)
     {
         return p->buffer + p->offset;
     }
 
     if (p->noalloc) {
-        return NULL;
+		if (!p->flush)
+			return NULL;
+		/* we will try to flush everything, so we can re-use the same buffer */
+		if (flushed)
+			return NULL; /* TODO: cannot flush what's in here - shall we "remember" the error? */
+		written = (p->flush)(p->buffer, p->offset, p->flush_p);
+		if (written <= 0)
+			return NULL;
+		memmove(p->buffer, p->buffer + written, p->offset - written);
+		p->offset -= written;
+		flushed = 1;
+		goto retry;
     }
 
+    needed += p->offset;
     newsize = (size_t) pow2gt((int)needed);
     newbuffer = (unsigned char*)cJSON_malloc(newsize);
     if (!newbuffer)
@@ -923,6 +937,7 @@ char *cJSON_PrintBuffered(const cJSON *item, int prebuffer, cjbool fmt)
         return NULL;
     }
 
+	memset(&p, 0, sizeof(p));
     p.length = (size_t)prebuffer;
     p.offset = 0;
     p.noalloc = false;
@@ -939,11 +954,36 @@ int cJSON_PrintPreallocated(cJSON *item, char *buf, const int len, const cjbool 
         return false;
     }
 
+	memset(&p, 0, sizeof(p));
     p.buffer = (unsigned char*)buf;
     p.length = (size_t)len;
     p.offset = 0;
     p.noalloc = true;
     return print_value(item, 0, fmt, &p) != NULL;
+}
+
+int cJSON_PrintFlushed(cJSON *item, char *buf, const int len, const int fmt, flush_fn *func, void *param)
+{
+    printbuffer p;
+	int ret;
+
+    if (len < 0)
+    {
+        return false;
+    }
+
+	memset(&p, 0, sizeof(p));
+    p.buffer = (unsigned char*)buf;
+    p.length = (size_t)len;
+    p.offset = 0;
+    p.noalloc = true;
+    p.flush = func;
+    p.flush_p = param;
+    ret = (print_value(item, 0, fmt, &p) != NULL);
+	if (!ret || !p.offset)
+		return ret;
+		/* flush everything in the end */
+	return (p.flush)(p.buffer, p.offset + 1/* last } */, p.flush_p) > 0;
 }
 
 /* Parser core - when encountering text, process appropriately. */
@@ -1821,6 +1861,23 @@ void cJSON_AddItemToArray(cJSON *array, cJSON *item)
         }
         suffix_object(child, item);
     }
+}
+
+void   _cJSON_AddItemToObject(cJSON *object, const str *string, cJSON *item)
+{
+    if (!item)
+    {
+        return;
+    }
+
+    /* free old key and set new one */
+    if (item->string)
+    {
+        cJSON_free(item->string);
+    }
+    item->string = (char*)cJSON_strndup((const unsigned char*)string->s, string->len);
+
+    cJSON_AddItemToArray(object,item);
 }
 
 void   cJSON_AddItemToObject(cJSON *object, const char *string, cJSON *item)

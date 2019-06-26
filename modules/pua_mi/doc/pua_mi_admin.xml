@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		 The pua_mi offers the possibility to publish presence
@@ -23,7 +23,7 @@
 	</para>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -55,9 +55,9 @@
 	</section>
 	</section>
 	
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 		<title>Exported Parameters</title>
-		<section>
+		<section id="param_presence_server" xreflabel="presence_server">
 		<title><varname>presence_server</varname> (str)</title>
 		<para>
 		The the address of the presence server. If set, it will be
@@ -74,7 +74,7 @@ modparam("pua_mi", "presence_server", "sip:pa@opensips.org:5075")
 	</section>
 </section>	
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 		<title>Exported Functions</title>
 		<para>The module does not export functions to be used
 		in configuration script.</para>
@@ -104,40 +104,41 @@ modparam("pua_mi", "presence_server", "sip:pa@opensips.org:5075")
 			</listitem>
 			<listitem>
 				<para>
-					<emphasis>event package</emphasis>
+					<emphasis>event_package</emphasis>
 					- Event package that is
 		target of published information (e.g. presence).
 				    </para> 
 			</listitem>
 			<listitem>
 				<para>
-					<emphasis>content type</emphasis>
+					<emphasis>content_type</emphasis> (optional)
 					- Content type of published
-		information (e.g. application/pidf+xml) or . if no
-		information is enclosed.
+		information (e.g. application/pidf+xml). If this parameter
+		is provided, the <emphasis>body</emphasis> parameter is also required.
 			       </para> 
 			</listitem>
 			<listitem>
 				<para>
-					<emphasis>ETag</emphasis>
+					<emphasis>etag</emphasis> (optional)
 					- ETag that publish should
-		match or . if no ETag is given.
+		match.
 		                </para> 
 			</listitem>
 			<listitem>
 				<para>
-					<emphasis>extra_headers</emphasis>
+					<emphasis>extra_headers</emphasis> (optional)
 					- Extra headers added to PUBLISH
-		request or . if no extra headers.
+		request.
 		                </para> 
 			</listitem>
 			<listitem>
 				<para>
-					<emphasis>body</emphasis>
+					<emphasis>body</emphasis> (optioanl)
 					- The body of the publish
 		request containing published information or missing if
 		no published information.
-		It has to be a single line for FIFO transport.
+		It has to be a single line for FIFO transport. If this parameter
+		is provided, the <emphasis>content_type</emphasis> parameter is also required.
 				 </para>
 			</listitem>
 			</itemizedlist>
@@ -146,14 +147,7 @@ modparam("pua_mi", "presence_server", "sip:pa@opensips.org:5075")
 	<programlisting format="linespecific">
 ...
 <![CDATA[
-:pua_publish:fifo_test_reply
-sip:system@opensips.org
-3600
-presence
-application/pidf+xml
-.
-.
-<?xml version='1.0'?><presence xmlns='urn:ietf:params:xml:ns:pidf' xmlns:dm='urn:ietf:params:xml:ns:pidf:data-model' xmlns:rpid='urn:ietf:params:xml:ns:pidf:rpid' xmlns:c='urn:ietf:params:xml:ns:pidf:cipid' entity='system@opensips.org'><tuple id='0x81475a0'><status><basic>open</basic></status></tuple><dm:person id='pdd748945'><rpid:activities><rpid:away/>away</rpid:activities><dm:note>CPU:16 MEM:476</dm:note></dm:person></presence>
+opensips-cli -x mi pua_publish sip:system@opensips.org 3600 presence application/pidf+xml <?xml version='1.0'?><presence xmlns='urn:ietf:params:xml:ns:pidf' xmlns:dm='urn:ietf:params:xml:ns:pidf:data-model' xmlns:rpid='urn:ietf:params:xml:ns:pidf:rpid' xmlns:c='urn:ietf:params:xml:ns:pidf:cipid' entity='system@opensips.org'><tuple id='0x81475a0'><status><basic>open</basic></status></tuple><dm:person id='pdd748945'><rpid:activities><rpid:away/>away</rpid:activities><dm:note>CPU:16 MEM:476</dm:note></dm:person></presence>
 ]]>
 </programlisting>
 		</example>

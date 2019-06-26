@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>The module contains record routing logic</para>
 	</section>
@@ -45,12 +45,12 @@
 	</para>
 	<itemizedlist>
 		<listitem>
-			<para>add_rr_param() - see <xref linkend="add-rr-param-id"/>
+			<para>add_rr_param() - see <xref linkend="func_add_rr_param"/>
 			</para>
 		</listitem>
 		<listitem>
 			<para>check_route_param() - see 
-				<xref linkend="check-route-param-id"/>
+				<xref linkend="func_check_route_param"/>
 			</para>
 		</listitem>
 	</itemizedlist>
@@ -77,7 +77,7 @@ UAC                       OpenSIPS PROXY                          UAS
 	</section>
 
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -110,9 +110,9 @@ UAC                       OpenSIPS PROXY                          UAS
 	</section>
 
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section id="append-fromtag-id">
+	<section id="param_append_fromtag" xreflabel="append_fromtag">
 		<title><varname>append_fromtag</varname> (integer)</title>
 		<para>
 		If turned on, request's from-tag is appended to record-route; that's 
@@ -135,7 +135,7 @@ modparam("rr", "append_fromtag", 0)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_enable_double_rr" xreflabel="enable_double_rr">
 		<title><varname>enable_double_rr</varname> (integer)</title>
 		<para>
 		There are some situations when the server needs to insert two 
@@ -159,7 +159,7 @@ modparam("rr", "enable_double_rr", 0)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_add_username" xreflabel="add_username">
 		<title><varname>add_username</varname> (integer)</title>
 		<para>
 		If set to a non 0 value (which means yes), the username part will
@@ -180,7 +180,7 @@ modparam("rr", "add_username", 1)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_enable_socket_mismatch_warning" xreflabel="enable_socket_mismatch_warning">
 		<title><varname>enable_socket_mismatch_warning</varname> (integer)</title>
 		<para>
 		When a preset record-route header is forced in &osips; config and the
@@ -207,9 +207,9 @@ modparam("rr", "enable_socket_mismatch_warning", 0)
 	</section>
 
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section id="loose-route-id">
+	<section id="func_loose_route" xreflabel="loose_route()">
 		<title>
 		<function moreinfo="none">loose_route()</function>
 		</title>
@@ -262,7 +262,7 @@ loose_route();
 		</example>
 	</section>
 
-	<section id="record-route-id">
+	<section id="func_record_route" xreflabel="record_route()">
 		<title>
 		<function moreinfo="none">record_route()</function> and 
 		<function moreinfo="none">record_route(string)</function>
@@ -275,7 +275,7 @@ loose_route();
 		<para>
 		If any string is passed as parameter, it will be appended as URI
 		parameter to the Record-Route header. The string must follow the 
-		<quote>;name=value</quote> scheme and it may contain pseudo-variables.
+		<quote>;name=value</quote> scheme.
 		</para>
 		<para>
 		This function can be used from REQUEST_ROUTE, BRANCH_ROUTE and 
@@ -291,7 +291,7 @@ record_route();
 		</example>
 	</section>
 
-	<section>
+	<section id="func_record_route_preset" xreflabel="record_route_preset()">
 		<title>
 		<function moreinfo="none">record_route_preset(string [, string2])</function>
 		</title>
@@ -309,8 +309,8 @@ record_route();
 		</listitem>
 		<listitem>
 			<para>
-			<emphasis>string2</emphasis> - String to be inserted into the 
-				second header field; it may contain pseudo-variables.
+			<emphasis>string2</emphasis> (optional) - String to be inserted into the 
+				second header field.
 			</para>
 		</listitem>
 		</itemizedlist>
@@ -332,7 +332,7 @@ record_route_preset("1.2.3.4:5090");
 		</example>
 	</section>
 
-	<section id="add-rr-param-id">
+	<section id="func_add_rr_param" xreflabel="add_rr_param()">
 		<title>
 		<function moreinfo="none">add_rr_param(param)</function>
 		</title>
@@ -340,15 +340,14 @@ record_route_preset("1.2.3.4:5090");
 		Adds a parameter to the Record-Route URI (param must be in 
 		<quote>;name=value</quote> format. The function may be called also 
 		before or after the record_route() call 
-		(see <xref linkend="record-route-id"/>).
+		(see <xref linkend="func_record_route"/>).
 		</para>
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
 			<para>
-			<emphasis>param</emphasis> - String containing the URI parameter to
-			be added. It must follow the <quote>;name=value</quote> scheme; it 
-			may contain pseudo-variables.
+			<emphasis>param</emphasis> (string) - the URI parameter to
+			be added. It must follow the <quote>;name=value</quote> scheme.
 			</para>
 		</listitem>
 		</itemizedlist>
@@ -366,20 +365,20 @@ add_rr_param(";nat=yes");
 		</example>
 	</section>
 
-	<section id="check-route-param-id">
+	<section id="func_check_route_param" xreflabel="check_route_param()">
 		<title>
 		<function moreinfo="none">check_route_param(re)</function>
 		</title>
 		<para>The function checks if the URI parameters of the local Route 
 		header (corresponding to the local server) matches the given regular 
 		expression. It must be call after loose_route() 
-		(see <xref linkend="loose-route-id"/>).
+		(see <xref linkend="func_loose_route"/>).
 		</para>
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
 			<para>
-			<emphasis>re</emphasis> - regular expression to check against the
+			<emphasis>re</emphasis> (string) - regular expression to check against the
 			Route URI parameters.
 			</para>
 		</listitem>
@@ -399,15 +398,15 @@ if (check_route_param("nat=yes")) {
 		</example>
 	</section>
 
-	<section>
+	<section id="func_is_direction" xreflabel="is_direction()">
 		<title>
 		<function moreinfo="none">is_direction(dir)</function>
 		</title>
 		<para>The function checks the flow direction of the request.
 		As for checking it's used the <quote>ftag</quote> Route header 
-		parameter, the append_fromtag (see <xref linkend="append-fromtag-id"/> 
+		parameter, the append_fromtag (see <xref linkend="param_append_fromtag"/> 
 		module parameter must be enabled. Also this must be called only after 
-		loose_route() (see <xref linkend="loose-route-id"/>).
+		loose_route() (see <xref linkend="func_loose_route"/>).
 		</para>
 		<para>
 		The function returns true if the <quote>dir</quote> is the same with
@@ -421,7 +420,7 @@ if (check_route_param("nat=yes")) {
 		<itemizedlist>
 		<listitem>
 			<para>
-			<emphasis>dir</emphasis> - string containing the direction to be 
+			<emphasis>dir</emphasis> (string) - the direction to be 
 				checked. It may be <quote>upstream</quote> (from UAS to UAC) or 
 				<quote>downstream</quote> (UAC to UAS).
 			</para>
@@ -442,12 +441,12 @@ if (is_direction("upstream")) {
 		</example>
 	</section>
 
-	<section>
-		<title>Exported pseudo-variables</title>
+	<section id="exported_pseudo_variables">
+		<title>Exported Pseudo-Variables</title>
 		<para>
 		Exported pseudo-variables are listed in the next sections.
 		</para>
-		<section>
+		<section id="pv_rr_params" xreflabel="$rr_params">
 		<title>$rr_params</title>
 			<para>
 			<emphasis>$rr_params</emphasis> - the whole string of the Route
@@ -456,6 +455,6 @@ if (is_direction("upstream")) {
 		</section>
 	</section>
 
-	</section>
+</section>
 </chapter>
 

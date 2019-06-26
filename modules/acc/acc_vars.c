@@ -38,6 +38,8 @@
 		*val_ptr = extra->value; \
 	} while(0);
 
+#define ACC_CTX_VAL_DELETED  (-1)
+
 extern int    extra_tgs_len;
 extern tag_t* extra_tags;
 
@@ -65,9 +67,8 @@ int pv_parse_acc_extra_name(pv_spec_p sp, str *in)
 
 	str_trim_spaces_lr(*in);
 
-	for (idx=0; idx<extra_tgs_len; idx++) {
-		if (in->len == extra_tags[idx].len &&
-				!memcmp(in->s, extra_tags[idx].s, extra_tags[idx].len)) {
+	for (idx = 0; idx < extra_tgs_len; idx++) {
+		if (!str_strcmp(in, &extra_tags[idx])) {
 			sp->pvp.pvn.u.isname.name.n = idx;
 			return 0;
 		}
@@ -100,8 +101,6 @@ int pv_get_acc_extra(struct sip_msg *msg, pv_param_t *param,
 			LM_ERR("failed to create accounting context!\n");
 			return -1;
 		}
-
-		ACC_PUT_CTX(ctx);
 	}
 
 	tag_idx = param->pvn.u.isname.name.n;
@@ -135,31 +134,41 @@ int pv_get_acc_extra(struct sip_msg *msg, pv_param_t *param,
  */
 int set_value_shm(pv_value_t* pvt, extra_value_t* extra)
 {
-	if (pvt == NULL || pvt->flags&PV_VAL_NULL) {
-		if (extra->shm_buf_len) {
+	str s;
+
+	if (pvt == NULL || pvt->flags&PV_VAL_NULL
+	    || (pvt->flags & PV_VAL_STR && pvt->rs.len == 0)) {
+		/* also treat empty strings as NULL */
+		if (extra->value.s) {
 			shm_free(extra->value.s);
-			extra->shm_buf_len = 0;
 		}
+		extra->shm_buf_len = ACC_CTX_VAL_DELETED;
 		extra->value.s = NULL;
 		extra->value.len = 0;
-	} else if (pvt->flags&PV_TYPE_INT || pvt->flags&PV_VAL_STR) {
-		if (extra->shm_buf_len == 0) {
-			extra->value.s = shm_malloc(pvt->rs.len);
-			extra->shm_buf_len = extra->value.len = pvt->rs.len;
-		} else if (extra->shm_buf_len < pvt->rs.len) {
-			extra->value.s = shm_realloc(extra->value.s, pvt->rs.len);
-			extra->shm_buf_len = extra->value.len = pvt->rs.len;
+	} else {
+		if (pvt->flags&PV_VAL_STR) {
+			s = pvt->rs;
+		} else if (pvt->flags&PV_VAL_INT) {
+			s.s = int2str( pvt->ri, &s.len);
 		} else {
-			extra->value.len = pvt->rs.len;
+			LM_ERR("invalid pvt value!\n");
+			return -1;
+		}
+
+		if (extra->value.s == 0) {
+			extra->value.s = shm_malloc(s.len);
+			extra->shm_buf_len = extra->value.len = s.len;
+		} else if (extra->shm_buf_len < s.len) {
+			extra->value.s = shm_realloc(extra->value.s, s.len);
+			extra->shm_buf_len = extra->value.len = s.len;
+		} else {
+			extra->value.len = s.len;
 		}
 
 		if (extra->value.s == NULL)
 			goto memerr;
 
-		memcpy(extra->value.s, pvt->rs.s, pvt->rs.len);
-	} else {
-		LM_ERR("invalid pvt value!\n");
-		return -1;
+		memcpy(extra->value.s, s.s, s.len);
 	}
 
 	return 0;
@@ -190,10 +199,7 @@ int pv_set_acc_extra(struct sip_msg *msg, pv_param_t *param, int op,
 			LM_ERR("failed to create accounting context!\n");
 			return -1;
 		}
-
-		ACC_PUT_CTX(ctx);
 	}
-
 
 	tag_idx = param->pvn.u.isname.name.n;
 	/* sanity checks for the tag; it should be valid since
@@ -219,6 +225,41 @@ int pv_set_acc_extra(struct sip_msg *msg, pv_param_t *param, int op,
 	return 0;
 }
 
+
+static inline void push_val_to_val( extra_value_t *src, extra_value_t *dst )
+{
+	pv_value_t val;
+
+	if (src->value.s) {
+		/* the extra has a value set */
+		val.flags = PV_VAL_STR;
+		val.rs = src->value;
+		if (set_value_shm( &val, dst ) < 0)
+			LM_ERR("failed to move extra acc value\n");
+	} else if (src->shm_buf_len==ACC_CTX_VAL_DELETED) {
+		/* the extra had the value deleted */
+		val.flags = PV_VAL_NULL;
+		val.rs.s = 0 ; val.rs.len = 0;
+		if (set_value_shm( &val, dst ) < 0)
+			LM_ERR("failed to move extra acc value\n");
+	} /* this extra was not used.
+	   * nothing to push */
+}
+
+void push_ctx_to_ctx(acc_ctx_t *src, acc_ctx_t *dst)
+{
+	int i,j;
+
+	/* extra values */
+	for( i=0 ; i<extra_tgs_len ; i++ )
+		push_val_to_val( &src->extra_values[i], &dst->extra_values[i] );
+
+	for( j=0 ; j<src->legs_no ; j++ )
+		for( i=0 ; i<leg_tgs_len ; i++ )
+			push_val_to_val( &src->leg_values[j][i], &dst->leg_values[j][i] );
+}
+
+
 /*
  * acc_current_leg
  * VARIABLE
@@ -235,8 +276,6 @@ int pv_get_acc_current_leg(struct sip_msg *msg, pv_param_t *param,
 			LM_ERR("failed to create accounting context!\n");
 			return -1;
 		}
-
-		ACC_PUT_CTX(ctx);
 	}
 
 	if (ctx->leg_values == NULL) {
@@ -320,8 +359,7 @@ int pv_parse_acc_leg_name(pv_spec_p sp, str *in)
    str_trim_spaces_lr(*in);
 
    for (idx=0; idx<leg_tgs_len; idx++) {
-	   if (in->len == leg_tags[idx].len &&
-			   !memcmp(in->s, leg_tags[idx].s, leg_tags[idx].len)) {
+		if (!str_strcmp(in, &leg_tags[idx])) {
 		   sp->pvp.pvn.u.isname.name.n = idx;
 		   return 0;
 	   }
@@ -347,8 +385,6 @@ int pv_get_acc_leg(struct sip_msg *msg, pv_param_t *param,
 			LM_ERR("failed to create accounting context!\n");
 			return -1;
 		}
-
-		ACC_PUT_CTX(ctx);
 	}
 
 	if (ctx->leg_values == NULL) {
@@ -382,7 +418,7 @@ int pv_get_acc_leg(struct sip_msg *msg, pv_param_t *param,
 	}
 
 	if (leg_idx >= ctx->legs_no) {
-		LM_ERR("there aren't that many legs!\n");
+		LM_ERR("bad $acc_leg index: %d\n", leg_idx);
 		return -1;
 	}
 
@@ -431,8 +467,6 @@ int pv_set_acc_leg(struct sip_msg *msg, pv_param_t *param, int flag,
 			LM_ERR("failed to create accounting context!\n");
 			return -1;
 		}
-
-		ACC_PUT_CTX(ctx);
 	}
 
 	if (ctx->leg_values == NULL) {

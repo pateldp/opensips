@@ -1,12 +1,4 @@
 Event (based) Routing Module
-
-Bogdan-Andrei Iancu
-
-Edited by
-
-Bogdan-Andrei Iancu
-
-   Copyright © 2017 OpenSIPS Solutions
      __________________________________________________________
 
    Table of Contents
@@ -39,6 +31,21 @@ Bogdan-Andrei Iancu
         2.1.
 
    3. Frequently Asked Questions
+   4. Contributors
+
+        4.1. By Commit Statistics
+        4.2. By Commit Activity
+
+   5. Documentation
+
+        5.1. Contributors
+
+   List of Tables
+
+   4.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   4.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -142,23 +149,24 @@ Chapter 1. Admin Guide
    This function can be used from REQUEST_ROUTE.
 
    Parameters:
-     * event -the name of the Event to subscribe for
-     * filter - a AVP variable holding (as multi value array) all
-       the filters to be applied on the event (before
+     * event (string) -the name of the Event to subscribe for
+     * filter (var) - a AVP variable holding (as multi value
+       array) all the filters to be applied on the event (before
        notification). The filter value has the format "key=value"
        where the "key" must match an attribute name of the Event.
        The "value" is the desired value for the attribute; it may
        be a shell wildcard pattern. Ex: "aor=bob@*"
-     * route -the name of the script route to be executed upon
-       Event notification
-     * timeout - for how long the subscription is active before
-       expiring (integer in seconds). Note: during its lifetime, a
-       subscription may be notified several or zero times.
+     * route (string) -the name of the script route to be executed
+       upon Event notification
+     * timeout (int) - for how long the subscription is active
+       before expiring (integer in seconds). Note: during its
+       lifetime, a subscription may be notified several or zero
+       times.
 
    Example 1.1. notify_on_event() usage
 ...
 $avp(filter) = "aor=*@opensips.org"
-notify_on_event("E_UL_AOR_INSERT","$avp(filter)","reg_done","60");
+notify_on_event("E_UL_AOR_INSERT",$avp(filter),"reg_done",60);
 ...
 route[reg_done] {
         xlog("a new user $avp(aor) registered with opensips.org domain\n
@@ -181,8 +189,8 @@ route[reg_done] {
 ...
 # wait for callee to register
 $avp(filter) = "aor="+$rU+"@"+$rd
-async( wait_for_event("E_UL_AOR_INSERT","$avp(filter)", "40"),  resume_c
-all);
+async( wait_for_event("E_UL_AOR_INSERT",$avp(filter), 40),  resume_call)
+;
 # done
 ...
 route[resume_call] {
@@ -224,8 +232,8 @@ route[route_to_user] {
     # subscribe to new contact registration event,
     # but for our callee only
     $avp(filter) = "aor="+$rU;
-    notify_on_event("E_UL_CONTACT_INSERT","$avp(filter)",
-        "fork_call", "20");
+    notify_on_event("E_UL_CONTACT_INSERT",$avp(filter),
+        "fork_call", 20);
 
     # fetch already registered contacts and relay if any
     if (lookup("location"))
@@ -240,7 +248,7 @@ route[route_to_user] {
 
 route[fork_call]
 {
-    xlog("user $avp(aor) registered the a new "
+    xlog("user $avp(aor) registered a new "
         "contact $avp(uri), injecting\n");
     # take the contact described by the E_UL_CONTACT_INSERT
     # event and inject it as a new branch into the original
@@ -275,7 +283,7 @@ route[handle_call]
         # reject incoming call as we will generate an back call
         # from the original call (Alice to Bob)
         t_newtran();
-        send_reply("480","Gone");
+        send_reply(480,"Gone");
 
         # raise the pickup custom event
         # with pickup group 1 and picker being Charlie (caller)
@@ -293,7 +301,7 @@ route[handle_call]
 
         # apply user location
         if (!lookup("location","m")) {
-            send_reply("404", "Not Found");
+            send_reply(404, "Not Found");
             exit;
         }
 
@@ -305,8 +313,8 @@ route[handle_call]
 
         # subscribe to a call pickup event, but for our group only
         $avp(filter) = "group=1";
-        notify_on_event("E_CALL_PICKUP","$avp(filter)",
-            "handle_pickup", "20");
+        notify_on_event("E_CALL_PICKUP",$avp(filter),
+            "handle_pickup", 20);
 
         t_relay();
     }
@@ -316,7 +324,7 @@ route[handle_call]
 route[handle_pickup]
 {
     xlog("call picked by $avp(picker), fetching its contacts\n");
-    if (lookup("location","", "$avp(picker)")) {
+    if (lookup("location","", $avp(picker))) {
         # take the contacts retured by lookup() (for Charlie)
         # and inject them into the original call, but also cancel
         # any existing ongoing branch (ringing to Bob)
@@ -332,31 +340,87 @@ Chapter 3. Frequently Asked Questions
 
    3.1.
 
-   Where can I find more about OpenSIPS?
+       Where can I find more about OpenSIPS?
 
-   Take a look at http://www.opensips.org/.
+       Take a look at http://www.opensips.org/.
 
    3.2.
 
-   Where can I post a question about this module?
+       Where can I post a question about this module?
 
-   First at all check if your question was already answered on one
-   of our mailing lists:
-     * User Mailing List -
-       http://lists.opensips.org/cgi-bin/mailman/listinfo/users
-     * Developer Mailing List -
-       http://lists.opensips.org/cgi-bin/mailman/listinfo/devel
+       First at all check if your question was already answered on one
+       of our mailing lists:
+         * User Mailing List -
+           http://lists.opensips.org/cgi-bin/mailman/listinfo/users
+         * Developer Mailing List -
+           http://lists.opensips.org/cgi-bin/mailman/listinfo/devel
 
-   E-mails regarding any stable OpenSIPS release should be sent to
-   <users@lists.opensips.org> and e-mails regarding development
-   versions should be sent to <devel@lists.opensips.org>.
+       E-mails regarding any stable OpenSIPS release should be sent to
+       <users@lists.opensips.org> and e-mails regarding development
+       versions should be sent to <devel@lists.opensips.org>.
 
-   If you want to keep the mail private, send it to
-   <users@lists.opensips.org>.
+       If you want to keep the mail private, send it to
+       <users@lists.opensips.org>.
 
    3.3.
 
-   How can I report a bug?
+       How can I report a bug?
 
-   Please follow the guidelines provided at:
-   https://github.com/OpenSIPS/opensips/issues.
+       Please follow the guidelines provided at:
+       https://github.com/OpenSIPS/opensips/issues.
+
+Chapter 4. Contributors
+
+4.1. By Commit Statistics
+
+   Table 4.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Bogdan-Andrei Iancu (@bogdan-iancu) 20 6 1619 14
+   2. Liviu Chircu (@liviuchircu) 10 8 23 36
+   3. Vlad Patrascu (@rvlad-patrascu) 8 4 71 144
+   4. Fabian Gast (@fgast) 4 2 27 7
+   5. Razvan Crainea (@razvancrainea) 4 2 5 3
+   6. Peter Lemenkov (@lemenkov) 3 1 1 1
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+4.2. By Commit Activity
+
+   Table 4.2. Most recently active contributors^(1) to this module
+                     Name                   Commit Activity
+   1. Razvan Crainea (@razvancrainea)     Apr 2017 - May 2019
+   2. Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   3. Bogdan-Andrei Iancu (@bogdan-iancu) Mar 2017 - Apr 2019
+   4. Fabian Gast (@fgast)                Nov 2018 - Dec 2018
+   5. Liviu Chircu (@liviuchircu)         Sep 2017 - Oct 2018
+   6. Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 5. Documentation
+
+5.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Fabian Gast
+   (@fgast), Peter Lemenkov (@lemenkov), Liviu Chircu
+   (@liviuchircu), Bogdan-Andrei Iancu (@bogdan-iancu).
+
+   Documentation Copyrights:
+
+   Copyright © 2017 www.opensips-solutions.com

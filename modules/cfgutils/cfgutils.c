@@ -73,44 +73,48 @@
 #define FIFO_GET_HASH   "get_config_hash"
 #define FIFO_CHECK_HASH "check_config_hash"
 
+static int fixup_check_pv_setf(void **param);
+static int fixup_str(void **param);
+static int fixup_free_str(void **param);
 
-static int set_prob(struct sip_msg*, char *, char *);
-static int reset_prob(struct sip_msg*, char *, char *);
-static int get_prob(struct sip_msg*, char *, char *);
-static int rand_event(struct sip_msg*, char *, char *);
-static int m_sleep(struct sip_msg*, char *, char *);
-static int m_usleep(struct sip_msg*, char *, char *);
-static int dbg_abort(struct sip_msg*, char*,char*);
-static int dbg_pkg_status(struct sip_msg*, char*,char*);
-static int dbg_shm_status(struct sip_msg*, char*,char*);
-static int pv_set_count(struct sip_msg*, char*,char*);
-static int pv_sel_weight(struct sip_msg*, char*,char*);
+static int set_prob(struct sip_msg *bar, int *percent_par);
+static int reset_prob(struct sip_msg*);
+static int get_prob(struct sip_msg*);
+static int rand_event(struct sip_msg *bar, int *prob_param);
+static int m_sleep(struct sip_msg *msg, int *seconds);
+static int m_usleep(struct sip_msg*, int *);
+static int dbg_abort(struct sip_msg*);
+static int dbg_pkg_status(struct sip_msg*);
+static int dbg_shm_status(struct sip_msg*);
+static int pv_set_count(struct sip_msg* msg,
+					pv_spec_t *pv_name, pv_spec_t *pv_result);
+static int pv_sel_weight(struct sip_msg* msg, pv_spec_t *pv_name);
 
-static struct mi_root* mi_set_prob(struct mi_root* cmd, void* param );
-static struct mi_root* mi_reset_prob(struct mi_root* cmd, void* param );
-static struct mi_root* mi_get_prob(struct mi_root* cmd, void* param );
-static struct mi_root* mi_get_hash(struct mi_root* cmd, void* param );
-static struct mi_root* mi_check_hash(struct mi_root* cmd, void* param );
+mi_response_t *mi_set_prob(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *mi_reset_prob(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *mi_get_prob(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *mi_get_hash(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *mi_check_hash(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 
 static int pv_get_random_val(struct sip_msg *msg, pv_param_t *param,
 		pv_value_t *res);
 
-static int ts_usec_delta(struct sip_msg *msg, char *_t1s,
-		char *_t1u, char *_t2s, char *_t2u, char *_res);
-static int check_time_rec(struct sip_msg*, char *);
+static int ts_usec_delta(struct sip_msg *msg, int *t1s,
+		int *t1u, int *t2s, int *t2u, pv_spec_t *_res);
+int check_time_rec(struct sip_msg *msg, str *time_str);
 
 #ifdef HAVE_TIMER_FD
 static int async_sleep(struct sip_msg* msg,
-		async_ctx *ctx, char *duration);
+		async_ctx *ctx, int *seconds);
 
 static int async_usleep(struct sip_msg* msg,
-		async_ctx *ctx, char *duration);
+		async_ctx *ctx, int *duration);
 #endif
-
-static int fixup_prob( void** param, int param_no);
-static int fixup_pv_set(void** param, int param_no);
-static int fixup_rand_event(void** param, int param_no);
-static int fixup_delta(void** param, int param_no);
 
 static int mod_init(void);
 static void mod_destroy(void);
@@ -123,79 +127,92 @@ static char* hash_file = NULL;
 
 int lock_pool_size = 32;
 
+
 static cmd_export_t cmds[]={
-	{"rand_set_prob", /* action name as in scripts */
-		(cmd_function)set_prob,  /* C function name */
-		1,          /* number of parameters */
-		fixup_prob, 0,         /* */
-		/* can be applied to original/failed requests and replies */
+	{"rand_set_prob", (cmd_function)set_prob, {
+		{CMD_PARAM_INT, 0, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"rand_reset_prob", (cmd_function)reset_prob, 0, 0, 0,
+	{"rand_reset_prob", (cmd_function)reset_prob, {{0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"rand_get_prob",   (cmd_function)get_prob,   0, 0, 0,
+	{"rand_get_prob", (cmd_function)get_prob, {{0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"rand_event",      (cmd_function)rand_event, 0, 0, 0,
+	{"rand_event", (cmd_function)rand_event, {
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"rand_event",      (cmd_function)rand_event, 1, fixup_rand_event, 0,
+	{"sleep", (cmd_function)m_sleep, {
+		{CMD_PARAM_INT, 0, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"sleep",  (cmd_function)m_sleep,  1, fixup_spve_null, 0,
+	{"usleep", (cmd_function)m_usleep, {
+		{CMD_PARAM_INT, 0, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"usleep", (cmd_function)m_usleep, 1, fixup_spve_null, 0,
+	{"abort", (cmd_function)dbg_abort, {{0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"abort",      (cmd_function)dbg_abort,        0, 0, 0,
+	{"pkg_status", (cmd_function)dbg_pkg_status, {{0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"pkg_status", (cmd_function)dbg_pkg_status,   0, 0, 0,
+	{"shm_status", (cmd_function)dbg_shm_status, {{0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"shm_status", (cmd_function)dbg_shm_status,   0, 0, 0,
+	{"set_count",  (cmd_function)pv_set_count, {
+		{CMD_PARAM_VAR, 0, 0},
+		{CMD_PARAM_VAR, 0, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"set_count",  (cmd_function)pv_set_count,       2, fixup_pv_set, 0,
+	{"set_select_weight",(cmd_function)pv_sel_weight, {
+		{CMD_PARAM_VAR, 0, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"set_select_weight",(cmd_function)pv_sel_weight,1, fixup_pv_set, 0,
+	{"ts_usec_delta", (cmd_function)ts_usec_delta, {
+		{CMD_PARAM_INT, 0, 0},
+		{CMD_PARAM_INT, 0, 0},
+		{CMD_PARAM_INT, 0, 0},
+		{CMD_PARAM_INT, 0, 0},
+		{CMD_PARAM_VAR, fixup_check_pv_setf, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"ts_usec_delta", (cmd_function)ts_usec_delta, 5, fixup_delta, 0,
+	{"get_static_lock",(cmd_function)get_static_lock, {
+		{CMD_PARAM_STR, fixup_static_lock, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"get_static_lock",(cmd_function)get_static_lock, 1, fixup_static_lock, 0,
+	{"check_time_rec", (cmd_function)check_time_rec, {
+		{CMD_PARAM_STR, fixup_str, fixup_free_str}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"check_time_rec", (cmd_function)check_time_rec, 1, fixup_sgp_null, 0,
+	{"release_static_lock",(cmd_function)release_static_lock, {
+		{CMD_PARAM_STR, fixup_static_lock, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"release_static_lock",(cmd_function)release_static_lock, 1,
-		fixup_static_lock, 0, REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|
-		BRANCH_ROUTE|LOCAL_ROUTE|STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"get_dynamic_lock",(cmd_function)get_dynamic_lock, 1, fixup_sgp_null, 0,
+	{"get_dynamic_lock",(cmd_function)get_dynamic_lock, {
+		{CMD_PARAM_STR, 0, 0}, {0,0,0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
 		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"release_dynamic_lock",(cmd_function)release_dynamic_lock, 1,
-		fixup_sgp_null, 0, REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|
-		BRANCH_ROUTE|LOCAL_ROUTE|STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"strings_share_lock",(cmd_function)strings_share_lock, 2,
-		fixup_sgp_sgp, 0, REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|
-		BRANCH_ROUTE|LOCAL_ROUTE|STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{0, 0, 0, 0, 0, 0}
+	{"release_dynamic_lock",(cmd_function)release_dynamic_lock, {
+		{CMD_PARAM_STR, 0, 0}, {0,0,0}},
+		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
+		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
+	{"strings_share_lock",(cmd_function)strings_share_lock, {
+		{CMD_PARAM_STR, 0, 0}, {0,0,0}},
+		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|
+		STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
+	{0,0,{{0,0,0}},0}
 };
 
 static acmd_export_t acmds[] = {
 #ifdef HAVE_TIMER_FD
-	{"sleep",  (acmd_function)async_sleep,  1, fixup_spve_null },
-	{"usleep", (acmd_function)async_usleep, 1, fixup_spve_null },
+	{"sleep", (acmd_function)async_sleep, {
+		{CMD_PARAM_INT, 0, 0}, {0,0,0}}},
+	{"usleep", (acmd_function)async_usleep, {
+		{CMD_PARAM_INT, 0, 0}, {0,0,0}}},
 #endif
-	{0, 0, 0, 0}
+	{0,0,{{0,0,0}}}
 };
-
 
 
 static param_export_t params[]={
@@ -208,14 +225,36 @@ static param_export_t params[]={
 };
 
 static mi_export_t mi_cmds[] = {
-	{ FIFO_SET_PROB,   0, mi_set_prob,   0,                 0,  0 },
-	{ FIFO_RESET_PROB, 0, mi_reset_prob, MI_NO_INPUT_FLAG,  0,  0 },
-	{ FIFO_GET_PROB,   0, mi_get_prob,   MI_NO_INPUT_FLAG,  0,  0 },
-	{ FIFO_GET_HASH,   0, mi_get_hash,   MI_NO_INPUT_FLAG,  0,  0 },
-	{ FIFO_CHECK_HASH, 0, mi_check_hash, MI_NO_INPUT_FLAG,  0,  0 },
-	{ "shv_get",       0, mi_shvar_get,  0,                 0,  0 },
-	{ "shv_set" ,      0, mi_shvar_set,  0,                 0,  0 },
-	{ 0, 0, 0, 0, 0, 0}
+	{ FIFO_SET_PROB, 0, 0, 0, {
+		{mi_set_prob, {"prob_proc", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ FIFO_RESET_PROB, 0, 0, 0, {
+		{mi_reset_prob, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ FIFO_GET_PROB, 0, 0, 0, {
+		{mi_get_prob, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ FIFO_GET_HASH, 0, 0, 0, {
+		{mi_get_hash, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ FIFO_CHECK_HASH, 0, 0, 0, {
+		{mi_check_hash, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ "shv_get", 0, 0, 0, {
+		{mi_shvar_get, {0}},
+		{mi_shvar_get_1, {"name", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ "shv_set", 0, 0, 0, {
+		{mi_shvar_set, {"name", "type", "value", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
 
 static pv_export_t mod_items[] = {
@@ -236,6 +275,7 @@ struct module_exports exports = {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,  /* module version */
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	cmds,        /* exported functions */
 	acmds,       /* exported async functions */
@@ -248,218 +288,157 @@ struct module_exports exports = {
 	mod_init,    /* module initialization function */
 	0,           /* response function*/
 	mod_destroy, /* destroy function */
-	0            /* per-child init function */
+	0,           /* per-child init function */
+	0            /* reload confirm function */
 };
 
 
 /**************************** fixup functions ******************************/
-static int fixup_prob( void** param, int param_no)
+
+static int fixup_check_pv_setf(void **param)
 {
-	unsigned int myint = 0;
-	str param_str;
-
-	/* we only fix the parameter #1 */
-	if (param_no!=1)
-		return 0;
-
-	param_str.s=(char*) *param;
-	param_str.len=strlen(param_str.s);
-	if (str2int(&param_str, &myint) < 0 || myint > 100) {
-		LM_ERR("invalid probability <%d>\n", myint);
-		return E_CFG;
+	if (((pv_spec_t*)*param)->setf == 0) {
+		LM_ERR("invalid pvar\n");
+		return E_SCRIPT;
 	}
 
-	pkg_free(*param);
-	*param=(void *)(long)myint;
 	return 0;
 }
 
-static int fixup_delta( void **param, int param_no)
+static int fixup_str(void **param)
 {
-	if (param_no < 5) {
-		return fixup_igp(param);
-	} else if (param_no == 5) {
-		if (fixup_pvar(param) < 0 && ((pv_spec_p)*param)->setf == 0) {
-			LM_ERR("invalid pvar\n");
-			return E_SCRIPT;
-		}
-		return 0;
-	 } else {
-		 return E_UNSPEC;
-	 }
+	str *s;
+
+	s = pkg_malloc(sizeof *s);
+	if (!s) {
+		LM_ERR("no more pkg mem\n");
+		return E_OUT_OF_MEM;
+	}
+
+	if (pkg_nt_str_dup(s, (str*)*param) < 0)
+		return E_OUT_OF_MEM;
+
+	*param = s;
+
+	return 0;
 }
 
+static int fixup_free_str(void **param)
+{
+	pkg_free(*param);
+
+	return 0;
+}
 
 /************************** module functions **********************************/
 
-static struct mi_root* mi_set_prob(struct mi_root* cmd, void* param )
+mi_response_t *mi_set_prob(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	unsigned int percent;
-	struct mi_node* node;
+	int percent;
 
-	node = cmd->node.kids;
-	if(node == NULL)
-		return init_mi_tree( 400, MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
+	if (get_mi_int_param(params, "prob_proc", &percent) < 0)
+		return init_mi_param_error();
 
-	if( str2int( &node->value, &percent) <0)
-		goto error;
 	if (percent > 100) {
 		LM_ERR("incorrect probability <%u>\n", percent);
-		goto error;
+		return init_mi_error(400, MI_SSTR("Bad parameter value"));
 	}
-	*probability = percent;
-	return init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
 
-error:
-	return init_mi_tree( 400, MI_BAD_PARM_S, MI_BAD_PARM_LEN);
+	*probability = percent;
+
+	return init_mi_result_ok();
 }
 
-static struct mi_root* mi_reset_prob(struct mi_root* cmd, void* param )
+mi_response_t *mi_reset_prob(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
 
 	*probability = initial;
-	return init_mi_tree( 200, MI_OK_S, MI_OK_LEN );
+	return init_mi_result_ok();
 }
 
-static struct mi_root* mi_get_prob(struct mi_root* cmd, void* param )
+mi_response_t *mi_get_prob(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root* rpl_tree= NULL;
-	struct mi_node* node= NULL;
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN );
-	if(rpl_tree == NULL)
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
 		return 0;
-	node = addf_mi_node_child( &rpl_tree->node, 0, 0, 0, "actual probability: %u percent\n",(*probability));
-	if(node == NULL)
-		goto error;
+	if (add_mi_number(resp_obj, MI_SSTR("actual probability percent"),
+		*probability) < 0) {
+		free_mi_response(resp);
+		return 0;
+	}
 
-	return rpl_tree;
-
-error:
-	free_mi_tree(rpl_tree);
-	return 0;
+	return resp;
 }
 
-static struct mi_root* mi_get_hash(struct mi_root* cmd, void* param )
+mi_response_t *mi_get_hash(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root* rpl_tree= NULL;
-	struct mi_node* node= NULL;
-
 	if (!hash_file) {
 		LM_INFO("no hash_file given, disable hash functionality\n");
-		rpl_tree = init_mi_tree(404, "Functionality disabled\n", 23);
+		return init_mi_error(404, MI_SSTR("Functionality disabled"));
 	} else {
-		rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN );
-		if(rpl_tree == NULL)
-			return 0;
-		node = addf_mi_node_child( &rpl_tree->node, 0, 0, 0, "%.*s\n", MD5_LEN, config_hash);
-		if(node == NULL)
-			goto error;
+		return init_mi_result_string(config_hash, MD5_LEN);
 	}
-	return rpl_tree;
-
-error:
-	free_mi_tree(rpl_tree);
-	return 0;
 }
 
-static struct mi_root* mi_check_hash(struct mi_root* cmd, void* param )
+mi_response_t *mi_check_hash(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root* rpl_tree= NULL;
-	struct mi_node* node= NULL;
 	char tmp[MD5_LEN];
 	memset(tmp, 0, MD5_LEN);
 
 	if (!hash_file) {
 		LM_INFO("no hash_file given, disable hash functionality\n");
-		rpl_tree = init_mi_tree(404, "Functionality disabled\n", 23);
+		return init_mi_error(404, MI_SSTR("Functionality disabled"));
 	} else {
 		if (MD5File(tmp, hash_file) != 0) {
 			LM_ERR("could not hash the config file");
-			rpl_tree = init_mi_tree( 500, MI_INTERNAL_ERR_S, MI_INTERNAL_ERR_LEN );
+			return init_mi_error(500, MI_SSTR("Internal error"));
 		}
 
-		if (strncmp(config_hash, tmp, MD5_LEN) == 0) {
-			rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN );
-			if(rpl_tree == NULL)
-				return 0;
-			node = addf_mi_node_child( &rpl_tree->node, 0, 0, 0, "The actual config file hash is identical to the stored one.\n");
-		} else {
-			rpl_tree = init_mi_tree( 400, "Error", 5 );
-			if(rpl_tree == NULL)
-				return 0;
-			node = addf_mi_node_child( &rpl_tree->node, 0, 0, 0, "The actual config file hash is not identical to the stored one.\n");
-		}
-		if(node == NULL)
-			goto error;
+		if (strncmp(config_hash, tmp, MD5_LEN) == 0)
+			return init_mi_result_string(MI_SSTR("The actual config file hash "
+				"is identical to the stored one."));
+		else
+			return init_mi_error(400, MI_SSTR("The actual config file hash is not "
+				"identical to the stored one.")); 
 	}
-
-	return rpl_tree;
-
-error:
-	free_mi_tree(rpl_tree);
-	return 0;
 }
 
-static int set_prob(struct sip_msg *bar, char *percent_par, char *foo)
+static int set_prob(struct sip_msg *bar, int *percent_par)
 {
-	*probability=(int)(long)percent_par;
+	*probability=*percent_par;
 	return 1;
 }
 
-static int reset_prob(struct sip_msg *bar, char *percent_par, char *foo)
+static int reset_prob(struct sip_msg *bar)
 {
 	*probability=initial;
 	return 1;
 }
 
-static int get_prob(struct sip_msg *bar, char *foo1, char *foo2)
+static int get_prob(struct sip_msg *bar)
 {
 	return *probability;
 }
 
-static int fixup_rand_event(void** param, int param_no)
-{
-	pv_elem_t *model;
-	str s;
 
-	if(param_no== 0)
-		return 0;
-
-	if(*param)
-	{
-		s.s = (char*)(*param); s.len = strlen(s.s);
-		if(pv_parse_format(&s, &model)<0)
-		{
-			LM_ERR( "wrong format[%s]\n",(char*)(*param));
-			return E_UNSPEC;
-		}
-		*param = (void*)model;
-		return 0;
-	}
-	LM_ERR( "null format\n");
-	return E_UNSPEC;
-}
-
-static int rand_event(struct sip_msg *bar, char *prob_param, char *foo2)
+static int rand_event(struct sip_msg *bar, int *prob_param)
 {
 	double tmp = ((double) rand() / RAND_MAX);
 	int prob = *probability;
-	str pr;
 
 	LM_DBG("generated random %f\n", tmp);
 	LM_DBG("my pid is %d\n", getpid());
 
 	if (prob_param) {
-		if (((pv_elem_p)prob_param)->spec.getf!=NULL) {
-			if(pv_printf_s(bar, (pv_elem_p)prob_param, &pr)!=0 || pr.len <=0)
-				return -1;
-		} else {
-			pr = ((pv_elem_p)prob_param)->text;
-		}
-		if (str2sint(&pr, &prob) < 0) {
-			LM_ERR("invalid probability <%.*s>\n", pr.len, pr.s);
-			return -1;
-		}
+		prob = *prob_param;
 		LM_DBG("new probability is %d\n", prob);
 	}
 
@@ -495,38 +474,20 @@ static int pv_get_random_val(struct sip_msg *msg, pv_param_t *param,
 	return 0;
 }
 
-static int m_sleep(struct sip_msg *msg, char *time, char *str2)
+static int m_sleep(struct sip_msg *msg, int *seconds)
 {
-	str time_s={NULL,0};
-	long seconds;
+	LM_DBG("sleep %d\n", *(unsigned int*)seconds);
 
-	if(time == NULL || fixup_get_svalue(msg, (gparam_p)time, &time_s)!=0) {
-		LM_ERR("Invalid time argument\n");
-		return -1;
-	}
-
-	seconds = atol(time_s.s);
-	LM_DBG("sleep %d\n", (unsigned int)seconds);
-
-	sleep((unsigned int)seconds);
+	sleep(*(unsigned int*)seconds);
 
 	return 1;
 }
 
-static int m_usleep(struct sip_msg *msg, char *time, char *str2)
+static int m_usleep(struct sip_msg *msg, int *useconds)
 {
-	str time_s= { NULL, 0 };
-	long useconds;
+	LM_DBG("sleep %d\n", *(unsigned int*)useconds);
 
-	if(time == NULL || fixup_get_svalue(msg, (gparam_p)time, &time_s) != 0) {
-		LM_ERR("Invalid useconds argument.\n");
-		return -1;
-	}
-
-	useconds = atol(time_s.s);
-	LM_DBG("sleep %d\n", (unsigned int)useconds);
-
-	sleep_us((unsigned int)useconds);
+	sleep_us(*(unsigned int*)useconds);
 
 	return 1;
 }
@@ -550,24 +511,12 @@ int resume_async_sleep(int fd, struct sip_msg *msg, void *param)
 }
 
 
-static int async_sleep(struct sip_msg* msg, async_ctx *ctx, char *time)
+static int async_sleep(struct sip_msg* msg, async_ctx *ctx, int *seconds)
 {
-	str time_s={NULL,0};
-	unsigned int seconds;
 	struct itimerspec its;
 	int fd;
 
-	if(time == NULL || fixup_get_svalue(msg, (gparam_p)time, &time_s)!=0) {
-		LM_ERR("Invalid time argument\n");
-		return -1;
-	}
-
-	if ( str2int( &time_s, &seconds) != 0 ) {
-		LM_ERR("time to sleep <%.*s> is not integer\n",
-			time_s.len,time_s.s);
-		return -1;
-	}
-	LM_DBG("sleep %d seconds\n", seconds);
+	LM_DBG("sleep %d seconds\n", *(unsigned int*)seconds);
 
 	/* create the timer fd */
 	if ( (fd=timerfd_create( CLOCK_REALTIME, 0))<0 ) {
@@ -577,7 +526,7 @@ static int async_sleep(struct sip_msg* msg, async_ctx *ctx, char *time)
 	}
 
 	/* set the time */
-	its.it_value.tv_sec = seconds;
+	its.it_value.tv_sec = *(unsigned int*)seconds;
 	its.it_value.tv_nsec = 0;
 	its.it_interval.tv_sec = 0;
 	its.it_interval.tv_nsec = 0;
@@ -589,7 +538,7 @@ static int async_sleep(struct sip_msg* msg, async_ctx *ctx, char *time)
 
 	/* start the async wait */
 	ctx->resume_param = (void*)(unsigned long)
-		(((unsigned long)-1) & (get_uticks()+1000000*seconds));
+		(((unsigned long)-1) & (get_uticks()+1000000*(*(unsigned int*)seconds)));
 	ctx->resume_f = resume_async_sleep;
 	async_status = fd;
 
@@ -597,24 +546,12 @@ static int async_sleep(struct sip_msg* msg, async_ctx *ctx, char *time)
 }
 
 
-static int async_usleep(struct sip_msg* msg, async_ctx *ctx, char *time)
+static int async_usleep(struct sip_msg* msg, async_ctx *ctx, int *useconds)
 {
-	str time_s={NULL,0};
-	unsigned int useconds;
 	struct itimerspec its;
 	int fd;
 
-	if(time == NULL || fixup_get_svalue(msg, (gparam_p)time, &time_s)!=0) {
-		LM_ERR("Invalid time argument\n");
-		return -1;
-	}
-
-	if ( str2int( &time_s, &useconds) != 0 ) {
-		LM_ERR("time to sleep <%.*s> is not integer\n",
-			time_s.len,time_s.s);
-		return -1;
-	}
-	LM_DBG("sleep %d useconds\n", useconds);
+	LM_DBG("sleep %d useconds\n", *(unsigned int *)useconds);
 
 	/* create the timer fd */
 	if ( (fd=timerfd_create( CLOCK_REALTIME, 0))<0 ) {
@@ -624,8 +561,8 @@ static int async_usleep(struct sip_msg* msg, async_ctx *ctx, char *time)
 	}
 
 	/* set the time */
-	its.it_value.tv_sec = (useconds / 1000000);
-	its.it_value.tv_nsec = (useconds % 1000000) * 1000;
+	its.it_value.tv_sec = (*(unsigned int *)useconds / 1000000);
+	its.it_value.tv_nsec = (*(unsigned int *)useconds % 1000000) * 1000;
 	its.it_interval.tv_sec = 0;
 	its.it_interval.tv_nsec = 0;
 	if (timerfd_settime( fd, 0, &its, NULL)<0) {
@@ -636,7 +573,7 @@ static int async_usleep(struct sip_msg* msg, async_ctx *ctx, char *time)
 
 	/* start the async wait */
 	ctx->resume_param = (void*)(unsigned long)
-		(((unsigned long)-1) & (get_uticks()+useconds));
+		(((unsigned long)-1) & (get_uticks()+*(unsigned int *)useconds));
 	ctx->resume_f = resume_async_sleep;
 	async_status = fd;
 
@@ -645,20 +582,20 @@ static int async_usleep(struct sip_msg* msg, async_ctx *ctx, char *time)
 #endif
 
 
-static int dbg_abort(struct sip_msg* msg, char* foo, char* bar)
+static int dbg_abort(struct sip_msg* msg)
 {
 	LM_CRIT("abort called\n");
 	abort();
 	return 0;
 }
 
-static int dbg_pkg_status(struct sip_msg* msg, char* foo, char* bar)
+static int dbg_pkg_status(struct sip_msg* msg)
 {
 	pkg_status();
 	return 1;
 }
 
-static int dbg_shm_status(struct sip_msg* msg, char* foo, char* bar)
+static int dbg_shm_status(struct sip_msg* msg)
 {
 	shm_status();
 	return 1;
@@ -670,7 +607,7 @@ static int mod_init(void)
 		LM_INFO("no hash_file given, disable hash functionality\n");
 	} else {
 		if (MD5File(config_hash, hash_file) != 0) {
-			LM_ERR("could not hash the config file");
+			LM_ERR("could not hash the config file\n");
 			return -1;
 		}
 		LM_DBG("config file hash is %.*s", MD5_LEN, config_hash);
@@ -716,60 +653,30 @@ static void mod_destroy(void)
 	destroy_script_locks();
 }
 
-static int fixup_pv_set(void** param, int param_no)
+
+static int pv_set_count(struct sip_msg* msg, pv_spec_t *pv_name, pv_spec_t *pv_result)
 {
-	pv_elem_t *model;
-	str s;
-
-	if((*param == 0) || (param_no!=1 && param_no!=2))
-	{
-		LM_ERR( "NULL format\n");
-		return E_UNSPEC;
-	}
-
-	s.s = (char*)(*param); s.len = strlen(s.s);
-	if(pv_parse_format(&s, &model)<0)
-	{
-		LM_ERR( "wrong format[%s]\n",(char*)(*param));
-		return E_UNSPEC;
-	}
-
-	*param = (void*)model;
-
-	return 0;
-}
-
-
-static int pv_set_count(struct sip_msg* msg, char* pv_name, char* pv_result)
-{
-	pv_elem_t* pv_elem = (pv_elem_t*)pv_name;
-	pv_elem_t* pv_res = (pv_elem_t*)pv_result;
 	pv_value_t pv_val;
 
-	if(pv_elem == NULL || pv_res == NULL)
-	{
-		LM_ERR("NULL parameter\n");
-		return -1;
-	}
 	memset(&pv_val, 0, sizeof(pv_value_t));
 
-	pv_elem->spec.pvp.pvi.type = PV_IDX_INT;
-	pv_elem->spec.pvp.pvi.u.ival = 0;
+	pv_name->pvp.pvi.type = PV_IDX_INT;
+	pv_name->pvp.pvi.u.ival = 0;
 
 	while(pv_val.flags != PV_VAL_NULL)
 	{
-		if(pv_get_spec_value(msg, &pv_elem->spec, &pv_val) < 0)
+		if(pv_get_spec_value(msg, pv_name, &pv_val) < 0)
 		{
 			LM_ERR("PV get function failed\n");
 			return -1;
 		}
-		pv_elem->spec.pvp.pvi.u.ival++;
+		pv_name->pvp.pvi.u.ival++;
 	}
 
 	pv_val.flags = PV_TYPE_INT;
-	pv_val.ri = pv_elem->spec.pvp.pvi.u.ival-1;
+	pv_val.ri = pv_name->pvp.pvi.u.ival-1;
 
-	if (pv_set_value( msg, &pv_res->spec, 0, &pv_val) != 0)
+	if (pv_set_value( msg, pv_result, 0, &pv_val) != 0)
 	{
 		LM_ERR("SET output value failed.\n");
 		return -1;
@@ -781,31 +688,24 @@ static int pv_set_count(struct sip_msg* msg, char* pv_name, char* pv_result)
 
 /* This function does selection based on the
  * fitness proportionate selection also known as roulette-wheel selection*/
-static int pv_sel_weight(struct sip_msg* msg, char* pv_name,char* str2)
+static int pv_sel_weight(struct sip_msg* msg, pv_spec_t *pv_name)
 {
 	int size;
 	int *vals = NULL;
 	int sum = 0;
 	int rnd_val;
 	int prev_val;
-	pv_elem_t* pv_elem = (pv_elem_t*)pv_name;
 	pv_value_t pv_val;
 	int i;
 
-	/* check the value type - it must be int */
-	if(pv_elem == NULL)
-	{
-		LM_ERR("NULL parameter\n");
-		return -1;
-	}
 	memset(&pv_val, 0, sizeof(pv_value_t));
 
-	pv_elem->spec.pvp.pvi.type = PV_IDX_INT;
-	pv_elem->spec.pvp.pvi.u.ival = 0;
+	pv_name->pvp.pvi.type = PV_IDX_INT;
+	pv_name->pvp.pvi.u.ival = 0;
 
 	while(pv_val.flags != PV_VAL_NULL)
 	{
-		if(pv_get_spec_value(msg, &pv_elem->spec, &pv_val) < 0)
+		if(pv_get_spec_value(msg, pv_name, &pv_val) < 0)
 		{
 			LM_ERR("PV get function failed\n");
 			return -1;
@@ -817,9 +717,9 @@ static int pv_sel_weight(struct sip_msg* msg, char* pv_name,char* str2)
 			return -1;
 		}
 
-		pv_elem->spec.pvp.pvi.u.ival++;
+		pv_name->pvp.pvi.u.ival++;
 	}
-	size = pv_elem->spec.pvp.pvi.u.ival - 1;
+	size = pv_name->pvp.pvi.u.ival - 1;
 
 	if(size <= 0)
 		return -1;
@@ -837,8 +737,8 @@ static int pv_sel_weight(struct sip_msg* msg, char* pv_name,char* str2)
 
 	for(i= 0; i< size; i++)
 	{
-		pv_elem->spec.pvp.pvi.u.ival = i;
-		if(pv_get_spec_value(msg, &pv_elem->spec, &pv_val) < 0)
+		pv_name->pvp.pvi.u.ival = i;
+		if(pv_get_spec_value(msg, pv_name, &pv_val) < 0)
 		{
 			LM_ERR("PV get function failed\n");
 			goto error;
@@ -869,29 +769,15 @@ error:
 	return -1;
 }
 
-#define GET_INT(_msg, _p, _v) \
-	do { \
-		if (!(_p) || fixup_get_ivalue((_msg), ((gparam_p)(_p)), &(_v))< 0) { \
-			LM_ERR("cannot retrieve int value\n"); \
-			return -1; \
-		} \
-	} while (0)
-
-static int ts_usec_delta(struct sip_msg *msg, char *_t1s,
-		char *_t1u, char *_t2s, char *_t2u, char *_res)
+static int ts_usec_delta(struct sip_msg *msg, int *t1s,
+		int *t1u, int *t2s, int *t2u, pv_spec_t *_res)
 {
-	int t1s, t2s, t1u, t2u;
 	pv_value_t res;
 
-	GET_INT(msg, _t1s, t1s);
-	GET_INT(msg, _t1u, t1u);
-	GET_INT(msg, _t2s, t2s);
-	GET_INT(msg, _t2u, t2u);
-
-	res.ri = abs(1000000 * (t1s - t2s) + t1u - t2u);
+	res.ri = abs(1000000 * (*t1s - *t2s) + *t1u - *t2u);
 	res.flags = PV_TYPE_INT;
 
-	if (pv_set_value(msg, (pv_spec_p)_res, 0, &res)) {
+	if (pv_set_value(msg, _res, 0, &res)) {
 		LM_ERR("cannot store result value\n");
 		return -1;
 	}
@@ -904,31 +790,21 @@ static int ts_usec_delta(struct sip_msg *msg, char *_t1s,
 			1 - match
 			-1 - otherwise
  */
-int check_time_rec(struct sip_msg *msg, char *time_str)
+int check_time_rec(struct sip_msg *msg, str *time_str)
 {
 	tmrec_p time_rec = 0;
 	char *p, *s;
-	str ret;
 	ac_tm_t att;
 
-	if (fixup_get_svalue(msg, (gparam_p)time_str, &ret) != 0) {
-		LM_ERR("Get fixup value failed!\n");
-		return E_CFG;
-	}
+	p = time_str->s;
 
-	p = ret.s;
-
-	LM_INFO("Parsing : %.*s\n", ret.len, ret.s);
+	LM_INFO("Parsing : %.*s\n", time_str->len, time_str->s);
 
 	time_rec = tmrec_new(SHM_ALLOC);
 	if (time_rec==0) {
 		LM_ERR("no more shm mem\n");
 		goto error;
 	}
-
-	/* empty definition? */
-	if ( time_str==0 || *time_str==0 )
-		return -1;
 
 	load_TR_value( p, s, time_rec, tr_parse_dtstart, parse_error, done);
 	load_TR_value( p, s, time_rec, tr_parse_dtend, parse_error, done);
@@ -965,7 +841,7 @@ done:
 
 parse_error:
 	LM_ERR("parse error in <%s> around position %i\n",
-		time_str, (int)(long)(p-time_str));
+		time_str->s, (int)(long)(p-time_str->s));
 error:
 	if (time_rec)
 		tmrec_free( time_rec );

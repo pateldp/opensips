@@ -1,16 +1,4 @@
 mangler Module
-
-Gabriel Vasile
-
-   FhG FOKUS
-
-Edited by
-
-Gabriel Vasile
-
-   Copyright © 2003 Fill in here
-   Revision History
-   Revision $Revision: 5901 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -34,6 +22,22 @@ Gabriel Vasile
               1.4.3. encode_contact(encoding_prefix, public_ip)
               1.4.4. decode_contact()
               1.4.5. decode_contact_header()
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -100,13 +104,13 @@ modparam("mangler", "contact_flds_separator", "-")
    replacements + 1.
 
    Meaning of the parameters is as follows:
-     * pattern - A pair ip/mask used to match IP's located inside
-       SDP package in lines c=IN IP4 ip. This lines will only be
-       mangled if located IP is in the network described by this
-       pattern. Examples of valid patterns are
+     * pattern (string) - A pair ip/mask used to match IP's
+       located inside SDP package in lines c=IN IP4 ip. This lines
+       will only be mangled if located IP is in the network
+       described by this pattern. Examples of valid patterns are
        “10.0.0.0/255.0.0.0” or “10.0.0.0/8” etc.
-     * newip - A string representing the new IP to be put inside
-       SDP package if old IP address matches pattern.
+     * newip (string) - the new IP to be put inside SDP package if
+       old IP address matches pattern.
 
    This function can be used from REQUEST_ROUTE, ONREPLY_ROUTE.
 
@@ -124,14 +128,14 @@ sdp_mangle_ip("10.0.0.0/8","193.175.135.38");
    replacements + 1.
 
    Meaning of the parameters is as follows:
-     * offset - A string representing an integer which will be
-       added/subtracted from the located port.
+     * offset (int) - an integer which will be added/subtracted
+       from the located port.
 
    This function can be used from REQUEST_ROUTE, ONREPLY_ROUTE.
 
    Example 1.3. sdp_mangle_port usage
 ...
-sdp_mangle_port("-12000");
+sdp_mangle_port(-12000);
 ...
 
 1.4.3.  encode_contact(encoding_prefix, public_ip)
@@ -145,11 +149,12 @@ sdp_mangle_port("-12000");
    The function returns negative on error, 1 on success.
 
    Meaning of the parameters is as follows:
-     * encoding_prefix - Something to allow us to determine that a
-       contact is encoded publicip--a routable IP, most probably
-       you should put your external IP of your NAT box.
-       public_ip - The public IP which will be used in the encoded
-       contact, as described by the example above.
+     * encoding_prefix (string) - Something to allow us to
+       determine that a contact is encoded publicip--a routable
+       IP, most probably you should put your external IP of your
+       NAT box.
+       public_ip (string) - The public IP which will be used in
+       the encoded contact, as described by the example above.
 
    This function can be used from REQUEST_ROUTE, ONREPLY_ROUTE.
 
@@ -195,3 +200,78 @@ if ($ru =~ "^enc*") { decode_contact(); }
 ...
 if ($ru =~ "^enc*") { decode_contact_header(); }
 ...
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Gabriel Vasile 51 13 3118 674
+   2. Bogdan-Andrei Iancu (@bogdan-iancu) 25 19 194 197
+   3. Daniel-Constantin Mierla (@miconda) 13 11 25 49
+   4. Razvan Crainea (@razvancrainea) 12 10 36 25
+   5. Andrei Pelinescu-Onciul 12 9 71 72
+   6. Vlad Patrascu (@rvlad-patrascu) 9 6 102 108
+   7. Liviu Chircu (@liviuchircu) 9 6 16 59
+   8. Jan Janak (@janakj) 9 4 428 48
+   9. Henning Westerholt (@henningw) 8 5 13 104
+   10. Jiri Kuthan (@jiriatipteldotorg) 3 2 5 0
+
+   All remaining contributors: Walter Doekes (@wdoekes),
+   Konstantin Bokarius, Peter Lemenkov (@lemenkov), Edson Gellert
+   Schubert, Elena-Ramona Modroiu.
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Razvan Crainea (@razvancrainea)     Jun 2011 - May 2019
+   2.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   3.  Bogdan-Andrei Iancu (@bogdan-iancu) Jul 2005 - Apr 2019
+   4.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   5.  Liviu Chircu (@liviuchircu)         Mar 2014 - Jun 2018
+   6.  Walter Doekes (@wdoekes)            Jun 2014 - Jun 2014
+   7.  Henning Westerholt (@henningw)      May 2007 - Jun 2008
+   8.  Daniel-Constantin Mierla (@miconda) Sep 2003 - Mar 2008
+   9.  Konstantin Bokarius                 Mar 2008 - Mar 2008
+   10. Edson Gellert Schubert              Feb 2008 - Feb 2008
+
+   All remaining contributors: Elena-Ramona Modroiu, Jan Janak
+   (@janakj), Andrei Pelinescu-Onciul, Jiri Kuthan
+   (@jiriatipteldotorg), Gabriel Vasile.
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Peter Lemenkov
+   (@lemenkov), Liviu Chircu (@liviuchircu), Bogdan-Andrei Iancu
+   (@bogdan-iancu), Razvan Crainea (@razvancrainea), Henning
+   Westerholt (@henningw), Daniel-Constantin Mierla (@miconda),
+   Konstantin Bokarius, Edson Gellert Schubert, Elena-Ramona
+   Modroiu, Jan Janak (@janakj).
+
+   Documentation Copyrights:
+
+   Copyright © 2003 FhG FOKUS

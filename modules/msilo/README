@@ -1,18 +1,4 @@
 MSILO Module
-
-Daniel-Constantin Mierla
-
-   <miconda@gmail.com>
-
-Edited by
-
-Daniel-Constantin Mierla
-
-   <miconda@gmail.com>
-
-   Copyright © 2003 FhG FOKUS
-   Revision History
-   Revision $Revision: 5901 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -57,7 +43,7 @@ Daniel-Constantin Mierla
         1.4. Exported Functions
 
               1.4.1. m_store([owner])
-              1.4.2. m_dump([owner, [maxmsg]])
+              1.4.2. m_dump([owner], [maxmsg])
 
         1.5. Exported Statistics
 
@@ -70,6 +56,22 @@ Daniel-Constantin Mierla
         1.6. Installation and Running
 
               1.6.1. OpenSIPS config file
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -496,20 +498,19 @@ modparam("msilo", "max_messages", 0)
    UA.
 
    Meaning of the parameters is as follows:
-     * owner - is a string that must contain a SIP URI in whose
-       inbox the message will be stored. It can have any pseudo
-       variable. If "owner" is missing, the SIP address is taken
-       from R-URI.
+     * owner (string, optional) - a SIP URI in whose inbox the
+       message will be stored. If "owner" is missing, the SIP
+       address is taken from R-URI.
 
    This function can be used from REQUEST_ROUTE, FAILURE_ROUTE.
 
    Example 1.27. m_store usage
 ...
 m_store();
-m_store("$tu");
+m_store($tu);
 ...
 
-1.4.2. m_dump([owner, [maxmsg]])
+1.4.2. m_dump([owner], [maxmsg])
 
    The method sends stored messages for the SIP user that is going
    to register to his actual contact address. The method should be
@@ -517,10 +518,11 @@ m_store("$tu");
    header has a value greater than zero.
 
    Meaning of the parameters is as follows:
-     * owner - is a string that must contain a SIP URI whose inbox
-       will be dumped. It can have any pseudo variable. If "owner"
-       is missing, the SIP address is taken from To URI. maxmsg -
-       is a maximum number of messages to be dumped.
+     * owner (string, optional) - a SIP URI whose inbox will be
+       dumped. If "owner" is missing, the SIP address is taken
+       from To URI.
+     * maxmsg (int, optional) - is a maximum number of messages to
+       be dumped.
 
    This function can be used from REQUEST_ROUTE, STARTUP_ROUTE,
    TIMER_ROUTE, EVENT_ROUTE
@@ -528,8 +530,8 @@ m_store("$tu");
    Example 1.28. m_dump usage
 ...
 m_dump();
-m_dump("$fu");
-m_dump("$fu", 10);
+m_dump($fu);
+m_dump($fu, 10);
 ...
 
 1.5. Exported Statistics
@@ -713,3 +715,84 @@ failure_route[1] {
 
 
 ...
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Daniel-Constantin Mierla (@miconda) 125 66 4163 1410
+   2. Bogdan-Andrei Iancu (@bogdan-iancu) 41 34 180 267
+   3. Andrei Pelinescu-Onciul 18 10 115 382
+   4. Jan Janak (@janakj) 16 11 126 168
+   5. Liviu Chircu (@liviuchircu) 15 12 66 80
+   6. Jiri Kuthan (@jiriatipteldotorg) 9 6 180 33
+   7. Henning Westerholt (@henningw) 9 6 114 110
+   8. Vlad Patrascu (@rvlad-patrascu) 9 5 69 123
+   9. Razvan Crainea (@razvancrainea) 8 6 20 19
+   10. Vlad Paiu (@vladpaiu) 7 4 90 80
+
+   All remaining contributors: Juha Heinanen (@juha-h), Ancuta
+   Onofrei, Andrea Giordana, Elena-Ramona Modroiu, Aron Rosenberg,
+   John Riordan, Konstantin Bokarius, Julián Moreno Patiño, Peter
+   Lemenkov (@lemenkov), Sergio Gutierrez, UnixDev, Edson Gellert
+   Schubert, Stanislaw Pitucha.
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Razvan Crainea (@razvancrainea)     Jun 2011 - May 2019
+   2.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   3.  Bogdan-Andrei Iancu (@bogdan-iancu) Sep 2002 - Apr 2019
+   4.  Liviu Chircu (@liviuchircu)         Mar 2014 - Nov 2018
+   5.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   6.  Julián Moreno Patiño                Feb 2016 - Feb 2016
+   7.  Vlad Paiu (@vladpaiu)               Aug 2011 - Mar 2015
+   8.  Stanislaw Pitucha                   Jul 2010 - Jul 2010
+   9.  John Riordan                        May 2009 - May 2009
+   10. UnixDev                             Feb 2009 - Feb 2009
+
+   All remaining contributors: Sergio Gutierrez, Henning
+   Westerholt (@henningw), Daniel-Constantin Mierla (@miconda),
+   Konstantin Bokarius, Edson Gellert Schubert, Ancuta Onofrei,
+   Aron Rosenberg, Elena-Ramona Modroiu, Juha Heinanen (@juha-h),
+   Andrea Giordana, Andrei Pelinescu-Onciul, Jan Janak (@janakj),
+   Jiri Kuthan (@jiriatipteldotorg).
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Peter Lemenkov
+   (@lemenkov), Liviu Chircu (@liviuchircu), Bogdan-Andrei Iancu
+   (@bogdan-iancu), Vlad Paiu (@vladpaiu), Razvan Crainea
+   (@razvancrainea), Daniel-Constantin Mierla (@miconda),
+   Konstantin Bokarius, Edson Gellert Schubert, Elena-Ramona
+   Modroiu, Juha Heinanen (@juha-h), Andrea Giordana, Jan Janak
+   (@janakj).
+
+   Documentation Copyrights:
+
+   Copyright © 2003 FhG FOKUS

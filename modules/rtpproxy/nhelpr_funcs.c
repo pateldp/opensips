@@ -175,7 +175,7 @@ int extract_body(struct sip_msg *msg, str *body )
 			break;
 	}
 	if (skip == body->len) {
-		LM_ERR("empty body");
+		LM_ERR("empty body\n");
 		goto error;
 	}
 	body->len -= skip;
@@ -193,32 +193,6 @@ error:
 /*
  * Some helper functions taken verbatim from tm module.
  */
-
-/*
- * Extract Call-ID value
- * assumes the callid header is already parsed
- * (so make sure it is, before calling this function or
- *  it might fail even if the message _has_ a callid)
- */
-int
-get_callid(struct sip_msg* _m, str* _cid)
-{
-
-        if ((parse_headers(_m, HDR_CALLID_F, 0) == -1)) {
-                LM_ERR("failed to parse call-id header\n");
-                return -1;
-        }
-
-        if (_m->callid == NULL) {
-                LM_ERR("call-id not found\n");
-                return -1;
-        }
-
-        _cid->s = _m->callid->body.s;
-        _cid->len = _m->callid->body.len;
-        trim(_cid);
-        return 0;
-}
 
 /*
  * Extract tag from To header field of a response

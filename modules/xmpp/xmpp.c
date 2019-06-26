@@ -130,9 +130,11 @@ static proc_export_t procs[] = {
  * Exported functions
  */
 static cmd_export_t cmds[] = {
-	{"xmpp_send_message", (cmd_function)cmd_send_message, 0, 0, 0, REQUEST_ROUTE},
-	{"bind_xmpp",         (cmd_function)bind_xmpp,        0, 0, 0, 0},
-	{0, 0, 0, 0, 0, 0}
+	{"xmpp_send_message", (cmd_function)cmd_send_message, {{0,0,0}},
+		REQUEST_ROUTE},
+	{"bind_xmpp",         (cmd_function)bind_xmpp,
+		{{0,0,0}}, ALL_ROUTES},
+	{0,0,{{0,0,0}},0}
 };
 
 /*
@@ -167,6 +169,7 @@ struct module_exports exports = {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,            /* Exported functions */
 	0,               /* Exported async functions */
@@ -180,6 +183,7 @@ struct module_exports exports = {
 	0,               /* Response function */
 	destroy,         /* Destroy function */
 	child_init,      /* Child init function */
+	0                /* reload confirm function */
 };
 
 /*
@@ -326,7 +330,7 @@ static int xmpp_send_pipe_cmd(enum xmpp_pipe_cmd_type type, str *from, str *to,
 		str *body, str *id)
 {
 	struct xmpp_pipe_cmd *cmd;
-	str ret;
+	str ret = {0,0};
 
 	/* todo: make shm allocation for one big chunk to include all fields */
 	cmd = (struct xmpp_pipe_cmd *) shm_malloc(sizeof(struct xmpp_pipe_cmd));

@@ -4,12 +4,14 @@
 
 	<title>&adminguide;</title>
 
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
-		The <emphasis role='bold'>Sangoma transcoding module</emphasis> offers the possibility of performing
-	voice transcoding with the D-series transcoding cards manufactured by
-	Sangoma. The module makes use of the Sangoma Transcoding API in order to 
+	The <emphasis role='bold'>Sangoma transcoding module</emphasis> offers the
+	possibility of performing voice transcoding with the
+	<ulink url="https://wiki.sangoma.com/display/MTC/Media+Transcoding">D-series
+		transcoding cards manufactured by Sangoma</ulink>. The module makes use
+	of the Sangoma Transcoding API in order to
 	manage transcoding sessions on the dedicated equipment. For the cards
 	in the network to be detected, the Sangoma SOAP server must be up and
 	running (<emphasis>sngtc_server</emphasis> daemon).
@@ -52,7 +54,7 @@
 	</para>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 		<section>
 		<title>&osips; Modules</title>
@@ -76,12 +78,14 @@
 			<itemizedlist>
 			<listitem>
 				<para>
-					<emphasis>sngtc_node library - <ulink url="http://wiki.sangoma.com/media-transcoding-download">download from Sangoma</ulink>, compile and install </emphasis>.
+					<emphasis>sngtc_node library - <ulink url="https://wiki.freepbx.org/display/MTC/Media+Transcoding+Download">download from Sangoma</ulink>,
+					unpack, make, make install (required in order to compile this module)</emphasis>.
 				</para>
 			</listitem>
 			<listitem>
 				<para>
-				<emphasis>sngtc_server up and running</emphasis>.
+					<emphasis>sngtc_server up and running (required in order for
+					this module to properly work)</emphasis>.
 				</para>
 			</listitem>
 			</itemizedlist>
@@ -89,9 +93,9 @@
 		</section>
 	</section>
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_sngtc_offer" xreflabel="sngtc_offer()">
 		<title>
 		<function moreinfo="none">sngtc_offer()</function>
 		</title>
@@ -131,9 +135,9 @@
 		</example>
 	</section>
 
-	<section>
+	<section id="func_sngtc_callee_answer" xreflabel="sngtc_callee_answer()">
 		<title>
-		<function moreinfo="none">sngtc_callee_answer([listen_if_A[, listen_if_B]])
+		<function moreinfo="none">sngtc_callee_answer([listen_if_A], [listen_if_B])
 		</function>
 		</title>
 		<para>
@@ -154,11 +158,11 @@
 		for the incoming RTP (which can be port forwarded to a transcoding card).
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>listen_if_A</emphasis> - the interface where the UAC (the caller) will send RTP after the call is established (IP from the 'c=' SDP line(s))
+			<para><emphasis>listen_if_A</emphasis> (string) - the interface where the UAC (the caller) will send RTP after the call is established (IP from the 'c=' SDP line(s))
 			</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>listen_if_B</emphasis> - the interface where the UAS (the callee) will send RTP after the call is established (IP from the 'c=' SDP line(s))
+			<para><emphasis>listen_if_B</emphasis> (string) - the interface where the UAS (the callee) will send RTP after the call is established (IP from the 'c=' SDP line(s))
 			</para>
 		</listitem>
 		</itemizedlist>
@@ -199,7 +203,7 @@ onreply_route[1] {
 		</example>
 	</section>
 
-	<section>
+	<section id="func_sngtc_caller_answer" xreflabel="sngtc_caller_answer()">
 		<title>
 		<function moreinfo="none">sngtc_caller_answer()</function>
 		</title>

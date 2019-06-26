@@ -55,6 +55,7 @@ struct srs_node {
 struct src_part {
 	str aor;
 	str name;
+	str xml_val;
 	siprec_uuid uuid;
 	struct list_head streams;
 };
@@ -71,6 +72,7 @@ struct src_sess {
 	int version;
 	int streams_no;
 	str rtpproxy;
+	str media_ip;
 
 	/* SRS */
 	struct list_head srs;
@@ -98,10 +100,10 @@ struct src_sess {
 };
 
 void src_unref_session(void *p);
-struct src_sess *src_new_session(str *srs, str *rtp, str *group,
+struct src_sess *src_new_session(str *srs, str *rtp, str *m_ip, str *group,
 		struct socket_info *si);
 void src_free_session(struct src_sess *sess);
-int src_add_participant(struct src_sess *sess, str *aor, str *name,
+int src_add_participant(struct src_sess *sess, str *aor, str *name, str *xml_val,
 		siprec_uuid *uuid);
 
 extern struct tm_binds srec_tm;
@@ -150,7 +152,7 @@ extern struct dlg_binds srec_dlg;
 
 void srec_loaded_callback(struct dlg_cell *dlg, int type,
 		struct dlg_cb_params *params);
-void srec_shutdown_callback(struct dlg_cell *dlg, int type,
+void srec_dlg_write_callback(struct dlg_cell *dlg, int type,
 		struct dlg_cb_params *params);
 
 #endif /* _SIPREC_SESS_H_ */

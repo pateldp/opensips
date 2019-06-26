@@ -17,21 +17,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  *
- * History
- * -------
- * 2004-07-31  first version, by daniel
- * 2007-01-11  Added a function to check if a specific gateway is in
- *              a group (carsten)
- * 2007-02-09  Added active probing of failed destinations and automatic
- *              re-enabling of destinations
- * 2007-05-08  Ported the changes to SVN-Trunk and renamed ds_is_domain
- *              to ds_is_from_list.
- * 2009-05-18  Added support for weights for the destinations;
- *              added support for custom "attrs" (opaque string) (bogdan)
- * 2013-12-02  Added support state persistency (restart and reload) (bogdan)
- * 2013-12-05  Added a safer reload mechanism based on locking read/writter (bogdan)
  */
 
 #ifndef _DISPATCH_H_
@@ -39,7 +26,6 @@
 
 #include <stdio.h>
 #include "../../pvar.h"
-#include "../../mod_fix.h"
 #include "../../parser/msg_parser.h"
 #include "../tm/tm_load.h"
 #include "../freeswitch/fs_api.h"
@@ -49,8 +35,7 @@
 #define DS_HASH_USER_ONLY	1  /* use only the uri user part for hashing */
 #define DS_FAILOVER_ON		2  /* store the other dest in avps */
 #define DS_USE_DEFAULT		4  /* use last address in destination set as last option */
-#define DS_FORCE_DST		8  /* if not set it will force overwriting the destination address
-					if already set */
+#define DS_APPEND_MODE		8  /* append destinations instead of overwriting */
 
 #define DS_INACTIVE_DST		1  /* inactive destination */
 #define DS_PROBING_DST		2  /* checking destination */
@@ -77,7 +62,7 @@ extern int ds_persistent_state;
 
 typedef struct _ds_dest
 {
-	str uri;
+	str uri;        /* URI used in pinging and for matching destination at reload */
 	str dst_uri;    /* Actual uri used in ds_select_dst ds_select_domain */
 	str attrs;
 	str description;
@@ -159,8 +144,7 @@ typedef struct _ds_select_ctl
 	ds_partition_t *partition;  /* partition of set_id */
 	int alg;					/* algorith to aply */
 	int mode;					/* set destination uri */
-	int max_results;			/* max destinaitons to process */
-	int reset_AVP;				/* reset AVPs flag */
+	int max_results;			/* max destinations to process */
 	int set_destination;		/* set destination flag */
 	int ds_flags;
 } ds_select_ctl_t, *ds_select_ctl_p;
@@ -199,7 +183,7 @@ extern struct fs_binds fs_api;
 extern str ds_ping_method;
 extern str ds_ping_from;
 extern int ds_ping_maxfwd;
-extern int probing_threshhold; /* number of failed requests,
+extern int probing_threshold; /* number of failed requests,
 						before a destination is taken into probing */
 extern int ds_probing_mode;
 
@@ -217,15 +201,17 @@ void ds_destroy_data(ds_partition_t *partition);
 int ds_update_dst(struct sip_msg *msg, str *uri, struct socket_info *sock, int mode);
 int ds_select_dst(struct sip_msg *msg, ds_select_ctl_p ds_select_ctl, ds_selected_dst_p selected_dst, int ds_flags);
 int ds_next_dst(struct sip_msg *msg, int mode, ds_partition_t *partition);
-int ds_set_state(int group, str *address, int state, int type,
-		ds_partition_t *partition);
+#define ds_set_state(_group, _address, _state, _type, _partition) \
+	ds_set_state_repl(_group, _address, _state, _type, _partition, 1)
+int ds_set_state_repl(int group, str *address, int state, int type,
+		ds_partition_t *partition, int do_repl);
 int ds_mark_dst(struct sip_msg *msg, int mode, ds_partition_t *partition);
-int ds_print_mi_list(struct mi_node* rpl, ds_partition_t *partition, int flags);
-int ds_count(struct sip_msg *msg, int set_id, const char *cmp, pv_spec_p ret,
+int ds_print_mi_list(mi_item_t *part_item, ds_partition_t *partition, int full);
+int ds_count(struct sip_msg *msg, int set_id, void *_cmp, pv_spec_p ret,
 				ds_partition_t *partition);
 
-int ds_is_in_list(struct sip_msg *_m, gparam_t *addr, gparam_t *port,
-		int set, int active_only, ds_partition_t *partition);
+int ds_is_in_list(struct sip_msg *_m, str *ip, int port, int set,
+                  ds_partition_t *partition, int active_only);
 /*
  * Timer for checking inactive destinations
  */
@@ -238,6 +224,8 @@ int check_options_rplcode(int code);
 
 /* pvar algorithm pattern parser */
 void ds_pvar_parse_pattern(str);
+
+ds_partition_t* find_partition_by_name (const str *partition_name);
 
 #endif
 

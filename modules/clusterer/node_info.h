@@ -31,19 +31,18 @@
 #include "clusterer.h"
 
 #define NO_DB_INT_VALS 6
-#define NO_DB_STR_VALS 3
+#define NO_DB_STR_VALS 4
 #define NO_DB_COLS (NO_DB_INT_VALS + NO_DB_STR_VALS)
 
 #define DEFAULT_NO_PING_RETRIES 3
 #define DEFAULT_PRIORITY 50
 
-#define CLUSTERER_TABLE_VERSION 3
-/* also compatible with this version as the current version only removed columns */
-#define BACKWARDS_COMPAT_TABLE_VER 2
+#define CLUSTERER_TABLE_VERSION 4
 
-#define MAX_NO_NODES 16
-#define MAX_NO_CLUSTERS 16
-#define MAX_MODS_PER_CLUSTER 8
+#define MAX_NO_NODES 128
+#define MAX_NO_CLUSTERS 64
+
+#define SEED_NODE_FLAG_STR "seed"
 
 enum db_int_vals_idx {
 	INT_VALS_ID_COL,
@@ -57,52 +56,62 @@ enum db_int_vals_idx {
 enum db_str_vals_idx {
 	STR_VALS_URL_COL,
 	STR_VALS_SIP_ADDR_COL,
+	STR_VALS_FLAGS_COL,
 	STR_VALS_DESCRIPTION_COL
-};
-
-struct cluster_mod {
-	struct mod_registration *reg;
-	struct cluster_mod *next;
 };
 
 struct cluster_info;
 
 struct node_info {
-	int id;                             /* DB id (PK) */
+	/* read-only fields */
+	int id;                         /* DB id (PK) */
 	int node_id;
-	clusterer_link_state link_state;    /* state of the "link" with this node */
 	str description;
 	str url;
+	union sockaddr_union addr;
 	str sip_addr;
 	int priority;                   /* priority to be chosen as next hop for same length paths */
-	union sockaddr_union addr;
-	struct timeval last_pong;       /* last pong received from this node */
-	struct timeval last_ping;       /* last ping sent to this node */
 	int no_ping_retries;            /* maximum number of ping retries */
+
+	/* fields accessed only by timer */
 	int curr_no_retries;
-	struct cluster_info *cluster;       /* containing cluster */
-	struct neighbour *neighbour_list;   /* list of directly reachable neighbours */
+
+	/* fields protected by cluster lock */
 	int sp_top_version;                 /* last topology version for which shortest path was computed */
+	struct node_search_info *sp_info;   /* shortest path info */
+
+	gen_lock_t *lock;
+
+	/* fields protected by node lock */
+	clusterer_link_state link_state;	/* state of the "link" with this node */
+	int last_ping_state;				/* state(success/error) of the last ping sent to this node */
+	struct timeval last_ping;       	/* last ping sent to this node */
+	struct timeval last_pong;       	/* last pong received from this node */
+	struct neighbour *neighbour_list;   /* list of directly reachable neighbours */
 	int ls_seq_no;                      /* sequence number of the last link state update */
 	int top_seq_no;                     /* sequence number of the last topology update message */
 	int ls_timestamp;
 	int top_timestamp;
 	struct node_info *next_hop;         /* next hop from the shortest path */
-	struct node_search_info *sp_info;   /* shortest path info */
+	struct remote_cap *capabilities;	/* known capabilities of this node */
 	int flags;
-	gen_lock_t *lock;
+
+	/* list linkers */
+	struct cluster_info *cluster;       /* containing cluster */
 	struct node_info *next;
 };
 
 struct cluster_info {
 	int cluster_id;
-	struct cluster_mod *modules;    /* modules registered for this cluster */
-	struct node_info *node_list;
 	int no_nodes;                   /* number of nodes in the cluster */
+	struct node_info *node_list;
 	struct node_info *current_node; /* current node's info in this cluster */
-	clusterer_join_state join_state;
-	int top_version;        		/* topology version */
+
 	gen_lock_t *lock;
+
+	int top_version;        		/* topology version */
+	struct local_cap *capabilities;	/* capabilities registered for this cluster */
+
 	struct cluster_info *next;
 };
 
@@ -125,31 +134,35 @@ int provision_neighbor(modparam_t type, void* val);
 int provision_current(modparam_t type, void *val);
 
 int cl_get_my_id(void);
+int cl_get_my_sip_addr(int cluster_id, str *out_addr);
+int cl_get_my_index(int cluster_id, str *capability, int *nr_nodes);
 clusterer_node_t* get_clusterer_nodes(int cluster_id);
 void free_clusterer_nodes(clusterer_node_t *nodes);
 clusterer_node_t *api_get_next_hop(int cluster_id, int node_id);
 void api_free_next_hop(clusterer_node_t *next_hop);
+int match_node(const node_info_t *a, const node_info_t *b,
+               enum cl_node_match_op match_op);
 
 static inline cluster_info_t *get_cluster_by_id(int cluster_id)
 {
-	cluster_info_t *cl = NULL;
+	cluster_info_t *cl;
 
 	for (cl = *cluster_list; cl; cl = cl->next)
 		if (cl->cluster_id == cluster_id)
-			break;
+			return cl;
 
-	return cl;
+	return NULL;
 }
 
 static inline node_info_t *get_node_by_id(cluster_info_t *cluster, int node_id)
 {
-	node_info_t *node = NULL;
+	node_info_t *node;
 
 	for (node = cluster->node_list; node; node = node->next)
 		if (node->node_id == node_id)
-			break;
+			return node;
 
-	return node;
+	return NULL;
 }
 
 #endif /* CL_NODE_INFO_H */

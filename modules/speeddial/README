@@ -1,18 +1,4 @@
 SpeedDial Module
-
-Elena-Ramona Modroiu
-
-   <ramona@rosdev.ro>
-
-Edited by
-
-Elena-Ramona Modroiu
-
-   <ramona@rosdev.ro>
-
-   Copyright © 2004 Voice Sistem SRL
-   Revision History
-   Revision $Revision: 5901 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -43,6 +29,22 @@ Elena-Ramona Modroiu
         1.5. Installation and Running
 
               1.5.1. OpenSIPS config file
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -190,10 +192,10 @@ modparam("speeddial", "use_domain", 1)
    'table' and replaces the R-URI with associated address.
 
    Meaning of the parameters is as follows:
-     * table - The name of the table storing the speed dial
-       records. This parameter may include pseudovariables.
-     * owner - The SIP URI of the owner of short dialing codes. If
-       not pressent, URI of From header is used.
+     * table (string) - The name of the table storing the speed
+       dial records.
+     * owner (string) - The SIP URI of the owner of short dialing
+       codes. If not pressent, URI of From header is used.
 
    This function can be used from REQUEST_ROUTE.
 
@@ -324,3 +326,77 @@ route{
 
 
 ...
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Bogdan-Andrei Iancu (@bogdan-iancu) 26 22 90 145
+   2. Daniel-Constantin Mierla (@miconda) 20 16 127 137
+   3. Elena-Ramona Modroiu 12 2 1063 1
+   4. Liviu Chircu (@liviuchircu) 11 9 34 53
+   5. Vlad Patrascu (@rvlad-patrascu) 6 4 31 35
+   6. Razvan Crainea (@razvancrainea) 5 3 8 7
+   7. Henning Westerholt (@henningw) 4 2 50 41
+   8. Elena-Ramona Modroiu 4 2 4 1
+   9. Sergio Gutierrez 4 2 2 2
+   10. Anca Vamanu 3 1 20 22
+
+   All remaining contributors: Andrei Pelinescu-Onciul, Konstantin
+   Bokarius, Julián Moreno Patiño, Peter Lemenkov (@lemenkov),
+   Edson Gellert Schubert.
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Razvan Crainea (@razvancrainea)     Aug 2015 - May 2019
+   2.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   3.  Bogdan-Andrei Iancu (@bogdan-iancu) Oct 2005 - Apr 2019
+   4.  Liviu Chircu (@liviuchircu)         Mar 2014 - Nov 2018
+   5.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   6.  Julián Moreno Patiño                Feb 2016 - Feb 2016
+   7.  Sergio Gutierrez                    Nov 2008 - Dec 2008
+   8.  Daniel-Constantin Mierla (@miconda) May 2006 - Mar 2008
+   9.  Konstantin Bokarius                 Mar 2008 - Mar 2008
+   10. Edson Gellert Schubert              Feb 2008 - Feb 2008
+
+   All remaining contributors: Henning Westerholt (@henningw),
+   Anca Vamanu, Elena-Ramona Modroiu, Andrei Pelinescu-Onciul,
+   Elena-Ramona Modroiu.
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Peter Lemenkov
+   (@lemenkov), Liviu Chircu (@liviuchircu), Bogdan-Andrei Iancu
+   (@bogdan-iancu), Sergio Gutierrez, Daniel-Constantin Mierla
+   (@miconda), Konstantin Bokarius, Edson Gellert Schubert,
+   Elena-Ramona Modroiu, Elena-Ramona Modroiu.
+
+   Documentation Copyrights:
+
+   Copyright © 2004 Voice Sistem SRL

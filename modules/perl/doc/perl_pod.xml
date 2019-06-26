@@ -236,7 +236,6 @@ $m->xlog("L_INFO", "foo");]]></screen>
 * load_rr
 * sip_trace
 * sl_reply_error
-* sms_send_msg
 * sd_lookup
 * sstCheckMin
 * append_time
@@ -316,7 +315,7 @@ $m->xlog("L_INFO", "foo");]]></screen>
 	Append a branch to current message.
       </para>
     </section>
-    <section id="ID-bff5c83f8c28e72abf1d8a5204310202"><title>serialize_branches(clean_before)</title>
+    <section id="ID-bff5c83f8c28e72abf1d8a5204310202"><title>serialize_branches(clean_before, keep_order)</title>
       <para>
 	Serialize branches.
       </para>
@@ -817,7 +816,7 @@ my @rows = $ldap->search(
   </section>
   <section id="ID-8165ac0b808b36ff72ee4032e0f62881"><title>OpenSIPS::VDB::Adapter::AccountingSIPtrace</title>
     <para>
-      This package is an Adapter for the acc and siptrace modules,
+      This package is an Adapter for the acc and tracer modules,
       featuring only an insert operation.
     </para>
   </section>

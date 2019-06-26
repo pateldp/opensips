@@ -91,31 +91,24 @@ struct domain_list **hash_table_2 = 0;	/* Pointer to hash table 2 */
 static int is_domain_alias(char* name, int len, unsigned short port,
 														unsigned short proto);
 
-static int fixup_wpvar_null(void **param, int param_no);
-static int fixup_pvar_wpvar(void **param, int param_no);
+static int fixup_wpvar(void **param);
 
 /*
  * Exported functions
  */
 static cmd_export_t cmds[] = {
-	{"is_from_local", (cmd_function)is_from_local, 0, 0, 0,
+	{"is_from_local", (cmd_function)is_from_local, {
+		{CMD_PARAM_VAR|CMD_PARAM_OPT, fixup_wpvar, 0}, {0,0,0}},
 		REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE|LOCAL_ROUTE},
-	{"is_from_local", (cmd_function)is_from_local, 1, fixup_wpvar_null,
-		fixup_free_pvar_null, REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE|
-		LOCAL_ROUTE},
-	{"is_uri_host_local", (cmd_function)is_uri_host_local, 0, 0, 0,
+	{"is_uri_host_local", (cmd_function)is_uri_host_local, {
+		{CMD_PARAM_VAR|CMD_PARAM_OPT, fixup_wpvar, 0}, {0,0,0}},
 		REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE|LOCAL_ROUTE},
-	{"is_uri_host_local", (cmd_function)is_uri_host_local, 1, fixup_wpvar_null,
-		fixup_free_pvar_null, REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE|
-		LOCAL_ROUTE},
-	{"is_domain_local", (cmd_function)w_is_domain_local, 1, fixup_pvar_null,
-		fixup_free_pvar_null, REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|
-		LOCAL_ROUTE|STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"is_domain_local", (cmd_function)w_is_domain_local, 2, fixup_pvar_wpvar,
-		fixup_free_pvar_pvar, REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|
-		LOCAL_ROUTE|STARTUP_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{"bind_domain", (cmd_function)bind_domain, 0, 0, 0, 0},
-	{0, 0, 0, 0, 0, 0}
+	{"is_domain_local", (cmd_function)w_is_domain_local, {
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_VAR|CMD_PARAM_OPT, fixup_wpvar, 0}, {0,0,0}},
+		REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE|LOCAL_ROUTE},
+	{"bind_domain", (cmd_function)bind_domain, {{0,0,0}}, 0},
+	{0,0,{{0,0,0}},0}
 };
 
 
@@ -136,11 +129,16 @@ static param_export_t params[] = {
  * Exported MI functions
  */
 static mi_export_t mi_cmds[] = {
-	{ MI_DOMAIN_RELOAD, 0, mi_domain_reload, MI_NO_INPUT_FLAG, 0, mi_child_init },
-	{ MI_DOMAIN_DUMP,   0, mi_domain_dump,   MI_NO_INPUT_FLAG, 0, 0             },
-	{ 0, 0, 0, 0, 0, 0}
+	{ MI_DOMAIN_RELOAD, 0, 0, mi_child_init, {
+		{mi_domain_reload, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ MI_DOMAIN_DUMP, 0, 0, 0, {
+		{mi_domain_dump, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
-
 
 /*
  * Module interface
@@ -150,6 +148,7 @@ struct module_exports exports = {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	cmds,      /* Exported functions */
 	0,         /* Exported async functions */
@@ -162,54 +161,20 @@ struct module_exports exports = {
 	mod_init,  /* module initialization function */
 	0,         /* response function*/
 	destroy,   /* destroy function */
-	child_init /* per-child init function */
+	child_init,/* per-child init function */
+	0          /* reload confirm function */
 };
 
 
 static int fixup_wpvar(void **param)
 {
-	int ret;
-	pv_spec_t *spec;
-	ret = fixup_pvar(param);
-	if (ret != 0) {
-		LM_ERR("cannot parse pvar\n");
-		return -1;
-	}
-	spec = *(pv_spec_t **)param;
-	if (!spec) {
-		LM_BUG("cannot find spec");
-		return -1;
-	}
-	if (!spec->setf)
+	if (((pv_spec_t*)*param)->setf == NULL)
 	{
 		LM_ERR("pvar not writable\n");
 		return -1;
 	}
+
 	return 0;
-}
-
-static int fixup_wpvar_null(void **param, int param_no)
-{
-	if(param_no != 1)
-	{
-		LM_ERR("invalid parameter number %d\n", param_no);
-		return E_UNSPEC;
-	}
-	return fixup_wpvar(param);
-}
-
-static int fixup_pvar_wpvar(void **param, int param_no)
-{
-	if (param_no == 1)
-	{
-		return fixup_pvar(param);
-	}
-	if (param_no != 2)
-	{
-		LM_ERR("invalid parameter number %d\n", param_no);
-		return E_UNSPEC;
-	}
-	return fixup_wpvar(param);
 }
 
 

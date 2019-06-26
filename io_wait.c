@@ -56,7 +56,7 @@
 
 char* poll_support="poll"
 #ifdef HAVE_EPOLL
-", epoll_lt, epoll_et"
+", epoll"
 #endif
 #ifdef HAVE_SIGIO_RT
 ", sigio_rt"
@@ -73,7 +73,7 @@ char* poll_support="poll"
 ;
 
 /*! supported poll methods */
-char* poll_method_str[POLL_END]={ "none", "poll", "epoll_lt", "epoll_et",
+char* poll_method_str[POLL_END]={ "none", "poll", "epoll",
 								  "sigio_rt", "select", "kqueue",  "/dev/poll"
 								};
 
@@ -377,8 +377,7 @@ char* check_poll_method(enum poll_types poll_method)
 			ret="select not supported, try re-compiling with -DHAVE_SELECT";
 #endif
 			break;
-		case POLL_EPOLL_LT:
-		case POLL_EPOLL_ET:
+		case POLL_EPOLL:
 #ifndef HAVE_EPOLL
 			ret="epoll not supported, try re-compiling with -DHAVE_EPOLL";
 #else
@@ -448,7 +447,7 @@ enum poll_types choose_poll_method(void)
 	poll_method=0;
 #ifdef HAVE_EPOLL
 	if (os_ver>=0x020542) /* if ver >= 2.5.66 */
-		poll_method=POLL_EPOLL_LT; /* or POLL_EPOLL_ET */
+		poll_method=POLL_EPOLL;
 
 #endif
 #ifdef HAVE_KQUEUE
@@ -618,8 +617,7 @@ int init_io_wait(io_wait_h* h, char *name, int max_fd,
 			break;
 #endif
 #ifdef HAVE_EPOLL
-		case POLL_EPOLL_LT:
-		case POLL_EPOLL_ET:
+		case POLL_EPOLL:
 			h->ep_array=local_malloc(sizeof(*(h->ep_array))*h->max_fd_no);
 			if (h->ep_array==0){
 				LM_CRIT("could not alloc epoll array\n");
@@ -676,8 +674,7 @@ void destroy_io_wait(io_wait_h* h)
 {
 	switch(h->poll_method){
 #ifdef HAVE_EPOLL
-		case POLL_EPOLL_LT:
-		case POLL_EPOLL_ET:
+		case POLL_EPOLL:
 			destroy_epoll(h);
 			if (h->ep_array){
 				local_free(h->ep_array);
@@ -758,4 +755,33 @@ void fix_poll_method( enum poll_types *poll_method )
 	return;
 }
 
+
+int io_set_app_flag( io_wait_h *h , int type, int app_flag)
+{
+	int i;
+	int res=0;
+
+	for( i=0 ; i<h->fd_no ; i++) {
+			if (h->fd_hash[i].fd<=0 && h->fd_hash[i].type==type) {
+				h->fd_hash[i].app_flags |= app_flag;
+				res = 1;
+			}
+	}
+	return res;
+}
+
+
+int io_check_app_flag( io_wait_h *h , int app_flag)
+{
+	int i;
+
+	for( i=0 ; i<h->fd_no ; i++) {
+			if ( h->fd_hash[i].fd<=0 &&
+			(h->fd_hash[i].app_flags & app_flag) )
+				return 1;
+	}
+	/* nothing found, return false*/
+	return 0;
+
+}
 

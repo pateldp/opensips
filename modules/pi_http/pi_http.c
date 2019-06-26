@@ -46,10 +46,11 @@ static int destroy(void);
 int ph_answer_to_connection (void *cls, void *connection,
 		const char *url, const char *method,
 		const char *version, const char *upload_data,
-		size_t *upload_data_size, void **con_cls,
+		size_t upload_data_size, void **con_cls,
 		str *buffer, str *page, union sockaddr_union* cl_socket);
 static ssize_t ph_flush_data(void *cls, uint64_t pos, char *buf, size_t max);
-static struct mi_root *mi_framework_reload(struct mi_root* cmd, void* param);
+mi_response_t *mi_framework_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 
 str http_root = str_init("pi");
 int http_method = 0;
@@ -76,8 +77,11 @@ static param_export_t params[] = {
 
 /** MI commands */
 static mi_export_t mi_cmds[] = {
-	{ "pi_reload_tbls_and_cmds", 0, mi_framework_reload, 0, 0, 0},
-	{ 0, 0, 0, 0, 0, 0}
+	{ "pi_reload_tbls_and_cmds", 0, 0, 0, {
+		{mi_framework_reload, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
 
 static dep_export_t deps = {
@@ -96,6 +100,7 @@ struct module_exports exports = {
 	MOD_TYPE_DEFAULT,                   /* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,                    /* dlopen flags */
+	0,				                    /* load function */
 	&deps,                              /* OpenSIPS module dependencies */
 	0,                                  /* exported functions */
 	0,                                  /* exported async functions */
@@ -108,7 +113,8 @@ struct module_exports exports = {
 	mod_init,                           /* module initialization function */
 	(response_function) 0,              /* response handling function */
 	(destroy_function) destroy,         /* destroy function */
-	(child_init_function)child_init     /* per-child init function */
+	(child_init_function)child_init,    /* per-child init function */
+	0                                   /* reload confirm function */
 };
 
 
@@ -169,6 +175,7 @@ static int mod_init(void)
 	httpd_api.register_httpdcb(exports.name, &http_root,
 				&ph_answer_to_connection,
 				&ph_flush_data,
+				HTTPD_TEXT_HTML_TYPE,
 				&proc_init);
 
 	/* Build a cache of all provisionning commands */
@@ -238,7 +245,7 @@ static ssize_t ph_flush_data(void *cls, uint64_t pos, char *buf, size_t max)
 int ph_answer_to_connection (void *cls, void *connection,
 		const char *url, const char *method,
 		const char *version, const char *upload_data,
-		size_t *upload_data_size, void **con_cls,
+		size_t upload_data_size, void **con_cls,
 		str *buffer, str *page, union sockaddr_union* cl_socket)
 {
 	int mod = -1;
@@ -247,7 +254,7 @@ int ph_answer_to_connection (void *cls, void *connection,
 	LM_DBG("START *** cls=%p, connection=%p, url=%s, method=%s, "
 		"versio=%s, upload_data[%d]=%p, *con_cls=%p\n",
 			cls, connection, url, method, version,
-			(int)*upload_data_size, upload_data, *con_cls);
+			(int)upload_data_size, upload_data, *con_cls);
 	if ((strncmp(method, "GET", 3)==0)
 		|| (strncmp(method, "POST", 4)==0)) {
 		lock_get(ph_lock);
@@ -271,19 +278,17 @@ int ph_answer_to_connection (void *cls, void *connection,
 	return 200;
 }
 
-
-static struct mi_root *mi_framework_reload(struct mi_root* cmd, void* param)
+mi_response_t *mi_framework_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_root *rpl_tree;
-
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==NULL) return NULL;
 	lock_get(ph_lock);
-	if (0!=ph_init_cmds(&ph_framework_data, filename.s)) goto error;
+
+	if (0!=ph_init_cmds(&ph_framework_data, filename.s)) {
+		lock_release(ph_lock);
+		return NULL;
+	}
+
 	lock_release(ph_lock);
-	return rpl_tree;
-error:
-	lock_release(ph_lock);
-	free_mi_tree(rpl_tree);
-	return NULL;
+
+	return init_mi_result_ok();
 }

@@ -144,14 +144,12 @@ static X509_STORE * store = NULL;
 /* needed for certificate verification */
 static X509_STORE_CTX * verify_ctx = NULL;
 
-
-/** module functions */
 static cmd_export_t cmds[]={
-	{"authservice",  (cmd_function)authservice_,  0, 0, 0,
+	{"authservice",(cmd_function)authservice_, {{0,0,0}},
 		REQUEST_ROUTE | BRANCH_ROUTE | LOCAL_ROUTE},
-	{"verifier",     (cmd_function)verifier_,     0, 0, 0,
+	{"verifier",(cmd_function)verifier_, {{0,0,0}},
 		REQUEST_ROUTE},
-	{0,0,0,0,0,0}
+	{0,0,{{0,0,0}},0}
 };
 
 static param_export_t params[]={
@@ -171,6 +169,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	NULL,            /* OpenSIPS module dependencies */
 	cmds, /* exported functions */
 	0,    /* exported async functions */
@@ -183,7 +182,8 @@ struct module_exports exports= {
 	mod_init,   /* module initialization function */
 	(response_function) 0, /* response function */
 	mod_destroy, /* destroy function */
-	0            /* per-child init function */
+	0,           /* per-child init function */
+	0            /* reload confirm function */
 };
 
 

@@ -1,17 +1,4 @@
 b2b_sca Module
-
-Ovidiu Sas
-
-   <osas@voipembedded.com>
-
-Edited by
-
-Ovidiu Sas
-
-   Copyright © 2011-2013 VoIP Embedded, Inc.
-   Revision History
-   Revision $Rev: 8688 $ $Date: 2012-01-25 13:52:05 -0500 (Wed, 25
-   Jan 2012) $
      __________________________________________________________
 
    Table of Contents
@@ -43,7 +30,7 @@ Ovidiu Sas
                       app[index]_call_info_appearance_uri_column(st
                       ring)
 
-              1.4.15. app[index]_b2bl_key_column(string)
+              1.4.15. appindex_b2bl_key_column(string)
 
         1.5. Exported Functions
 
@@ -53,6 +40,22 @@ Ovidiu Sas
         1.6. Exported MI Functions
 
               1.6.1. sca_list
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -348,7 +351,7 @@ modparam("b2b_sca", "app2_call_info_appearance_uri_column", "second_call
 _info_appearance_uri")
 ...
 
-1.4.15. app[index]_b2bl_key_column(string)
+1.4.15. appindex_b2bl_key_column(string)
 
    The column's name in the database storing the b2b_logic key of
    a particular appearance.
@@ -371,8 +374,8 @@ modparam("b2b_sca", "app2_b2bl_key_column", "second_b2bl_key")
    (see the call from alice1 in the above diagram).
 
    Meaning of the parameters:
-     * shared_line - a PV (pseudo-variable) identifying the call
-       leg as being an "appearnace" call or a "shared" call:
+     * shared_line (int) - an integer identifying the call leg as
+       being an "appearnace" call or a "shared" call:
           + 0: "shared" call
           + 1: "appearance" call
 
@@ -409,8 +412,8 @@ modparam("b2b_sca",
         }
 
         # Initiate the call
-        if (!sca_init_request("$var(shared_line_entity)")) {
-                send_reply("403", "Internal Server Error (SLA)");
+        if (!sca_init_request($var(shared_line_entity))) {
+                send_reply(403, "Internal Server Error (SLA)");
                 exit;
         }
 ...
@@ -424,8 +427,9 @@ modparam("b2b_sca",
    disconnected (see the call from alice2 in the above diagram).
 
    Meaning of the parameters:
-     * shared_line_to_bridge - a PV identifying the shared
-       line/call that was previously set by sca_init_request().
+     * shared_line_to_bridge (string) - a string identifying the
+       shared line/call that was previously set by
+       sca_init_request().
 
 ...
         if ($rU==NULL && is_method("INVITE") &&
@@ -433,8 +437,8 @@ modparam("b2b_sca",
                 # The incoming call is an 'appearance' call
                 # - see Alice's call from alice2 in the given example
                 $var(shared_line_to_bridge) = "alice";
-                if (!sca_bridge_request("$var(shared_line_to_bridge)"))
-                        send_reply("403", "Internal SLA Error");
+                if (!sca_bridge_request($var(shared_line_to_bridge)))
+                        send_reply(403, "Internal SLA Error");
                         exit;
                 }
         }
@@ -451,5 +455,62 @@ modparam("b2b_sca",
    Parameters: none
 
    MI FIFO Command Format:
-        :sca_list:_reply_fifo_file_
-        _empty_line_
+        opensips-cli -x mi sca_list
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Ovidiu Sas (@ovidiusas) 31 2 3536 2
+   2. Liviu Chircu (@liviuchircu) 12 9 63 66
+   3. Bogdan-Andrei Iancu (@bogdan-iancu) 8 6 12 9
+   4. Vlad Patrascu (@rvlad-patrascu) 8 5 82 90
+   5. Razvan Crainea (@razvancrainea) 7 5 11 9
+   6. Ezequiel Lovelle 3 1 1 1
+   7. Peter Lemenkov (@lemenkov) 3 1 1 1
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                     Name                   Commit Activity
+   1. Razvan Crainea (@razvancrainea)     Aug 2015 - May 2019
+   2. Vlad Patrascu (@rvlad-patrascu)     May 2017 - Apr 2019
+   3. Bogdan-Andrei Iancu (@bogdan-iancu) May 2014 - Apr 2019
+   4. Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   5. Liviu Chircu (@liviuchircu)         Mar 2014 - Jun 2018
+   6. Ovidiu Sas (@ovidiusas)             Dec 2013 - Feb 2016
+   7. Ezequiel Lovelle                    Oct 2014 - Oct 2014
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Vlad Patrascu (@rvlad-patrascu), Razvan Crainea
+   (@razvancrainea), Peter Lemenkov (@lemenkov), Liviu Chircu
+   (@liviuchircu), Ovidiu Sas (@ovidiusas).
+
+   Documentation Copyrights:
+
+   Copyright © 2011-2013 VoIP Embedded, Inc.

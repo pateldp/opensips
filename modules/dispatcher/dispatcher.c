@@ -18,23 +18,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  *
- * History
- * -------
- * 2004-07-31  first version, by daniel
- * 2007-01-11  Added a function to check if a specific gateway is in a group
- *              (carsten - Carsten Bock, BASIS AudioNet GmbH)
- * 2007-02-09  Added active probing of failed destinations and automatic
- *              re-enabling of destinations (carsten)
- * 2007-05-08  Ported the changes to SVN-Trunk and renamed ds_is_domain
- *              to ds_is_from_list.  (carsten)
- * 2007-07-18  Added support for load/reload groups from DB
- *              reload triggered from ds_reload MI_Command (ancuta)
- * 2009-05-18  Added support for weights for the destinations;
- *              added support for custom "attrs" (opaque string) (bogdan)
- * 2013-12-02  Added support state persistency (restart and reload) (bogdan)
- * 2013-12-05  Added a safer reload mechanism based on locking read/writter (bogdan)
  */
 
 #include <stdio.h>
@@ -58,6 +43,7 @@
 #include "dispatch.h"
 #include "ds_bl.h"
 #include "ds_fixups.h"
+#include "ds_clustering.h"
 
 
 #define DS_SET_ID_COL		"setid"
@@ -78,7 +64,7 @@ str hash_pvar_param = {NULL, 0};
 pv_elem_t * hash_param_model = NULL;
 
 
-int probing_threshhold = 3; /* number of failed requests, before a destination
+int probing_threshold = 3; /* number of failed requests, before a destination
 							   is taken into probing */
 str ds_ping_method = {"OPTIONS",7};
 str ds_ping_from   = {"sip:dispatcher@localhost", 24};
@@ -168,23 +154,30 @@ int max_freeswitch_weight = 100;
 static int mod_init(void);
 static int ds_child_init(int rank);
 
-static int w_ds_select_dst(struct sip_msg*, char*, char*);
-static int w_ds_select_dst_limited(struct sip_msg*, char*, char*, char*);
-static int w_ds_select_domain(struct sip_msg*, char*, char*);
-static int w_ds_select_domain_limited(struct sip_msg*, char*, char*, char*);
-static int w_ds_next_dst(struct sip_msg*, char*);
-static int w_ds_next_domain(struct sip_msg*, char*);
-static int w_ds_mark_dst(struct sip_msg*, char*, char*);
-static int w_ds_mark_dst1(struct sip_msg*, char *);
-static int w_ds_count(struct sip_msg*, char*, const char *, char*);
-
-static int w_ds_is_in_list(struct sip_msg*, char*, char*, char*, char*);
+static int w_ds_select_dst(struct sip_msg *msg, int *set, int *alg,
+                           void *flags, void *part, int *max_res);
+static int w_ds_select_domain(struct sip_msg *msg, int *set, int *alg,
+                           void *flags, void *part, int *max_res);
+static int w_ds_next_dst(struct sip_msg *msg, void *part);
+static int w_ds_next_domain(struct sip_msg *msg, void *part);
+static int w_ds_mark_dst(struct sip_msg *msg, str *flags, void *part);
+static int w_ds_count(struct sip_msg* msg, int *set, void *filter,
+						pv_spec_t *res_pv, void *part);
+static int w_ds_is_in_list(struct sip_msg *msg, str *ip, int *port,
+                           int *set, void *part, int *active_only);
 
 static void destroy(void);
 
-static struct mi_root* ds_mi_set(struct mi_root* cmd, void* param);
-static struct mi_root* ds_mi_list(struct mi_root* cmd, void* param);
-static struct mi_root* ds_mi_reload(struct mi_root* cmd_tree, void* param);
+mi_response_t *ds_mi_set(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *w_ds_mi_list(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *w_ds_mi_list_1(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *ds_mi_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl);
+mi_response_t *ds_mi_reload_1(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 static int mi_child_init(void);
 
 /* Parameters setters */
@@ -192,53 +185,56 @@ static int mi_child_init(void);
 static int set_partition_arguments(unsigned int type, void * val);
 static int set_probing_list(unsigned int type, void * val);
 
-static cmd_export_t cmds[]={
-	{"ds_select_dst",    (cmd_function)w_ds_select_dst, 2,
-		ds_select_fixup,  NULL,
+static cmd_export_t cmds[] = {
+	{"ds_select_dst",    (cmd_function)w_ds_select_dst, {
+		{CMD_PARAM_INT, 0, 0},
+		{CMD_PARAM_INT, 0, 0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT, fixup_ds_flags, 0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT|CMD_PARAM_FIX_NULL, fixup_ds_part, 0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
+		REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
+
+	{"ds_select_domain",    (cmd_function)w_ds_select_domain, {
+		{CMD_PARAM_INT, 0, 0},
+		{CMD_PARAM_INT, 0, 0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT, fixup_ds_flags, 0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT|CMD_PARAM_FIX_NULL, fixup_ds_part, 0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
+		REQUEST_ROUTE|BRANCH_ROUTE|FAILURE_ROUTE},
+
+	{"ds_next_dst",      (cmd_function)w_ds_next_dst, {
+		{CMD_PARAM_STR|CMD_PARAM_OPT|CMD_PARAM_FIX_NULL, fixup_ds_part, 0},
+			{0, 0, 0}},
 		REQUEST_ROUTE|FAILURE_ROUTE},
-	{"ds_select_dst",    (cmd_function)w_ds_select_dst_limited, 3,
-		ds_select_fixup,  NULL,
+
+	{"ds_next_domain",      (cmd_function)w_ds_next_domain, {
+		{CMD_PARAM_STR|CMD_PARAM_OPT|CMD_PARAM_FIX_NULL, fixup_ds_part, 0},
+			{0, 0, 0}},
 		REQUEST_ROUTE|FAILURE_ROUTE},
-	{"ds_select_domain", (cmd_function)w_ds_select_domain, 2,
-		ds_select_fixup,  NULL,
+
+	{"ds_mark_dst",      (cmd_function)w_ds_mark_dst, {
+		{CMD_PARAM_STR|CMD_PARAM_OPT, 0, 0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT|CMD_PARAM_FIX_NULL, fixup_ds_part, 0},
+		{0, 0, 0}},
 		REQUEST_ROUTE|FAILURE_ROUTE},
-	{"ds_select_domain", (cmd_function)w_ds_select_domain_limited, 3,
-		ds_select_fixup,  NULL,
-		REQUEST_ROUTE|FAILURE_ROUTE},
-	{"ds_next_dst",      (cmd_function)w_ds_next_dst,      0,
-		NULL , NULL,
-		REQUEST_ROUTE|FAILURE_ROUTE},
-	{"ds_next_dst",      (cmd_function)w_ds_next_dst,      1,
-		ds_next_fixup, NULL,
-		REQUEST_ROUTE|FAILURE_ROUTE},
-	{"ds_next_domain",   (cmd_function)w_ds_next_domain,   0,
-		NULL , NULL,
-		REQUEST_ROUTE|FAILURE_ROUTE},
-	{"ds_next_domain",   (cmd_function)w_ds_next_domain,   1,
-		ds_next_fixup,  NULL,
-		REQUEST_ROUTE|FAILURE_ROUTE},
-	{"ds_mark_dst",      (cmd_function)w_ds_mark_dst,      0,
-		NULL , NULL,
-		REQUEST_ROUTE|FAILURE_ROUTE},
-	{"ds_mark_dst",      (cmd_function)w_ds_mark_dst1,     1,
-		fixup_sgp_null, NULL,
-		REQUEST_ROUTE|FAILURE_ROUTE},
-	{"ds_mark_dst",      (cmd_function)w_ds_mark_dst,      2,
-		ds_mark_fixup, NULL,
-		REQUEST_ROUTE|FAILURE_ROUTE},
-	{"ds_is_in_list",    (cmd_function)w_ds_is_in_list,    2,
-		in_list_fixup, NULL,
+
+	{"ds_is_in_list",    (cmd_function)w_ds_is_in_list, {
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_INT, 0, 0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT|CMD_PARAM_FIX_NULL, fixup_ds_part, 0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"ds_is_in_list",    (cmd_function)w_ds_is_in_list,    3,
-		in_list_fixup, NULL,
-		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"ds_is_in_list",    (cmd_function)w_ds_is_in_list,    4,
-		in_list_fixup, NULL,
-		REQUEST_ROUTE|FAILURE_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
-	{"ds_count",    (cmd_function)w_ds_count,   3,
-		ds_count_fixup, NULL,
+
+	{"ds_count",    (cmd_function)w_ds_count, {
+		{CMD_PARAM_INT, 0, 0},
+		{CMD_PARAM_STR, fixup_ds_count_filter, 0},
+		{CMD_PARAM_VAR, 0, 0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT|CMD_PARAM_FIX_NULL, fixup_ds_part, 0},
+			{0, 0, 0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE|TIMER_ROUTE|EVENT_ROUTE},
-	{0,0,0,0,0,0}
+
+	{0,0,{{0,0,0}},0}
 };
 
 
@@ -262,7 +258,8 @@ static param_export_t params[]={
 	{"hash_pvar",       STR_PARAM, &hash_pvar_param.s},
 	{"setid_pvar",      STR_PARAM, &ds_setid_pvname.s},
 	{"pvar_algo_pattern",     STR_PARAM, &pvar_algo_param.s},
-	{"ds_probing_threshhold", INT_PARAM, &probing_threshhold},
+	{"ds_probing_threshhold", INT_PARAM, &probing_threshold},
+	{"ds_probing_threshold",  INT_PARAM, &probing_threshold},
 	{"ds_ping_method",        STR_PARAM, &ds_ping_method.s},
 	{"ds_ping_from",          STR_PARAM, &ds_ping_from.s},
 	{"ds_ping_interval",      INT_PARAM, &ds_ping_interval},
@@ -275,6 +272,9 @@ static param_export_t params[]={
 	{"persistent_state",      INT_PARAM, &ds_persistent_state},
 	{"fetch_freeswitch_stats", INT_PARAM, &fetch_freeswitch_stats},
 	{"max_freeswitch_weight", INT_PARAM, &max_freeswitch_weight},
+	{"cluster_id",            INT_PARAM, &ds_cluster_id },
+	{"cluster_sharing_tag",   STR_PARAM, &ds_cluster_shtag },
+
 	{0,0,0}
 };
 
@@ -295,10 +295,21 @@ static module_dependency_t *get_deps_fetch_fs_load(param_export_t *param)
 }
 
 static mi_export_t mi_cmds[] = {
-	{ "ds_set_state",   0, ds_mi_set,     0,                0,  0            },
-	{ "ds_list",        0, ds_mi_list,    0,                0,  0            },
-	{ "ds_reload",      0, ds_mi_reload,  0,                0,  mi_child_init},
-	{ 0, 0, 0, 0, 0, 0}
+	{ "ds_set_state", 0, 0, 0, {
+		{ds_mi_set, {"state", "group", "address", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ "ds_list", 0, 0, 0, {
+		{w_ds_mi_list, {0}},
+		{w_ds_mi_list_1, {"full", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{ "ds_reload", 0, 0, mi_child_init, {
+		{ds_mi_reload, {0}},
+		{ds_mi_reload_1, {"partition", 0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
 
 static dep_export_t deps = {
@@ -307,8 +318,9 @@ static dep_export_t deps = {
 		{ MOD_TYPE_NULL, NULL, 0 },
 	},
 	{ /* modparam dependencies */
-		{ "ds_ping_interval",      get_deps_ds_ping_interval },
+		{ "ds_ping_interval", get_deps_ds_ping_interval },
 		{ "fetch_freeswitch_stats", get_deps_fetch_fs_load },
+		{ "cluster_id", get_deps_clusterer},
 		{ NULL, NULL },
 	},
 };
@@ -319,6 +331,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,
 	0,
@@ -332,6 +345,7 @@ struct module_exports exports= {
 	(response_function) 0,
 	(destroy_function) destroy,
 	ds_child_init, /* per-child init function */
+	0              /* reload confirm function */
 };
 
 
@@ -456,37 +470,21 @@ static int parse_partition_argument(str *arg, ds_db_head_t **found_head)
 	return 0;
 }
 
-/*
-	Find partition by name. Return null if no partition is matching the name
-*/
-
-static ds_partition_t* find_partition_by_name (const str *partition_name)
-{
-	if (partition_name->len == 0)
-		return default_partition;
-
-	ds_partition_t *part_it;
-
-	for (part_it = partitions; part_it; part_it = part_it->next)
-		if (str_strcmp(&part_it->name, partition_name) == 0)
-			break;
-
-	return part_it; //and NULL if there's no partition matching the name
-}
 
 /* Load setids this proxy is responsible for probing into list */
 static int set_probing_list(unsigned int type, void *val) {
 	str input = {(char*)val, strlen(val)};
 
-        if (set_list_from_string(input, &ds_probing_list) != 0 ||
-            ds_probing_list == NULL)
-        {
-            LM_ERR("Invalid set_probing_list input\n");
-            return -1;
-        }
+	if (set_list_from_string(input, &ds_probing_list) != 0 ||
+		ds_probing_list == NULL)
+	{
+		LM_ERR("Invalid set_probing_list input\n");
+		return -1;
+	}
 
-        return 0;
+	return 0;
 }
+
 
 /* We parse the "partition" argument as: partition_name:arg1=val1; arg2=val2;*/
 
@@ -737,6 +735,12 @@ static int mod_init(void)
 	}
 	set_default_head_values(&default_db_head);
 
+	if (!ds_db_heads) {
+		LM_ERR("missing default partition, "
+		       "please specify the 'db_url' parameter\n");
+		return -1;
+	}
+
 	ds_set_id_col.len = strlen(ds_set_id_col.s);
 	ds_dest_uri_col.len = strlen(ds_dest_uri_col.s);
 	ds_dest_sock_col.len = strlen(ds_dest_sock_col.s);
@@ -851,7 +855,7 @@ static int mod_init(void)
 					probing_sock_s);
 				return -1;
 			}
-			probing_sock = grep_sock_info( &host, port, proto);
+			probing_sock = grep_internal_sock_info( &host, port, proto);
 			if (probing_sock==NULL) {
 				LM_ERR("socket <%s> is not local to opensips (we must listen "
 					"on it\n", probing_sock_s);
@@ -859,7 +863,7 @@ static int mod_init(void)
 			}
 		}
 		/* TM-Bindings */
-		load_tm=(load_tm_f)find_export("load_tm", 0, 0);
+		load_tm=(load_tm_f)find_export("load_tm", 0);
 		if (load_tm==NULL) {
 			LM_ERR("failed to bind to the TM-Module - required for probing\n");
 			return -1;
@@ -879,7 +883,7 @@ static int mod_init(void)
 		/* Register the weight-recalculation timer */
 		if (fetch_freeswitch_stats &&
 		    register_timer("ds-update-weights", ds_update_weights, NULL,
-		                   FS_HEARTBEAT_ITV, TIMER_FLAG_SKIP_ON_DELAY)<0) {
+		            fs_api.stats_update_interval, TIMER_FLAG_SKIP_ON_DELAY)<0) {
 			LM_ERR("failed to register timer for weight recalc!\n");
 			return -1;
 		}
@@ -893,8 +897,15 @@ static int mod_init(void)
 	}
 
 	dispatch_evi_id = evi_publish_event(dispatcher_event);
-	if (dispatch_evi_id == EVI_ERROR)
+	if (dispatch_evi_id == EVI_ERROR) {
 		LM_ERR("cannot register dispatcher event\n");
+		return -1;
+	}
+
+	if (ds_cluster_id>0 && ds_init_cluster()<0) {
+		LM_ERR("failed to initialized the clustering support\n");
+		return -1;
+	}
 
 	return 0;
 }
@@ -997,139 +1008,42 @@ static void destroy(void)
 
 /**
  *
- */
 static int w_ds_select(struct sip_msg* msg, char* part_set, char* alg,
 											char* max_results_flags, int mode)
+ */
+static int w_ds_select(struct sip_msg *msg, int set, int alg, int flags,
+                       ds_partition_t *part, int *max_res, int mode)
 {
 	int ret = -1;
 	int _ret;
-	int run_prev_ds_select = 0;
-	ds_select_ctl_t prev_ds_select_ctl, ds_select_ctl;
+	ds_select_ctl_t ds_select_ctl;
 	ds_selected_dst selected_dst;
 
-	if(msg==NULL)
+	if (!msg)
 		return -1;
 
 	ds_select_ctl.mode = mode;
 	ds_select_ctl.max_results = 1000;
-	ds_select_ctl.reset_AVP = 1;
-	ds_select_ctl.set_destination = 1;
+	ds_select_ctl.set_destination = 0;
 	ds_select_ctl.ds_flags = 0;
+	ds_select_ctl.partition = part;
+	ds_select_ctl.set = set;
+	ds_select_ctl.alg = alg;
+	ds_select_ctl.ds_flags = flags;
+	ds_select_ctl.max_results = max_res ? *max_res : 0;
 
 	memset(&selected_dst, 0, sizeof(ds_selected_dst));
 
-	/* Retrieve dispatcher set */
-	ds_param_t *part_set_param = (ds_param_t*)part_set;
-
-	if (fixup_get_partition(msg, &part_set_param->partition,
-			&ds_select_ctl.partition) != 0 ||ds_select_ctl.partition == NULL) {
-		LM_ERR("unknown partition\n");
-		return -1;
-	}
-
-	int_list_t *set_list = part_set_param->sets;
-	int_list_t *set_list_exp_start = NULL, *set_list_exp_end = NULL;
-
-	/* Retrieve dispatcher algorithm */
-	int_list_t *alg_list = (int_list_t *)alg;
-	int_list_t *alg_list_exp_start = NULL, *alg_list_exp_end = NULL;
-
-	/* In case this parameter is not specified */
-	max_list_param_p max_param = (max_list_param_p)max_results_flags;
-	str max_list_str;
-
-	int_list_t *max_list=NULL, *max_list_free;
-	if (max_param && max_param->type == MAX_LIST_TYPE_STR) {
-		max_list = (int_list_t*)max_param->lst.list;
-	} else if (max_param && max_param->type == MAX_LIST_TYPE_PV) {
-		if (pv_printf_s(msg, max_param->lst.elem, &max_list_str) != 0) {
-			LM_ERR("cannot get max list from pv\n");
-			return -1;
-		}
-
-		if (set_list_from_string(max_list_str, &max_list) != 0
-				|| max_list == NULL)
-			return -1;
-	}
-
-	/* Avoid compiler warning */
-	memset(&prev_ds_select_ctl, 0, sizeof(ds_select_ctl_t));
-
-	ds_select_ctl.set_destination = 0;
-
-	/* Parse the params in reverse order.
-	 * We need to runt the first entry last to properly populate ds_select_dst
-	 *  AVPs.
-	 * On the first ds_select_dst run we need to reset AVPs.
-	 * On the last ds_select_dst run we need to set destination.  */
-	do {
-		CHECK_AND_EXPAND_LIST(set_list);
-		ds_select_ctl.set = set_list->v.ival;
-
-		CHECK_AND_EXPAND_LIST(alg_list);
-		ds_select_ctl.alg = alg_list->v.ival;
-
-		if (max_results_flags) {
-			ds_select_ctl.max_results = max_list->v.ival;
-			ds_select_ctl.ds_flags    = max_list->flags;
-		}
-
-		if (run_prev_ds_select) {
-			LM_DBG("ds_select: %d %d %d %d %d\n",
-				prev_ds_select_ctl.set, prev_ds_select_ctl.alg,
-				prev_ds_select_ctl.max_results,
-				prev_ds_select_ctl.reset_AVP,
-				prev_ds_select_ctl.set_destination);
-			_ret = ds_select_dst(msg, &prev_ds_select_ctl, &selected_dst,
-				prev_ds_select_ctl.ds_flags);
-			if (_ret>=0) ret = _ret;
-			/* stop resetting AVPs. */
-			ds_select_ctl.reset_AVP = 0;
-		} else {
-			/* Enable running ds_select_dst on next loop. */
-			run_prev_ds_select = 1;
-		}
-		prev_ds_select_ctl = ds_select_ctl;
-
-		set_list = set_list->next;
-		alg_list = alg_list->next;
-		if (max_results_flags) {
-			max_list_free = max_list;
-			max_list = max_list->next;
-
-			if (max_param->type == MAX_LIST_TYPE_PV)
-				pkg_free(max_list_free);
-		}
-
-		TRY_FREE_EXPANDED_LIST(set_list);
-		TRY_FREE_EXPANDED_LIST(alg_list);
-
-	} while (set_list && alg_list &&
-			(max_results_flags ? max_list : set_list));
-
-	if (max_results_flags &&  max_list != NULL) {
-		LM_ERR("extra max slot(s) and/or flag(s)\n");
-		ret = -2;
-		goto error;
-	}
-
-	if (set_list != NULL) {
-		LM_ERR("extra set(s)\n");
-		ret = -2;
-		goto error;
-	}
-
-	if (alg_list != NULL) {
-		LM_ERR("extra algorithm(s)\n");
-		ret = -2;
-		goto error;
-	}
+	_ret = ds_select_dst(msg, &ds_select_ctl, &selected_dst,
+		ds_select_ctl.ds_flags);
+	if (_ret>=0) ret = _ret;
 
 	/* last ds_select_dst run: setting destination. */
 	ds_select_ctl.set_destination = 1;
-	LM_DBG("ds_select: %d %d %d %d %d\n",
+	LM_DBG("ds_select: %d %d %d %d\n",
 		ds_select_ctl.set, ds_select_ctl.alg, ds_select_ctl.max_results,
-		ds_select_ctl.reset_AVP, ds_select_ctl.set_destination);
+		ds_select_ctl.set_destination);
+
 	_ret = ds_select_dst(msg, &ds_select_ctl, &selected_dst,
 		ds_select_ctl.ds_flags);
 	if (_ret>=0) {
@@ -1155,117 +1069,40 @@ error:
 	return ret;
 }
 
-/**
- *
- */
-static int w_ds_select_all(struct sip_msg* msg, char* set, char* alg, int mode)
+static int w_ds_select_dst(struct sip_msg *msg, int *set, int *alg,
+                           void *flags, void *part, int *max_res)
 {
-	return w_ds_select(msg, set, alg, NULL, mode);
+	return w_ds_select(msg, *set, *alg, (int)(long)flags,
+	                   (ds_partition_t *)part, max_res, 0);
 }
 
-/**
- * max_results can also mean the flags parameter
- */
-static int w_ds_select_limited(struct sip_msg* msg, char* set, char* alg,
-												char* max_results, int mode)
+static int w_ds_select_domain(struct sip_msg *msg, int *set, int *alg,
+                           void *flags, void *part, int *max_res)
 {
-	return w_ds_select(msg, set, alg, max_results, mode);
+	return w_ds_select(msg, *set, *alg, (int)(long)flags,
+	                   (ds_partition_t *)part, max_res, 1);
 }
 
-/**
- *
- */
-static int w_ds_select_dst(struct sip_msg* msg, char* set, char* alg)
+static int w_ds_next_dst(struct sip_msg *msg, void *part)
 {
-	return w_ds_select_all(msg, set, alg, 0);
+	return ds_next_dst(msg, 0, (ds_partition_t *)part);
 }
 
-/**
- * same wrapper as w_ds_select_dst, but it allows cutting down the result set
- * max_results can also mean flags
- */
-static int w_ds_select_dst_limited(struct sip_msg* msg, char* set, char* alg,
-															char* max_results)
+static int w_ds_next_domain(struct sip_msg *msg, void *part)
 {
-	return w_ds_select_limited(msg, set, alg, max_results, 0);
+	return ds_next_dst(msg, 1, (ds_partition_t *)part);
 }
 
-/**
- *
- */
-static int w_ds_select_domain(struct sip_msg* msg, char* set, char* alg)
+static int w_ds_mark_dst(struct sip_msg *msg, str *flags, void *part)
 {
-	return w_ds_select_all(msg, set, alg, 1);
-}
-
-/**
- * same wrapper as w_ds_select_domain, but it allows cutting down the
- *   result set
- * max_results can also mean the flags parameter
- */
-static int w_ds_select_domain_limited(struct sip_msg* msg, char* set,
-												char* alg, char* max_results)
-{
-	return w_ds_select_limited(msg, set, alg, max_results, 1);
-}
-
-#define GET_AND_CHECK_PARTITION(_param_, _part_) \
-	do {\
-		if (_param_ == NULL) \
-			_part_ = default_partition; \
-		else \
-			if(fixup_get_partition(msg, (gpartition_t *)_param_, &_part_)!=0) \
-			return -1; \
-		if (_part_ == NULL) { \
-			LM_ERR("Unknown partition\n"); \
-			return -1; \
-		} \
-	} while (0)
-
-/**
- *
- */
-static int w_ds_next_dst(struct sip_msg *msg, char *part_param)
-{
-	ds_partition_t *partition;
-
-	GET_AND_CHECK_PARTITION(part_param, partition);
-	return ds_next_dst(msg, 0, partition);
-}
-
-
-/**
- *
- */
-static int w_ds_next_domain(struct sip_msg *msg, char *part_param)
-{
-	ds_partition_t *partition;
-
-	GET_AND_CHECK_PARTITION(part_param, partition);
-	return ds_next_dst(msg, 1, partition);
-}
-
-
-/**
- *
- */
-static int w_ds_mark_dst(struct sip_msg *msg, char *str1, char *str2)
-{
-	str arg = {NULL, 0};
+	str arg = STR_NULL;
 	ds_partition_t *partition = default_partition;
 
-	if (str2 != NULL) {
-		/* We have two args */
-		if (str1 != NULL)
-			GET_AND_CHECK_PARTITION(str1, partition);
+	if (part)
+		partition = (ds_partition_t *)part;
 
-		if (fixup_get_svalue(msg, (gparam_p)str2, &arg) != 0)
-			goto error;
-	}
-	else {
-		if (str1 != NULL && fixup_get_svalue(msg, (gparam_p)str1, &arg) != 0)
-				goto error;
-	}
+	if (flags)
+		arg = *flags;
 
 	if (arg.len > 1) {
 		LM_ERR ("unknown option %.*s\n", arg.len, arg.s);
@@ -1288,17 +1125,9 @@ static int w_ds_mark_dst(struct sip_msg *msg, char *str1, char *str2)
 		return -1;
 	}
 
-error:
 	LM_ERR("wrong arguments\n");
 	return -1;
 }
-
-
-static int w_ds_mark_dst1(struct sip_msg *msg, char *flags)
-{
-	return w_ds_mark_dst(msg, flags, NULL);
-}
-
 
 
 /************************** MI STUFF ************************/
@@ -1307,22 +1136,21 @@ static int w_ds_mark_dst1(struct sip_msg *msg, char *flags)
 #define MI_NOT_SUPPORTED		"DB mode not configured"
 #define MI_UNK_PARTITION		"ERROR Unknown partition"
 
-static struct mi_root* ds_mi_set(struct mi_root* cmd_tree, void* param)
+mi_response_t *ds_mi_set(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
 	str sp, partition_name;
 	int ret;
 	unsigned int group, state;
-	struct mi_node* node;
 	ds_partition_t *partition;
 
-	node = cmd_tree->node.kids;
-	if(node == NULL)
-		return init_mi_tree( 400, MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
-	sp = node->value;
+	if (get_mi_string_param(params, "state", &sp.s, &sp.len) < 0)
+		return init_mi_param_error();
+
 	if(sp.len<=0 || !sp.s)
 	{
 		LM_ERR("bad state value\n");
-		return init_mi_tree( 500, MI_SSTR("Bad state value") );
+		return init_mi_error( 500, MI_SSTR("Bad state value") );
 	}
 
 	if(sp.s[0]=='0' || sp.s[0]=='I' || sp.s[0]=='i')
@@ -1332,42 +1160,39 @@ static struct mi_root* ds_mi_set(struct mi_root* cmd_tree, void* param)
 	else if(sp.s[0]=='a' || sp.s[0]=='A' || sp.s[0]=='1')
 		state = 1;
 	else
-		return init_mi_tree( 500, MI_SSTR("Bad state value") );
+		return init_mi_error( 500, MI_SSTR("Bad state value") );
 
-	node = node->next;
-	if(node == NULL)
-		return init_mi_tree( 400, MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
-	sp = node->value;
+	if (get_mi_string_param(params, "group", &sp.s, &sp.len) < 0)
+		return init_mi_param_error();
+
 	if(sp.s == NULL)
 	{
-		return init_mi_tree(500, MI_SSTR("group not found"));
+		return init_mi_error(500, MI_SSTR("group not found"));
 	}
 
 	if (split_partition_argument(&sp, &partition_name) != 0) {
 		LM_ERR("bad group format\n");
-		return init_mi_tree(500, MI_SSTR("bad group format"));
+		return init_mi_error(500, MI_SSTR("bad group format"));
 	}
 
 	partition = find_partition_by_name(&partition_name);
 	if (partition == NULL) {
 		LM_ERR("partition does not exist\n");
-		return init_mi_tree(404, MI_SSTR(MI_UNK_PARTITION) );
+		return init_mi_error(404, MI_SSTR(MI_UNK_PARTITION) );
 	}
 
 	if(str2int(&sp, &group))
 	{
 		LM_ERR("bad group value\n");
-		return init_mi_tree( 500, MI_SSTR("bad group value"));
+		return init_mi_error( 500, MI_SSTR("bad group value"));
 	}
 
-	node= node->next;
-	if(node == NULL)
-		return init_mi_tree( 400, MI_MISSING_PARM_S, MI_MISSING_PARM_LEN);
+	if (get_mi_string_param(params, "address", &sp.s, &sp.len) < 0)
+		return init_mi_param_error();
 
-	sp = node->value;
 	if(sp.s == NULL)
 	{
-		return init_mi_tree(500, MI_SSTR("address not found"));
+		return init_mi_error(500, MI_SSTR("address not found"));
 	}
 
 	if (state==1) {
@@ -1387,140 +1212,124 @@ static struct mi_root* ds_mi_set(struct mi_root* cmd_tree, void* param)
 	}
 
 	if(ret!=0)
-		return init_mi_tree(404, MI_SSTR("destination not found"));
+		return init_mi_error(404, MI_SSTR("destination not found"));
 
-	return init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
+	return init_mi_result_ok();
 }
 
-
-static struct mi_root* ds_mi_list(struct mi_root* cmd_tree, void* param)
+mi_response_t *ds_mi_list(int full)
 {
-	struct mi_root* rpl_tree;
-	struct mi_node* part_node;
-	int flags = 0;
-
-	if (cmd_tree->node.kids){
-		if(cmd_tree->node.kids->value.len == 4 && memcmp(cmd_tree->node.kids->value.s,"full",4)==0)
-			flags  |= MI_FULL_LISTING;
-		else
-			return init_mi_tree(400, MI_SSTR(MI_BAD_PARM_S));
-
-	}
-
-	rpl_tree = init_mi_tree(200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==NULL)
-		return 0;
-	rpl_tree->node.flags |= MI_IS_ARRAY;
-
+	mi_response_t *resp;
+	mi_item_t *resp_obj;
+	mi_item_t *parts_arr, *part_item;
 	ds_partition_t *part_it;
+
+	resp = init_mi_result_object(&resp_obj);
+	if (!resp)
+		return 0;
+
+	parts_arr = add_mi_array(resp_obj, MI_SSTR("PARTITIONS"));
+	if (!parts_arr)
+		goto error;
+
 	for (part_it = partitions; part_it; part_it = part_it->next) {
-		part_node = add_mi_node_child(&rpl_tree->node, MI_IS_ARRAY,"PARTITION",
-				9, part_it->name.s, part_it->name.len);
+		part_item = add_mi_object(parts_arr, NULL, 0);
+		if (!part_item)
+			goto error;
 
-		if (part_node == NULL
-			|| ds_print_mi_list(part_node, part_it, flags) < 0) {
-		LM_ERR("failed to add node\n");
-		free_mi_tree(rpl_tree);
-		return 0;
-		}
+		if (add_mi_string(part_item, MI_SSTR("name"),
+			part_it->name.s, part_it->name.len) < 0)
+			goto error;
+
+		if (ds_print_mi_list(part_item, part_it, full) < 0)
+			goto error;
 	}
 
-	return rpl_tree;
+	return resp;
+
+error:
+	free_mi_response(resp);
+	return 0;
 }
 
-
-static struct mi_root* ds_mi_reload(struct mi_root* cmd_tree, void* param)
+mi_response_t *w_ds_mi_list(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
-	struct mi_node* node = cmd_tree->node.kids;
-	if(node != NULL){
-		ds_partition_t *partition = find_partition_by_name(&node->value);
-		if (partition == NULL)
-			return init_mi_tree(500, MI_SSTR(MI_UNK_PARTITION) );
-		if (ds_reload_db(partition) < 0)
-			return init_mi_tree(500, MI_SSTR(MI_ERR_RELOAD));
-		else
-			return init_mi_tree(200, MI_SSTR(MI_OK_S) );
-	}
+	return ds_mi_list(0);
+}
 
+mi_response_t *w_ds_mi_list_1(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	int full;
+
+	if (get_mi_int_param(params, "full", &full) < 0)
+		return init_mi_param_error();
+
+	return ds_mi_list(full);
+}
+
+mi_response_t *ds_mi_reload(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
 	ds_partition_t *part_it;
+
 	for (part_it = partitions; part_it; part_it = part_it->next)
 		if (ds_reload_db(part_it)<0)
-			return init_mi_tree(500, MI_SSTR(MI_ERR_RELOAD));
+			return init_mi_error(500, MI_SSTR(MI_ERR_RELOAD));
 
-	return init_mi_tree(200, MI_SSTR(MI_OK_S));
+	return init_mi_result_ok();
 }
 
+mi_response_t *ds_mi_reload_1(const mi_params_t *params,
+								struct mi_handler *async_hdl)
+{
+	ds_partition_t *partition;
+	str partname;
 
-static int w_ds_is_in_list(struct sip_msg *msg,char *ip,char *port,char *set,
-															char *active_only)
+	if (get_mi_string_param(params, "partition", &partname.s, &partname.len) < 0)
+		return init_mi_param_error();
+
+	partition = find_partition_by_name(&partname);
+
+	if (partition == NULL)
+		return init_mi_error(500, MI_SSTR(MI_UNK_PARTITION));
+	if (ds_reload_db(partition) < 0)
+		return init_mi_error(500, MI_SSTR(MI_ERR_RELOAD));
+	else
+		return init_mi_result_ok();
+}
+
+static int w_ds_is_in_list(struct sip_msg *msg, str *ip, int *port,
+                           int *set, void *part, int *active_only)
 {
 	ds_partition_t *partition = default_partition;
-	int i_set = -1;
 
-	if (set != NULL) {
-		ds_param_t *setparam = (ds_param_t*)set;
-		if (fixup_get_partition(msg, &setparam->partition, &partition) != 0)
-			goto wrong_set_arg;
+	if (part)
+		partition = (ds_partition_t *)part;
 
-		if (setparam->sets == NULL)
-			i_set = -1;
-		else
-			if (setparam->sets->type == GPARAM_TYPE_INT) {
-				if (setparam->sets->next == NULL)
-					i_set = setparam->sets->v.ival;
-				else {
-					LM_ERR("Only one set is allowed\n");
-					return -1;
-				}
-			}
-			else {
-				int_list_t *tmp_lst =
-					set_list_from_pvs(msg, setparam->sets->v.pvs, NULL);
-				if (tmp_lst == NULL){
-					LM_ERR("Wrong set var value\n");
-					return -1;
-				}
-				if (tmp_lst->next != NULL) {
-					LM_ERR("Only one set is allowed\n");
-					return -1;
-				}
-				i_set = tmp_lst->v.ival;
-				free_int_list(tmp_lst, NULL);
-			}
-	}
-	if (partition == NULL) {
-		LM_ERR ("unknown partition\n");
+	if (!partition) {
+		LM_ERR("unknown partition\n");
 		return -1;
 	}
 
-	return ds_is_in_list(msg, (gparam_t *)ip, (gparam_t *)port, i_set,
-			active_only ? *(int *)active_only : 0, partition);
+	return ds_is_in_list(msg, ip, *port, set ? *set : -1, partition,
+							active_only ? *active_only : 0);
 
-wrong_set_arg:
-		LM_ERR("wrong format for set argument\n");
-		return -1;
+	LM_ERR("wrong format for set argument\n");
+	return -1;
 }
 
 
-static int w_ds_count(struct sip_msg* msg, char *set, const char *cmp,
-																	char *res)
+static int w_ds_count(struct sip_msg* msg, int *set, void *filter,
+						pv_spec_t *res_pv, void *part)
 {
-	unsigned int s = 0;
-	gparam_p ret = (gparam_p) res;
-	ds_partition_t *partition;
+	ds_partition_t *partition = default_partition;
 
-	if (fixup_get_partition_set(msg, (ds_param_t*)set, &partition, &s) != 0){
-		LM_ERR("wrong format for set argument. Only one set is accepted\n");
-		return -1;
-	}
+	if (part)
+		partition = (ds_partition_t *)part;
 
-	if (ret->type != GPARAM_TYPE_PVS && ret->type != GPARAM_TYPE_PVE)
-	{
-		LM_ERR("Result must be a pvar!\n");
-		return -1;
-	}
-
-	return ds_count(msg, s, cmp, ret->v.pvs, partition);
+	return ds_count(msg, *set, filter, res_pv, partition);
 }
 
 

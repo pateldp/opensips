@@ -51,7 +51,7 @@ int srs_init(void)
 		return -1;
 	}
 	if (siprec_port_max < siprec_port_min) {
-		LM_NOTICE("port_max < port_min - swaping their values!");
+		LM_NOTICE("port_max < port_min - swapping their values!\n");
 		tmp = siprec_port_min;
 		siprec_port_min = siprec_port_max;
 		siprec_port_max = tmp;
@@ -477,22 +477,36 @@ static int srs_build_sdp(struct src_sess *sess, struct srec_buffer *buf)
 	 * v=0
 	 * o=- <timestamp> <version> IN IP4 <mediaip>
 	 * s=-
+	 * c=IN IP4 <mediaip>
+	 * t=0 0
 	 * <streams*>
 	 */
 	str header1 = str_init("v=0" CRLF "o=- ");
 	str header2 = str_init(" IN IP4 0.0.0.0" CRLF "s=-" CRLF);
+	str header3 = str_init("c=IN IP4 ");
+	str header4 = str_init("t=0 0" CRLF);
+	str localh = str_init("127.0.0.1");
+	str crlf_str = str_init(CRLF);
 
 	SIPREC_COPY_STR(header1, buf);
 	SIPREC_COPY_INT(sess->ts, buf);
 	SIPREC_COPY_CHAR(' ', buf);
 	SIPREC_COPY_INT(sess->version, buf);
 	SIPREC_COPY_STR(header2, buf);
+	SIPREC_COPY_STR(header3, buf);
+	if (sess->media_ip.s)
+		SIPREC_COPY_STR(sess->media_ip, buf);
+	else
+		SIPREC_COPY_STR(localh, buf);
+	SIPREC_COPY_STR(crlf_str, buf);
+	SIPREC_COPY_STR(header4, buf);
 	for (p = 0; p < sess->participants_no; p++) {
 		list_for_each(it, &sess->participants[p].streams) {
 			stream = list_entry(it, struct srs_sdp_stream, list);
 			SIPREC_COPY_STR(stream->body, buf);
 		}
 	}
+
 	return 1;
 }
 
@@ -547,23 +561,28 @@ static int srs_build_xml(struct src_sess *sess, struct srec_buffer *buf)
 		SIPREC_COPY("\r\n\t</session>\r\n", buf);
 	}
 	for (p = 0; p < sess->participants_no; p++) {
-		if (!sess->participants[p].aor.s)
+		if (!sess->participants[p].aor.s && !sess->participants[p].xml_val.s)
 			continue;
 		SIPREC_COPY("\t<participant participant_id=\"", buf);
 		SIPREC_COPY_UUID(sess->participants[p].uuid, buf);
-		SIPREC_COPY("\">\r\n\t\t<nameID aor=\"", buf);
-		SIPREC_COPY_STR(sess->participants[p].aor, buf);
-		if (sess->participants[p].name.s) {
-			SIPREC_COPY("\">\r\n\t\t\t<name>", buf);
-			SIPREC_COPY_STR(sess->participants[p].name, buf);
-			SIPREC_COPY("</name>\r\n\t\t</nameID>", buf);
-		} else
-			SIPREC_COPY("\"/>", buf);
+		SIPREC_COPY("\">\r\n", buf);
+		if (sess->participants[p].xml_val.s)
+			SIPREC_COPY_STR(sess->participants[p].xml_val, buf);
+		else {
+			SIPREC_COPY("\t\t<nameID aor=\"", buf);
+			SIPREC_COPY_STR(sess->participants[p].aor, buf);
+			if (sess->participants[p].name.s) {
+				SIPREC_COPY("\">\r\n\t\t\t<name>", buf);
+				SIPREC_COPY_STR(sess->participants[p].name, buf);
+				SIPREC_COPY("</name>\r\n\t\t</nameID>", buf);
+			} else
+				SIPREC_COPY("\"/>", buf);
+		}
 		SIPREC_COPY("\r\n\t</participant>\r\n", buf);
 	}
 
 	for (p = 0; p < sess->participants_no; p++) {
-		if (!sess->participants[p].aor.s)
+		if (!sess->participants[p].aor.s && !sess->participants[p].xml_val.s)
 			continue;
 		list_for_each(it, &sess->participants[p].streams) {
 			stream = list_entry(it, struct srs_sdp_stream, list);

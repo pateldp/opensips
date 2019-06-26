@@ -1,16 +1,4 @@
 PUA MI
-
-Anca-Maria Vamanu
-
-Edited by
-
-Anca-Maria Vamanu
-
-Juha Heinanen
-
-   Copyright © 2006 Voice Sistem SRL
-   Revision History
-   Revision $Revision: 8740 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -33,6 +21,22 @@ Juha Heinanen
               1.5.1. pua_publish
 
         1.6. pua_subscribe
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -91,35 +95,31 @@ modparam("pua_mi", "presence_server", "sip:pa@opensips.org:5075")
    Command parameters:
      * presentity_uri - e.g. sip:system@opensips.org
      * expires - Relative expires time in seconds (e.g. 3600).
-     * event package - Event package that is target of published
+     * event_package - Event package that is target of published
        information (e.g. presence).
-     * content type - Content type of published information (e.g.
-       application/pidf+xml) or . if no information is enclosed.
-     * ETag - ETag that publish should match or . if no ETag is
-       given.
-     * extra_headers - Extra headers added to PUBLISH request or .
-       if no extra headers.
-     * body - The body of the publish request containing published
-       information or missing if no published information. It has
-       to be a single line for FIFO transport.
+     * content_type (optional) - Content type of published
+       information (e.g. application/pidf+xml). If this parameter
+       is provided, the body parameter is also required.
+     * etag (optional) - ETag that publish should match.
+     * extra_headers (optional) - Extra headers added to PUBLISH
+       request.
+     * body (optioanl) - The body of the publish request
+       containing published information or missing if no published
+       information. It has to be a single line for FIFO transport.
+       If this parameter is provided, the content_type parameter
+       is also required.
 
    Example 1.2. pua_publish FIFO example
 ...
 
-:pua_publish:fifo_test_reply
-sip:system@opensips.org
-3600
-presence
-application/pidf+xml
-.
-.
-<?xml version='1.0'?><presence xmlns='urn:ietf:params:xml:ns:pidf' xmlns
-:dm='urn:ietf:params:xml:ns:pidf:data-model' xmlns:rpid='urn:ietf:params
-:xml:ns:pidf:rpid' xmlns:c='urn:ietf:params:xml:ns:pidf:cipid' entity='s
-ystem@opensips.org'><tuple id='0x81475a0'><status><basic>open</basic></s
-tatus></tuple><dm:person id='pdd748945'><rpid:activities><rpid:away/>awa
-y</rpid:activities><dm:note>CPU:16 MEM:476</dm:note></dm:person></presen
-ce>
+opensips-cli -x mi pua_publish sip:system@opensips.org 3600 presence app
+lication/pidf+xml <?xml version='1.0'?><presence xmlns='urn:ietf:params:
+xml:ns:pidf' xmlns:dm='urn:ietf:params:xml:ns:pidf:data-model' xmlns:rpi
+d='urn:ietf:params:xml:ns:pidf:rpid' xmlns:c='urn:ietf:params:xml:ns:pid
+f:cipid' entity='system@opensips.org'><tuple id='0x81475a0'><status><bas
+ic>open</basic></status></tuple><dm:person id='pdd748945'><rpid:activiti
+es><rpid:away/>away</rpid:activities><dm:note>CPU:16 MEM:476</dm:note></
+dm:person></presence>
 
 
 1.6.  pua_subscribe
@@ -130,3 +130,75 @@ ce>
      * event package
      * expires - Relative time in seconds for the desired validity
        of the subscription.
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Anca Vamanu 30 15 1246 267
+   2. Bogdan-Andrei Iancu (@bogdan-iancu) 15 13 42 53
+   3. Juha Heinanen (@juha-h) 11 7 160 73
+   4. Liviu Chircu (@liviuchircu) 10 8 26 41
+   5. Vlad Patrascu (@rvlad-patrascu) 10 3 278 220
+   6. Daniel-Constantin Mierla (@miconda) 9 7 32 29
+   7. Razvan Crainea (@razvancrainea) 9 7 14 16
+   8. Ovidiu Sas (@ovidiusas) 3 1 13 2
+   9. Konstantin Bokarius 3 1 2 5
+   10. Peter Lemenkov (@lemenkov) 3 1 1 1
+
+   All remaining contributors: Edson Gellert Schubert, Julien
+   Blache.
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Razvan Crainea (@razvancrainea)     Sep 2011 - May 2019
+   2.  Bogdan-Andrei Iancu (@bogdan-iancu) Dec 2006 - Apr 2019
+   3.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - Jan 2019
+   4.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   5.  Liviu Chircu (@liviuchircu)         Mar 2014 - Jun 2018
+   6.  Ovidiu Sas (@ovidiusas)             Jan 2013 - Jan 2013
+   7.  Anca Vamanu                         Nov 2006 - Aug 2010
+   8.  Juha Heinanen (@juha-h)             Apr 2007 - May 2008
+   9.  Daniel-Constantin Mierla (@miconda) Feb 2007 - Mar 2008
+   10. Konstantin Bokarius                 Mar 2008 - Mar 2008
+
+   All remaining contributors: Edson Gellert Schubert, Julien
+   Blache.
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Razvan Crainea (@razvancrainea), Vlad Patrascu
+   (@rvlad-patrascu), Peter Lemenkov (@lemenkov), Liviu Chircu
+   (@liviuchircu), Bogdan-Andrei Iancu (@bogdan-iancu), Anca
+   Vamanu, Juha Heinanen (@juha-h), Daniel-Constantin Mierla
+   (@miconda), Konstantin Bokarius, Edson Gellert Schubert.
+
+   Documentation Copyrights:
+
+   Copyright © 2006 Voice Sistem SRL

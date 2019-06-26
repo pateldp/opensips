@@ -27,15 +27,17 @@
 
 #include "../../ut.h"
 #include "../../usr_avp.h"
+#include "../../mod_fix.h"
 #include "../../data_lump_rpl.h"
 #include "../../parser/parse_expires.h"
 #include "../../parser/parse_event.h"
 #include "../../parser/contact/parse_contact.h"
+#include "../pua/hash.h"
 #include "presence.h"
 #include "subscribe.h"
 #include "utils_func.h"
 #include "notify.h"
-#include "../pua/hash.h"
+#include "clustering.h"
 
 
 int get_stored_info(struct sip_msg* msg, subs_t* subs, int* error_ret,
@@ -68,9 +70,7 @@ int send_2XX_reply(struct sip_msg * msg, int reply_code, int lexpire,
 	lexpire_s = int2str((unsigned long)lexpire, &lexpire_len);
 
 	len = 9 /*"Expires: "*/ + lexpire_len + CRLF_LEN
-		+ 10 /*"Contact: <"*/ + local_contact->len + 1 /*">"*/
-		+ ((msg->rcv.proto!=PROTO_UDP)?15/*";transport=xxxx"*/:0)
-		+ CRLF_LEN;
+		+ 10 /*"Contact: <"*/ + local_contact->len + 1 /*">"*/ + CRLF_LEN;
 
 	hdr_append = (char *)pkg_malloc( len );
 	if(hdr_append == NULL)
@@ -84,25 +84,13 @@ int send_2XX_reply(struct sip_msg * msg, int reply_code, int lexpire,
 	p += 9;
 	memcpy(p,lexpire_s,lexpire_len);
 	p += lexpire_len;
-	memcpy(p,CRLF,CRLF_LEN);
-	p += CRLF_LEN;
 	/* contact header */
-	memcpy(p,"Contact: <", 10);
-	p += 10;
+	memcpy(p, CRLF "Contact: <", CRLF_LEN+10);
+	p += CRLF_LEN + 10;
 	memcpy(p,local_contact->s,local_contact->len);
 	p += local_contact->len;
-	if (msg->rcv.proto!=PROTO_UDP) {
-		memcpy(p,";transport=",11);
-		p += 11;
-		p = proto2str(msg->rcv.proto, p);
-		if (p==NULL) {
-			LM_ERR("invalid proto\n");
-			goto error;
-		}
-	}
-	*(p++) = '>';
-	memcpy(p, CRLF, CRLF_LEN);
-	p += CRLF_LEN;
+	memcpy(p, ">" CRLF, 1+CRLF_LEN);
+	p += 1+CRLF_LEN;
 
 	if (add_lump_rpl( msg, hdr_append, p-hdr_append, LUMP_RPL_HDR)==0 )
 	{
@@ -359,9 +347,10 @@ int update_subscription(struct sip_msg* msg, subs_t* subs, int init_req)
 	{
 		if(subs->expires == 0)
 		{
-			LM_DBG("expires=0, deleting subscription from [%.*s@%.*s] to [%.*s]\n",
-					subs->from_user.len, subs->from_user.s, subs->from_domain.len,
-					subs->from_domain.s, subs->pres_uri.len, subs->pres_uri.s);
+			LM_DBG("expires=0, deleting subscription from "
+				"[%.*s@%.*s] to [%.*s]\n",
+				subs->from_user.len, subs->from_user.s, subs->from_domain.len,
+				subs->from_domain.s, subs->pres_uri.len, subs->pres_uri.s);
 
 			if(delete_db_subs(subs->pres_uri,subs->event->name,subs->to_tag)<0)
 			{
@@ -460,9 +449,9 @@ error:
 
 void msg_watchers_clean(unsigned int ticks,void *param)
 {
-	db_key_t db_keys[3];
-	db_val_t db_vals[3];
-	db_op_t  db_ops[3] ;
+	db_key_t db_keys[2];
+	db_val_t db_vals[2];
+	db_op_t  db_ops[2] ;
 
 	LM_DBG("cleaning pending subscriptions\n");
 
@@ -486,6 +475,7 @@ void msg_watchers_clean(unsigned int ticks,void *param)
 
 	if (pa_dbf.delete(pa_db, db_keys, db_ops, db_vals, 2) < 0)
 		LM_ERR("cleaning pending subscriptions\n");
+
 }
 
 /*
@@ -496,7 +486,7 @@ void msg_watchers_clean(unsigned int ticks,void *param)
  *		- sends a reply in all cases (success or error).
  *	TODO replace -1 return code in error case with 0 ( exit from the script)
  * */
-int handle_subscribe(struct sip_msg* msg, char* force_active_param, char* str2)
+int handle_subscribe(struct sip_msg* msg, int* force_active_param, str* tag)
 {
 	int  init_req = 0;
 	subs_t subs;
@@ -557,7 +547,7 @@ int handle_subscribe(struct sip_msg* msg, char* force_active_param, char* str2)
 	ev_param= parsed_event->params;
 	while(ev_param)
 	{
-		if(ev_param->name.len== 2 && strncasecmp(ev_param->name.s, "id", 2)== 0)
+		if(ev_param->name.len==2 && strncasecmp(ev_param->name.s, "id", 2)==0)
 		{
 			subs.event_id= ev_param->body;
 			break;
@@ -578,11 +568,22 @@ int handle_subscribe(struct sip_msg* msg, char* force_active_param, char* str2)
 		goto error;
 	}
 
-	/* from now one most of the possible error are due to fail in internal processing */
+	/* from now one most of the possible error are due to fail
+	 * in internal processing */
 	reply_code= 500;
 	reply_str= pu_500_rpl;
 
-	/* getting presentity uri from Request-URI if initial subscribe - or else from database*/
+	if (tag) {
+		subs.sh_tag = *tag;
+		if (c_api.shtag_get( &subs.sh_tag, pres_cluster_id)<0) {
+			LM_ERR("failed to lookup the <%.*s> sharing tag\n",
+				subs.sh_tag.len, subs.sh_tag.s);
+			goto error;
+		}
+	}
+
+	/* getting presentity uri from Request-URI if initial subscribe;
+	 * or else from database*/
 	if(init_req)
 	{
 		if(parsed_event->parsed!= EVENT_DIALOG_SLA)
@@ -625,7 +626,7 @@ int handle_subscribe(struct sip_msg* msg, char* force_active_param, char* str2)
 	/* if dialog initiation Subscribe - get subscription state */
 	if(init_req)
 	{
-		if(!event->req_auth ||(force_active_param && force_active_param[0] == '1'))
+		if(!event->req_auth ||(force_active_param && *force_active_param == 1))
 			subs.status = ACTIVE_STATUS;
 		else
 		{
@@ -658,7 +659,7 @@ int handle_subscribe(struct sip_msg* msg, char* force_active_param, char* str2)
 		goto error;
 	}
 	LM_DBG("subscription status= %s - %s\n", get_status_str(subs.status),
-            found==0?"inserted":"found in watcher table");
+		found==0?"inserted":"found in watcher table");
 
 	if(update_subscription(msg, &subs, init_req) <0)
 	{
@@ -713,8 +714,8 @@ error_free:
 }
 
 
-int extract_sdialog_info(subs_t* subs,struct sip_msg* msg, int mexp, int* init_req,
-		str local_address)
+int extract_sdialog_info(subs_t* subs,struct sip_msg* msg, int mexp,
+											int* init_req, str local_address)
 {
 	str rec_route= {0, 0};
 	int rt  = 0;
@@ -907,7 +908,7 @@ int extract_sdialog_info(subs_t* subs,struct sip_msg* msg, int mexp, int* init_r
 	/*process record route and add it to a string*/
 	if(*init_req && msg->record_route!=NULL)
 	{
-		rt = print_rr_body(msg->record_route, &rec_route, 0, 0);
+		rt = print_rr_body(msg->record_route, &rec_route, 0, 0, NULL);
 		if(rt != 0)
 		{
 			LM_ERR("processing the record route [%d]\n", rt);
@@ -1504,7 +1505,6 @@ void update_db_subs(db_con_t *db,db_func_t *dbf, shtable_t hash_table,
 					if(handle_expired_func(del_s)< 0)
 					{
 						LM_ERR("in function handle_expired_record\n");
-						return;
 					}
 				}
 				free_subs(del_s);
@@ -1543,9 +1543,6 @@ void update_db_subs(db_con_t *db,db_func_t *dbf, shtable_t hash_table,
 								update_vals, n_query_update, n_update_cols)< 0)
 					{
 						LM_ERR("updating in database\n");
-						if(!no_lock)
-							lock_release(&hash_table[i].lock);
-						return ;
 					}
 					break;
 				}
@@ -1584,9 +1581,6 @@ void update_db_subs(db_con_t *db,db_func_t *dbf, shtable_t hash_table,
 					if(dbf->insert(db,query_cols,query_vals,n_query_cols )<0)
 					{
 						LM_ERR("unsuccessful sql insert\n");
-						if(!no_lock)
-							lock_release(&hash_table[i].lock);
-						return ;
 					}
 					break;
 				}
@@ -1620,8 +1614,8 @@ void update_db_subs(db_con_t *db,db_func_t *dbf, shtable_t hash_table,
 int insert_subs_db(subs_t* s)
 {
 	static db_ps_t my_ps = NULL;
-	db_key_t query_cols[22];
-	db_val_t query_vals[22];
+	db_key_t query_cols[23];
+	db_val_t query_vals[23];
 	int n_query_cols= 0;
 
 	query_cols[n_query_cols] =&str_presentity_uri_col;
@@ -1749,6 +1743,17 @@ int insert_subs_db(subs_t* s)
 		query_vals[n_query_cols].val.str_val.len = 0;
 	}
 	n_query_cols++;
+
+	query_cols[n_query_cols] =&str_sharing_tag_col;
+	query_vals[n_query_cols].type = DB_STR;
+	if (s->sh_tag.len==0) {
+		query_vals[n_query_cols].nul = 1;
+	} else {
+		query_vals[n_query_cols].nul = 0;
+		query_vals[n_query_cols].val.str_val = s->sh_tag;
+	}
+	n_query_cols++;
+
 	if(pa_dbf.use_table(pa_db, &active_watchers_table)< 0)
 	{
 		LM_ERR("in use table\n");
@@ -1765,9 +1770,10 @@ int insert_subs_db(subs_t* s)
 	return 0;
 }
 
+
 int restore_db_subs(void)
 {
-	db_key_t result_cols[22];
+	db_key_t result_cols[23];
 	db_res_t *result= NULL;
 	db_row_t *rows = NULL;
 	db_val_t *row_vals= NULL;
@@ -1777,6 +1783,7 @@ int restore_db_subs(void)
 	int callid_col,totag_col,fromtag_col,to_domain_col,sockinfo_col,reason_col;
 	int event_col,contact_col,record_route_col, event_id_col, status_col;
 	int remote_cseq_col, local_cseq_col, local_contact_col, version_col;
+	int sharing_tag_col;
 	subs_t s;
 	str ev_sname, sockinfo_str;
 	pres_ev_t* event= NULL;
@@ -1808,6 +1815,7 @@ int restore_db_subs(void)
 	result_cols[version_col= n_result_cols++]	=&str_version_col;
 	result_cols[status_col= n_result_cols++]	=&str_status_col;
 	result_cols[reason_col= n_result_cols++]	=&str_reason_col;
+	result_cols[sharing_tag_col= n_result_cols++]	=&str_sharing_tag_col;
 
 	if(!pa_db)
 	{
@@ -1947,8 +1955,8 @@ int restore_db_subs(void)
 			{
 				if(subs_process_insert_status(&s)< 0)
 				{
-					LM_ERR("Failed to extract and insert status\n");
-					goto error;
+					LM_ERR("Failed to extract and insert status, skipping record\n");
+					continue;
 				}
 			}
 
@@ -1967,24 +1975,31 @@ int restore_db_subs(void)
 				s.record_route.len= strlen(s.record_route.s);
 
 			sockinfo_str.s = (char*)row_vals[sockinfo_col].val.string_val;
-			if (sockinfo_str.s)
+			if (sockinfo_str.s && (sockinfo_str.len=strlen(sockinfo_str.s))!=0)
 			{
-				sockinfo_str.len = strlen(sockinfo_str.s);
 				if (parse_phostport (sockinfo_str.s, sockinfo_str.len, &host.s,
 						&host.len, &port, &proto )< 0)
 				{
-					LM_ERR("bad format for stored sockinfo string\n");
-					goto error;
-				}
-				s.sockinfo = grep_sock_info(&host, (unsigned short) port,
+					LM_ERR("bad format <%.*s> for stored sockinfo string,"
+						" ignoring record\n", sockinfo_str.len,sockinfo_str.s);
+					/* let it be NULL */
+				} else {
+					s.sockinfo = grep_sock_info(&host, (unsigned short) port,
 						(unsigned short) proto);
+					/* if not found, it will be NULL */
+				}
+			}
+
+			if (row_vals[sharing_tag_col].nul==0) {
+				s.sh_tag.s=(char*)row_vals[sharing_tag_col].val.string_val;
+				s.sh_tag.len=strlen(s.sh_tag.s);
 			}
 
 			hash_code= core_hash(&s.pres_uri, &s.event->name, shtable_size);
 			if(insert_shtable(subs_htable, hash_code, &s)< 0)
 			{
-				LM_ERR("adding new record in hash table\n");
-				goto error;
+				LM_ERR("adding new record in hash table, skipping record\n");
+				continue;
 			}
 		}
 

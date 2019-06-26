@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		This module helps developers to benchmark their module functions. By adding
@@ -16,8 +16,16 @@
 		via &osips;'s logging facility. Please note that all durations are given as
 		microseconds (don't confuse with milliseconds!).
 	</para>
+	<para> Important note: as this benchmarking is intended to measure the time
+		spent in executing different parts/blocks of the script (and not for 
+		measuring the time induced by the SIP signaling), the benchmark module
+		is to be used within the SAME top route (request route, failure route, 
+		branch route, onreply rout, etc). It is not design to be used across 
+		different types of top routes (like started in request route and ended in 
+		failure route)!!
+	</para>
 	</section>
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -47,10 +55,10 @@
 		</para>
 	</section>
 	</section>
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
 
-	<section>
+	<section id="param_enable" xreflabel="enable">
 		<title><varname>enable</varname> (int)</title>
 		<para>
 			Even when the module is loaded, benchmarking is not enabled
@@ -90,7 +98,7 @@ modparam("benchmark", "enable", 1)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_granularity" xreflabel="granularity">
 		<title><varname>granularity</varname> (int)</title>
 		<para>
 			Logging normally is not done for every reference to the log_timer()
@@ -115,7 +123,7 @@ modparam("benchmark", "granularity", 500)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_loglevel" xreflabel="loglevel">
 		<title><varname>loglevel</varname> (int)</title>
 		<para>
 			Set the log level for the benchmark logs. These levels should be used:
@@ -148,9 +156,9 @@ modparam("benchmark", "loglevel", 4)
 	</section>
 
 	</section>
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_bm_start_timer" xreflabel="bm_start_timer()">
 		<title>
 		<function moreinfo="none">bm_start_timer(name)</function>
 		</title>
@@ -168,7 +176,7 @@ bm_start_timer("test");
 		</example>
 	</section>
 
-	<section>
+	<section id="func_bm_log_timer" xreflabel="bm_log_timer()">
 		<title>
 		<function moreinfo="none">bm_log_timer(name)</function>
 		</title>
@@ -248,12 +256,12 @@ bm_log_timer("test");
 	</section>
 	</section>
 
-	<section>
-		<title>Exported pseudo-variables</title>
+	<section id="exported_pseudo_variables">
+		<title>Exported Pseudo-Variables</title>
 		<para>
 		Exported pseudo-variables are listed in the next sections.
 		</para>
-		<section>
+		<section id="pv_BM_time_diff" xreflabel="$BM_time_diff">
 		<title>$BM_time_diff</title>
 			<para>
 			<emphasis>$BM_time_diff</emphasis> - the time difference
@@ -264,43 +272,92 @@ bm_log_timer("test");
 		</section>
 	</section>
 
-	<section>
+	<section id="exported_mi_functions" xreflabel="Exported MI Functions">
 		<title>Exported MI Functions</title>
-		<section>
+		<section id="mi_bm_enable_global" xreflabel="bm_enable_global">
 			<title><function moreinfo="none">bm_enable_global</function></title>
 			<para>
-				Enables/disables the module. Parameter may be -1, 0 or 1. See
-				discription of "enable" parameter.
+				Enables/disables the module.
 			</para>
+			<para>Parameters:</para>
+			<itemizedlist>
+				<listitem><para>
+					<emphasis>enable</emphasis> - value may be -1, 0 or 1. See
+					discription of "enable" parameter.
+				</para></listitem>
+			</itemizedlist>
+			<para>
+			MI FIFO Command Format:
+			</para>
+			<programlisting  format="linespecific">
+			opensips-cli -x mi bm_enable_global 1
+			</programlisting>
 		</section>
-		<section>
+		<section id="mi_bm_enable_timer" xreflabel="bm_enable_timer">
 			<title><function moreinfo="none">bm_enable_timer</function></title>
 			<para>
-				Enable or disable a single timer. The following example enables
-				timer "test" (the second parameter must be 0 to disable):
+				Enable or disable a single timer.
+			</para>
+			<para>Parameters:</para>
+			<itemizedlist>
+				<listitem><para>
+					<emphasis>timer</emphasis> - timer name
+				</para></listitem>
+				<listitem><para>
+					<emphasis>enable</emphasis> - enable (1) or disable (0) timer
+				</para></listitem>
+			</itemizedlist>
+			<para>
+			MI FIFO Command Format:
 			</para>
 			<example>
 				<title>Enabling a timer</title>
 				<programlisting format="linespecific">
 ...
-opensipsctl fifo bm_enable_timer test 1
+opensips-cli -x mi bm_enable_timer test 1
 ...
 </programlisting>
 			</example>
 		</section>
-		<section>
+		<section id="mi_bm_granularity" xreflabel="bm_granularity">
 			<title><function moreinfo="none">bm_granularity</function></title>
 			<para>
-				Modifies the benchmarking granularity. See "granularity" variable.
+				Modifies the benchmarking granularity.
 			</para>
+			<para>Parameters:</para>
+			<itemizedlist>
+				<listitem><para>
+					<emphasis>granularity</emphasis> - See
+					discription of "granularity" parameter.
+				</para></listitem>
+			</itemizedlist>
+			<para>
+			MI FIFO Command Format:
+			</para>
+			<programlisting  format="linespecific">
+			opensips-cli -x mi bm_granularity 300
+			</programlisting>
 		</section>
-		<section>
+		<section id="mi_bm_loglevel" xreflabel="bm_loglevel">
 			<title><function moreinfo="none">bm_loglevel</function></title>
 			<para>
-				Modifies the module log level. See "loglevel" variable.
+				Modifies the module log level.
 			</para>
+			<para>Parameters:</para>
+			<itemizedlist>
+				<listitem><para>
+					<emphasis>log_level</emphasis> - See
+					discription of "loglevel" parameter.
+				</para></listitem>
+			</itemizedlist>
+			<para>
+			MI FIFO Command Format:
+			</para>
+			<programlisting  format="linespecific">
+			opensips-cli -x mi bm_loglevel 4
+			</programlisting>
 		</section>
-		<section>
+		<section id="mi_bm_poll_results" xreflabel="bm_poll_results">
 			<title><function moreinfo="none">bm_poll_results</function></title>
 			<para>
 				Returns the current and global results for each timer. This command is only available if the "granularity" variable is set to 0. It can be used to get results in stable time intervals instead of every N messages. Each timer will have 2 nodes - the local and the global values. Format of the values is the same as the one normally used in logfile. This way of getting the results allows to interface with external graphing applications like Munin.
@@ -312,7 +369,7 @@ opensipsctl fifo bm_enable_timer test 1
 				<title>Getting the results via FIFO interface</title>
 				<programlisting format="linespecific">
 ...
-opensipsctl fifo bm_poll_results
+opensips-cli -x mi bm_poll_results
 register_timer
 	3/40/12/14/13.333333
 	9/204/12/97/22.666667

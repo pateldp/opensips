@@ -109,6 +109,8 @@ struct fd_map {
 	int flags;            /* so far used to indicate whether we should 
 	                       * read, write or both ; last 4 are reserved for 
 	                       * internal usage */
+	int app_flags;        /* flags to be used by upper layer apps, not by
+	                       * the reactor */
 };
 
 
@@ -334,7 +336,7 @@ again:
  * functions (it avoids functions calls, the overhead being only an extra
  *  switch())
 */
-inline static int io_watch_add(	io_wait_h* h,
+inline static int io_watch_add(	io_wait_h* h, /* lgtm [cpp/use-of-goto] */
 								int fd,
 								fd_type type,
 								void* data,
@@ -486,7 +488,7 @@ inline static int io_watch_add(	io_wait_h* h,
 			break;
 #endif
 #ifdef HAVE_EPOLL
-		case POLL_EPOLL_LT:
+		case POLL_EPOLL:
 			ep_event.data.ptr=e;
 			ep_event.events=0;
 			if (e->flags & IO_WATCH_READ)
@@ -495,9 +497,16 @@ inline static int io_watch_add(	io_wait_h* h,
 				ep_event.events|=EPOLLOUT;
 			if (!already) {
 again1:
+#if 0
+/* This is currently broken, because when using EPOLLEXCLUSIVE, the OS will
+ * send sequential events to the same process - thus our pseudo-dispatcher
+ * will no longer work, since events on a pipe will be queued by a single
+ * process. - razvanc
+ */
 #if (defined __OS_linux) && (__GLIBC__ >= 2) && (__GLIBC_MINOR__ >= 24)
 				if (e->flags & IO_WATCH_READ)
 					ep_event.events|=EPOLLEXCLUSIVE;
+#endif
 #endif
 				n=epoll_ctl(h->epfd, EPOLL_CTL_ADD, fd, &ep_event);
 				if (n==-1){
@@ -516,40 +525,6 @@ again11:
 					goto error;
 				}
 			}
-			break;
-		case POLL_EPOLL_ET:
-			set_fd_flags(O_NONBLOCK);
-			ep_event.events=EPOLLET;
-			ep_event.data.ptr=e;
-			if (e->flags & IO_WATCH_READ)
-				ep_event.events|=EPOLLIN;
-			if (e->flags & IO_WATCH_WRITE)
-				ep_event.events|=EPOLLOUT;
-again2:
-			if (!already) {
-#if (defined __OS_linux) && (__GLIBC__ >= 2) && (__GLIBC_MINOR__ >= 24)
-				if (e->flags & IO_WATCH_READ)
-					ep_event.events|=EPOLLEXCLUSIVE;
-#endif
-				n=epoll_ctl(h->epfd, EPOLL_CTL_ADD, fd, &ep_event);
-				if (n==-1){
-					if (errno==EAGAIN) goto again2;
-					LM_ERR("[%s] epoll_ctl failed: %s [%d]\n",
-						h->name,strerror(errno), errno);
-					goto error;
-				}
-				//check_io=1; FIXME
-			} else {
-again22:
-				n=epoll_ctl(h->epfd, EPOLL_CTL_MOD, fd, &ep_event);
-				if (n==-1){
-					if (errno==EAGAIN) goto again22;
-					LM_ERR("[%s] epoll_ctl failed: %s [%d]\n",
-						h->name,strerror(errno), errno);
-					goto error;
-				}
-			}
-			//idx=-1;  FIXME
 			break;
 #endif
 #ifdef HAVE_KQUEUE
@@ -601,7 +576,7 @@ check_io_again:
 	//fd_array_print;
 	check_io_data();
 	if (check_error) {
-		LM_CRIT("[%s] check failed after succesfull fd add "
+		LM_CRIT("[%s] check failed after successful fd add "
 			"(fd=%d,type=%d,data=%p,flags=%x) already=%d\n",h->name,
 			fd, type, data, flags, already);
 	}
@@ -744,8 +719,7 @@ inline static int io_watch_del(io_wait_h* h, int fd, int idx,
 			break;
 #endif
 #ifdef HAVE_EPOLL
-		case POLL_EPOLL_LT:
-		case POLL_EPOLL_ET:
+		case POLL_EPOLL:
 			/* epoll doesn't seem to automatically remove sockets,
 			 * if the socket is a dupplicate/moved and the original
 			 * is still open. The fd is removed from the epoll set
@@ -820,7 +794,7 @@ again_devpoll:
 
 	check_io_data();
 	if (check_error) {
-		LM_CRIT("[%s] check failed after succesfull fd del "
+		LM_CRIT("[%s] check failed after successful fd del "
 			"(fd=%d,flags=%d, sflags=%d) over map "
 			"(fd=%d,type=%d,data=%p,flags=%d) erase=%d\n",h->name,
 			fd, flags, sock_flags,
@@ -865,6 +839,10 @@ int init_io_wait(io_wait_h* h, char *name, int max_fd,
 
 /*! \brief destroys everything init_io_wait allocated */
 void destroy_io_wait(io_wait_h* h);
+
+int io_set_app_flag( io_wait_h *h , int type, int app_flag);
+
+int io_check_app_flag( io_wait_h *h , int app_flag);
 
 
 #endif

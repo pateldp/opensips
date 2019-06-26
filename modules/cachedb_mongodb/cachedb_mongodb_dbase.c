@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2017 OpenSIPS Project
+ * Copyright (C) 2011-2019 OpenSIPS Project
  *
  * This file is part of opensips, a free SIP server.
  *
@@ -25,6 +25,7 @@
 #include "../../ut.h"
 #include "../../pt.h"
 #include "../../cachedb/cachedb.h"
+#include "../../lib/osips_malloc.h"
 
 #include <string.h>
 
@@ -39,6 +40,22 @@ extern int compat_mode_24;
 #define HEX_OID_SIZE 25
 char *hex_oid_id;
 
+#define dbg_bson(_prepend_txt, __bson_ptr__) \
+	do { \
+		char *__bson_str__; \
+		if (is_printable(L_DBG)) { \
+			__bson_str__ = bson_as_json(__bson_ptr__, NULL); \
+			LM_DBG("%s%s\n", _prepend_txt, __bson_str__); \
+			bson_free(__bson_str__); \
+		} \
+	} while (0)
+
+#define dump_mongo_err(_err_ptr) \
+	do { \
+		LM_ERR("last error: %d.%d: %s\n", (_err_ptr)->domain, \
+		       (_err_ptr)->code, (_err_ptr)->message); \
+	} while (0)
+
 /**
  * Builds a MongoDB connect string URI of the form:
  *
@@ -50,7 +67,7 @@ char *hex_oid_id;
 static char *build_mongodb_connect_string(struct cachedb_id *id)
 {
 	char *ret, *p;
-	int len;
+	int len, db_len;
 
 	len =
 	      strlen(id->scheme) + 3 +
@@ -59,6 +76,7 @@ static char *build_mongodb_connect_string(struct cachedb_id *id)
 	      strlen(id->host) + 1 +
 		  5 + 1 + /* port */
 	      strlen(id->database) + 1 +
+		  (id->extra_options ? strlen(id->extra_options) : 0) + 1 +
 		  1;
 
 	ret = pkg_malloc(len);
@@ -68,25 +86,25 @@ static char *build_mongodb_connect_string(struct cachedb_id *id)
 	}
 
 	p = memchr(id->database, '.', strlen(id->database));
+	if (p)
+		db_len = p - id->database;
+	else
+		db_len = strlen(id->database);
 
-	if (id->username && id->password) {
-		if (id->port == 0) {
-			sprintf(ret, "mongodb://%s:%s@%s/%s", id->username, id->password,
-			        id->host, id->database);
-		} else {
-			sprintf(ret, "mongodb://%s:%s@%s:%d/%s", id->username, id->password,
-			        id->host, id->port, id->database);
-		}
+	len = sprintf(ret, "mongodb://");
 
-	} else {
-		if (id->port == 0) {
-			sprintf(ret, "mongodb://%s/%.*s", id->host,
-			        (int)(p ? p - id->database : strlen(id->database)), id->database);
-		} else {
-			sprintf(ret, "mongodb://%s:%d/%.*s", id->host, id->port,
-			        (int)(p ? p - id->database : strlen(id->database)), id->database);
-		}
-	}
+	if (id->username && id->password)
+		len += sprintf(ret + len, "%s:%s@", id->username, id->password);
+
+	len += sprintf(ret + len, "%s", id->host);
+
+	if (id->port != 0)
+		len += sprintf(ret + len, ":%d", id->port);
+
+	len += sprintf(ret + len, "/%.*s", db_len, id->database);
+
+	if (id->extra_options)
+		sprintf(ret + len, "?%s", id->extra_options);
 
 	return ret;
 }
@@ -100,6 +118,11 @@ mongo_con* mongo_new_connection(struct cachedb_id* id)
 {
 	char *p, *conn_str;
 	mongo_con *con;
+
+	if (!id->database) {
+		LM_ERR("bad MongoDB URL (missing \"/database\" part)\n");
+		return NULL;
+	}
 
 	snprintf(osips_appname, MONGOC_HANDSHAKE_APPNAME_MAX, "opensips-%d", my_pid());
 
@@ -127,7 +150,8 @@ mongo_con* mongo_new_connection(struct cachedb_id* id)
 
 	p = memchr(id->database, '.', strlen(id->database));
 	if (!p) {
-		LM_ERR("malformed Mongo database part in %s\n", id->database);
+		LM_ERR("MongoDB URL is missing the '/DB.collection' construct, only "
+		       "have '/DB' so far: /%s\n", id->database);
 		return NULL;
 	}
 
@@ -138,6 +162,9 @@ mongo_con* mongo_new_connection(struct cachedb_id* id)
 		LM_ERR("oom\n");
 		return NULL;
 	}
+
+	LM_DBG("db: '%s', col: '%s', options: '%s'\n",
+	       con->db, con->col, id->extra_options);
 
 	con->database = mongoc_client_get_database(con->client, id->database);
 	con->collection = mongoc_client_get_collection(con->client, id->database, p+1);
@@ -179,6 +206,7 @@ int mongo_con_get(cachedb_con *con, str *attr, str *val)
 	struct timeval start;
 	unsigned long ival;
 	char *p;
+	int ret = 0;
 
 	LM_DBG("find %.*s in %s\n", attr->len, attr->s,
 	       MONGO_NAMESPACE(con));
@@ -190,8 +218,8 @@ int mongo_con_get(cachedb_con *con, str *attr, str *val)
 	start_expire_timer(start, mongo_exec_threshold);
 	cursor = mongoc_collection_find_with_opts(
 	                MONGO_COLLECTION(con), filter, NULL, NULL);
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB get",
-	                  attr->s, attr->len, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB get",
+	            attr->s, attr->len, 0, cdb_slow_queries, cdb_total_queries);
 
 	while (mongoc_cursor_next(cursor, &doc)) {
 #else
@@ -203,8 +231,8 @@ int mongo_con_get(cachedb_con *con, str *attr, str *val)
 	start_expire_timer(start, mongo_exec_threshold);
 	cursor = mongoc_collection_find(MONGO_COLLECTION(con), MONGOC_QUERY_NONE,
 	                                0, 0, 0, filter, NULL, NULL);
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB get",
-	                  attr->s, attr->len, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB get",
+	            attr->s, attr->len, 0, cdb_slow_queries, cdb_total_queries);
 
 	while (mongoc_cursor_more(cursor) && mongoc_cursor_next(cursor, &doc)) {
 #endif
@@ -219,7 +247,7 @@ int mongo_con_get(cachedb_con *con, str *attr, str *val)
 					goto out_err;
 				}
 				memcpy(val->s, value->value.v_utf8.str, val->len);
-				goto out;
+				goto out_found;
 			case BSON_TYPE_INT32:
 				ival = (unsigned long)value->value.v_int32;
 				break;
@@ -239,16 +267,18 @@ int mongo_con_get(cachedb_con *con, str *attr, str *val)
 				goto out_err;
 			}
 			memcpy(val->s, p, val->len);
-			goto out;
+			goto out_found;
 		}
 	}
 
+	ret = -2;
+	memset(val, 0, sizeof *val);
 	LM_DBG("key not found: %.*s\n", attr->len, attr->s);
 
-out:
+out_found:
 	bson_destroy(filter);
 	mongoc_cursor_destroy(cursor);
-	return 0;
+	return ret;
 
 out_err:
 	bson_destroy(filter);
@@ -273,6 +303,9 @@ int mongo_con_set(cachedb_con *con, str *attr, str *val, int expires)
 	bson_append_utf8(&child, "opensips", 8, val->s, val->len);
 	bson_append_document_end(update, &child);
 
+	dbg_bson("query: ", query);
+	dbg_bson("update: ", update);
+
 	start_expire_timer(start, mongo_exec_threshold);
 	if (!mongoc_collection_update(MONGO_COLLECTION(con), MONGOC_UPDATE_UPSERT,
 	                              query, update, NULL, &error)) {
@@ -280,8 +313,8 @@ int mongo_con_set(cachedb_con *con, str *attr, str *val, int expires)
 		       attr->len, attr->s, val->len, val->s);
 		ret = -1;
 	}
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB set",
-	                  attr->s, attr->len, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB set",
+	            attr->s, attr->len, 0, cdb_slow_queries, cdb_total_queries);
 
 	bson_destroy(query);
 	bson_destroy(update);
@@ -299,14 +332,16 @@ int mongo_con_remove(cachedb_con *con, str *attr)
 	doc = bson_new();
 	bson_append_utf8(doc, MDB_PK, MDB_PKLEN, attr->s, attr->len);
 
+	dbg_bson("removing: ", doc);
+
 	start_expire_timer(start, mongo_exec_threshold);
 	if (!mongoc_collection_remove(MONGO_COLLECTION(con),
 	                         MONGOC_REMOVE_SINGLE_REMOVE, doc, NULL, &error)) {
 		LM_ERR("failed to remove key '%.*s'\n", attr->len, attr->s);
 		ret = -1;
 	}
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB remove",
-	                  attr->s, attr->len, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB remove",
+	            attr->s, attr->len, 0, cdb_slow_queries, cdb_total_queries);
 
 	bson_destroy(doc);
 
@@ -375,16 +410,16 @@ int mongo_raw_find(cachedb_con *con, bson_t *raw_query, bson_iter_t *ns,
 #if MONGOC_CHECK_VERSION(1, 5, 0)
 	start_expire_timer(start, mongo_exec_threshold);
 	cursor = mongoc_collection_find_with_opts(col, query, opts, NULL);
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw find",
-	                  NULL, 0, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw find",
+	            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 
 	while (mongoc_cursor_next(cursor, &doc)) {
 #else
 	start_expire_timer(start, mongo_exec_threshold);
 	cursor = mongoc_collection_find(col, MONGOC_QUERY_NONE,
 	                                0, 0, 0, query, fields, NULL);
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw find",
-	                  NULL, 0, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw find",
+	            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 
 	while (mongoc_cursor_more(cursor) && mongoc_cursor_next(cursor, &doc)) {
 #endif
@@ -472,7 +507,6 @@ int mongo_raw_update(cachedb_con *con, bson_t *raw_query, bson_iter_t *ns)
 	struct timeval start;
 	const bson_value_t *v;
 	int ret, count = 0;
-	char *retstr;
 
 	if (bson_iter_type(ns) != BSON_TYPE_UTF8) {
 		LM_ERR("collection name must be a string (%d)!\n", bson_iter_type(ns));
@@ -499,7 +533,11 @@ int mongo_raw_update(cachedb_con *con, bson_t *raw_query, bson_iter_t *ns)
 		goto out;
 	}
 
+#if MONGOC_CHECK_VERSION(1,9,0)
+	bulk = mongoc_collection_create_bulk_operation_with_opts(col, NULL);
+#else
 	bulk = mongoc_collection_create_bulk_operation(col, false, NULL);
+#endif
 	if (!bulk) {
 		LM_ERR("failed to create bulk op!\n");
 		goto out_err;
@@ -540,18 +578,14 @@ int mongo_raw_update(cachedb_con *con, bson_t *raw_query, bson_iter_t *ns)
 	if (!ret) {
 		LM_ERR("failed bulk update\nerror: %d.%d: %s\n",
 		       error.domain, error.code, error.message);
-		stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw update",
-		                  NULL, 0, 0);
+		_stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw update",
+		            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 		goto out_err;
 	}
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw update",
-	                  NULL, 0, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw update",
+	            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 
-	if (is_printable(L_DBG)) {
-		retstr = bson_as_json(&reply, NULL);
-		LM_DBG("reply received: %s\n", retstr);
-		bson_free(retstr);
-	}
+	dbg_bson("reply received: ", &reply);
 
 out:
 	if (bulk) {
@@ -578,7 +612,6 @@ int mongo_raw_insert(cachedb_con *con, bson_t *raw_query, bson_iter_t *ns)
 	struct timeval start;
 	const bson_value_t *v;
 	int ret, count = 0;
-	char *retstr;
 
 	if (bson_iter_type(ns) != BSON_TYPE_UTF8) {
 		LM_ERR("collection name must be a string (%d)!\n", bson_iter_type(ns));
@@ -605,7 +638,11 @@ int mongo_raw_insert(cachedb_con *con, bson_t *raw_query, bson_iter_t *ns)
 		goto out;
 	}
 
+#if MONGOC_CHECK_VERSION(1,9,0)
+	bulk = mongoc_collection_create_bulk_operation_with_opts(col, NULL);
+#else
 	bulk = mongoc_collection_create_bulk_operation(col, false, NULL);
+#endif
 	if (!bulk) {
 		LM_ERR("failed to create bulk op!\n");
 		goto out_err;
@@ -625,18 +662,14 @@ int mongo_raw_insert(cachedb_con *con, bson_t *raw_query, bson_iter_t *ns)
 	if (!ret) {
 		LM_ERR("failed bulk insert\nerror: %d.%d: %s\n",
 		       error.domain, error.code, error.message);
-		stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw insert",
-		                  NULL, 0, 0);
+		_stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw insert",
+		            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 		goto out_err;
 	}
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw insert",
-	                  NULL, 0, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw insert",
+	            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 
-	if (is_printable(L_DBG)) {
-		retstr = bson_as_json(&reply, NULL);
-		LM_DBG("reply received: %s\n", retstr);
-		bson_free(retstr);
-	}
+	dbg_bson("reply received: ", &reply);
 
 out:
 	if (bulk) {
@@ -663,7 +696,6 @@ int mongo_raw_remove(cachedb_con *con, bson_t *raw_query, bson_iter_t *ns)
 	struct timeval start;
 	const bson_value_t *v;
 	int ret, count = 0;
-	char *retstr;
 
 	if (bson_iter_type(ns) != BSON_TYPE_UTF8) {
 		LM_ERR("collection name must be a string (%d)!\n", bson_iter_type(ns));
@@ -690,7 +722,11 @@ int mongo_raw_remove(cachedb_con *con, bson_t *raw_query, bson_iter_t *ns)
 		goto out;
 	}
 
+#if MONGOC_CHECK_VERSION(1,9,0)
+	bulk = mongoc_collection_create_bulk_operation_with_opts(col, NULL);
+#else
 	bulk = mongoc_collection_create_bulk_operation(col, false, NULL);
+#endif
 	if (!bulk) {
 		LM_ERR("failed to create bulk op!\n");
 		goto out_err;
@@ -723,18 +759,14 @@ int mongo_raw_remove(cachedb_con *con, bson_t *raw_query, bson_iter_t *ns)
 	if (!ret) {
 		LM_ERR("failed bulk insert\nerror: %d.%d: %s\n",
 		       error.domain, error.code, error.message);
-		stop_expire_timer(start, mongo_exec_threshold, "mongodb raw remove",
-		                  NULL, 0, 0);
+		_stop_expire_timer(start, mongo_exec_threshold, "mongodb raw remove",
+		            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 		goto out_err;
 	}
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw remove",
-	                  NULL, 0, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw remove",
+	            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 
-	if (is_printable(L_DBG)) {
-		retstr = bson_as_json(&reply, NULL);
-		LM_DBG("reply received: %s\n", retstr);
-		bson_free(retstr);
-	}
+	dbg_bson("reply received: ", &reply);
 
 out:
 	if (bulk) {
@@ -817,12 +849,12 @@ int mongo_con_raw_query(cachedb_con *con, str *qstr, cdb_raw_entry ***reply,
 		LM_ERR("raw query:\n'%.*s'\nfailed with: %d.%d: %s\n", qstr->len, qstr->s,
 		       error.domain, error.code, error.message);
 		ret = -1;
-		stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw query",
-		                  qstr->s, qstr->len, 0);
+		_stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw query",
+		            qstr->s, qstr->len, 0, cdb_slow_queries, cdb_total_queries);
 		goto out_err;
 	}
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw query",
-	                  qstr->s, qstr->len, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB raw query",
+	            qstr->s, qstr->len, 0, cdb_slow_queries, cdb_total_queries);
 
 	/* start with a single returned document */
 	*reply = pkg_malloc(1 * sizeof **reply);
@@ -942,18 +974,23 @@ int mongo_con_add(cachedb_con *con, str *attr, int val, int expires, int *new_va
 
 	bson_append_bool(cmd, "new", 3, true);
 
+	dbg_bson("upsert: ", cmd);
+
 	start_expire_timer(start, mongo_exec_threshold);
 	if (!mongoc_collection_command_simple(MONGO_COLLECTION(con), cmd,
 	                              NULL, &reply, &error)) {
 		LM_ERR("failed to %s: %.*s += %d\n", val > 0 ? "add" : "sub",
 		       attr->len, attr->s, val);
 		ret = -1;
-		stop_expire_timer(start, mongo_exec_threshold, "MongoDB counter add",
-		                  NULL, 0, 0);
+		_stop_expire_timer(start, mongo_exec_threshold, "MongoDB counter add",
+		            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 		goto out;
 	}
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB counter add",
-	                  NULL, 0, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB counter add",
+	            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
+
+	if (!new_val)
+		goto out;
 
 	if (bson_iter_init_find(&iter, &reply, "value") &&
 	    BSON_ITER_HOLDS_DOCUMENT(&iter) &&
@@ -994,20 +1031,22 @@ int mongo_con_get_counter(cachedb_con *con, str *attr, int *val)
 	bson_append_document_end(query, &child);
 #endif
 
+	dbg_bson("query: ", query);
+
 #if MONGOC_CHECK_VERSION(1, 5, 0)
 	start_expire_timer(start, mongo_exec_threshold);
 	cursor = mongoc_collection_find_with_opts(
 	                MONGO_COLLECTION(con), query, NULL, NULL);
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB counter get",
-	                  NULL, 0, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB counter get",
+	            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 
 	while (mongoc_cursor_next(cursor, &doc)) {
 #else
 	start_expire_timer(start, mongo_exec_threshold);
 	cursor = mongoc_collection_find(MONGO_COLLECTION(con), MONGOC_QUERY_NONE,
 	                                0, 0, 0, query, NULL, NULL);
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB counter get",
-	                  NULL, 0, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB counter get",
+	            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 
 	while (mongoc_cursor_more(cursor) && mongoc_cursor_next(cursor, &doc)) {
 #endif
@@ -1236,8 +1275,8 @@ int mongo_db_query_trans(cachedb_con *con, const str *table, const db_key_t *_k,
 	cursor = mongoc_collection_find(col, MONGOC_QUERY_NONE,
 	                                0, 0, 0, filter, fields, NULL);
 #endif
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB query trans",
-	                  NULL, 0, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB query trans",
+	            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 
 	MONGO_CURSOR(con) = cursor;
 
@@ -1438,7 +1477,6 @@ int mongo_db_insert_trans(cachedb_con *con, const str *table,
 	bson_error_t error;
 	mongoc_collection_t *col = NULL;
 	struct timeval start;
-	char *retstr;
 
 	doc = bson_new();
 	if (kvo_to_bson(_k, _v, NULL, _n, doc) != 0) {
@@ -1446,11 +1484,7 @@ int mongo_db_insert_trans(cachedb_con *con, const str *table,
 		goto out_err;
 	}
 
-	if (is_printable(L_DBG)) {
-		retstr = bson_as_json(doc, NULL);
-		LM_DBG("insert doc:\n%s\n", retstr);
-		bson_free(retstr);
-	}
+	dbg_bson("insert doc: ", doc);
 
 	memcpy(namespace, table->s, table->len);
 	namespace[table->len] = '\0';
@@ -1462,12 +1496,12 @@ int mongo_db_insert_trans(cachedb_con *con, const str *table,
 	if (!mongoc_collection_insert(col, MONGOC_INSERT_NONE, doc, NULL, &error)) {
 	    LM_ERR("insert failed with:\nerror %d.%d: %s\n",
 		       error.domain, error.code, error.message);
-		stop_expire_timer(start, mongo_exec_threshold, "MongoDB insert trans",
-		                  NULL, 0, 0);
+		_stop_expire_timer(start, mongo_exec_threshold, "MongoDB insert trans",
+		            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 		goto out_err;
 	}
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB insert trans",
-	                  NULL, 0, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB insert trans",
+	            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 
 	if (doc) {
 		bson_destroy(doc);
@@ -1492,7 +1526,6 @@ int mongo_db_delete_trans(cachedb_con *con, const str *table,
 	bson_error_t error;
 	mongoc_collection_t *col = NULL;
 	struct timeval start;
-	char *retstr;
 
 	doc = bson_new();
 	if (kvo_to_bson(_k, _v, _o, _n, doc) != 0) {
@@ -1503,11 +1536,7 @@ int mongo_db_delete_trans(cachedb_con *con, const str *table,
 	memcpy(namespace, table->s, table->len);
 	namespace[table->len] = '\0';
 
-	if (is_printable(L_DBG)) {
-		retstr = bson_as_json(doc, NULL);
-		LM_DBG("remove doc:\n%s\n", retstr);
-		bson_free(retstr);
-	}
+	dbg_bson("remove doc: ", doc);
 
 	col = mongoc_client_get_collection(MONGO_CLIENT(con), MONGO_DB_STR(con),
 	                                   namespace);
@@ -1516,12 +1545,12 @@ int mongo_db_delete_trans(cachedb_con *con, const str *table,
 	if (!mongoc_collection_remove(col, MONGOC_REMOVE_NONE, doc, NULL, &error)) {
 	    LM_ERR("insert failed with:\nerror %d.%d: %s\n",
 		       error.domain, error.code, error.message);
-		stop_expire_timer(start, mongo_exec_threshold, "MongoDB remove trans",
-		                  NULL, 0, 0);
+		_stop_expire_timer(start, mongo_exec_threshold, "MongoDB remove trans",
+		            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 		goto out_err;
 	}
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB remove trans",
-	                  NULL, 0, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB remove trans",
+	            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 
 	if (doc) {
 		bson_destroy(doc);
@@ -1547,7 +1576,6 @@ int mongo_db_update_trans(cachedb_con *con, const str *table,
 	bson_error_t error;
 	mongoc_collection_t *col = NULL;
 	struct timeval start;
-	char *strq, *stru;
 
 	query = bson_new();
 	if (kvo_to_bson(_k, _v, _o, _n, query) != 0) {
@@ -1569,25 +1597,20 @@ int mongo_db_update_trans(cachedb_con *con, const str *table,
 	col = mongoc_client_get_collection(MONGO_CLIENT(con), MONGO_DB_STR(con),
 	                                   namespace);
 
-	if (is_printable(L_DBG)) {
-		strq = bson_as_json(query, NULL);
-		stru = bson_as_json(update, NULL);
-		LM_DBG("update docs:\n%s\n%s\n", strq, stru);
-		bson_free(strq);
-		bson_free(stru);
-	}
+	dbg_bson("query doc: ", query);
+	dbg_bson("update doc: ", update);
 
 	start_expire_timer(start, mongo_exec_threshold);
 	if (!mongoc_collection_update(col, MONGOC_UPDATE_MULTI_UPDATE,
 	                              query, update, NULL, &error)) {
 	    LM_ERR("insert failed with:\nerror %d.%d: %s\n",
 		       error.domain, error.code, error.message);
-		stop_expire_timer(start, mongo_exec_threshold, "MongoDB update trans",
-		                  NULL, 0, 0);
+		_stop_expire_timer(start, mongo_exec_threshold, "MongoDB update trans",
+		            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 		goto out_err;
 	}
-	stop_expire_timer(start, mongo_exec_threshold, "MongoDB update trans",
-	                  NULL, 0, 0);
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB update trans",
+	            NULL, 0, 0, cdb_slow_queries, cdb_total_queries);
 
 	if (query) {
 		bson_destroy(query);
@@ -1607,4 +1630,527 @@ out_err:
 	}
 	if (col) mongoc_collection_destroy(col);
 	return -1;
+}
+
+int mongo_truncate(cachedb_con *con)
+{
+	bson_t empty_doc = BSON_INITIALIZER;
+	bson_error_t error;
+	struct timeval start;
+	int ret = 0;
+
+	start_expire_timer(start, mongo_exec_threshold);
+	if (!mongoc_collection_remove(MONGO_COLLECTION(con),
+	                         MONGOC_REMOVE_NONE, &empty_doc, NULL, &error)) {
+		LM_ERR("failed to truncate con %.*s!\n", con->url.len, con->url.s);
+		ret = -1;
+	}
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB truncate",
+	            con->url.s, con->url.len, 0, cdb_slow_queries, cdb_total_queries);
+
+	return ret;
+}
+
+int mongo_doc_to_dict(const bson_t *doc, cdb_dict_t *out_dict)
+{
+	bson_iter_t iter;
+	bson_t subdoc;
+	const bson_value_t *v;
+	cdb_key_t key;
+	cdb_pair_t *pair;
+	union cdb_val_u *val;
+
+	if (bson_iter_init(&iter, doc)) {
+		while (bson_iter_next(&iter)) {
+			init_str(&key.name, bson_iter_key(&iter));
+			key.is_pk = !memcmp(key.name.s, "_id", 3);
+
+			v = bson_iter_value(&iter);
+
+			pair = cdb_mk_pair(&key, NULL);
+			if (!pair) {
+				LM_ERR("oom\n");
+				goto out_err;
+			}
+
+			val = &pair->val.val;
+
+			switch (v->value_type) {
+			case BSON_TYPE_UTF8:
+				pair->val.type = CDB_STR;
+				val->st.len = v->value.v_utf8.len;
+				val->st.s = pkg_malloc(val->st.len);
+					if (!val->st.s) {
+						LM_ERR("oom!\n");
+					pkg_free(pair);
+					goto out_err;
+				}
+				memcpy(val->st.s, v->value.v_utf8.str, val->st.len);
+				break;
+			case BSON_TYPE_INT32:
+				pair->val.type = CDB_INT32;
+				val->i32 = v->value.v_int32;
+				break;
+			case BSON_TYPE_INT64:
+				pair->val.type = CDB_INT64;
+				val->i64 = v->value.v_int64;
+				break;
+			case BSON_TYPE_DOCUMENT:
+				pair->val.type = CDB_DICT;
+				bson_init_static(&subdoc, v->value.v_doc.data,
+				                 v->value.v_doc.data_len);
+				INIT_LIST_HEAD(&val->dict);
+
+				if (mongo_doc_to_dict(&subdoc, &val->dict) != 0) {
+					LM_ERR("failed to parse subdoc\n");
+					pkg_free(pair);
+					goto out_err;
+				}
+				break;
+			case BSON_TYPE_NULL:
+				pair->val.type = CDB_NULL;
+				break;
+			default:
+				LM_ERR("unsupported MongoDB type %d!\n", v->value_type);
+				pkg_free(pair);
+				goto out_err;
+			}
+
+			cdb_dict_add(pair, out_dict);
+		}
+	}
+
+	return 0;
+
+out_err:
+	cdb_free_entries(out_dict, osips_pkg_free);
+	return -1;
+}
+
+cdb_row_t *mongo_mk_cdb_row(const bson_t *doc)
+{
+	cdb_row_t *row;
+
+	row = pkg_malloc(sizeof *row);
+	if (!row) {
+		LM_ERR("oom\n");
+		return NULL;
+	}
+
+	INIT_LIST_HEAD(&row->dict);
+
+	if (mongo_doc_to_dict(doc, &row->dict) != 0) {
+		LM_ERR("failed to convert bson to dict\n");
+		goto out_err;
+	}
+
+	return row;
+
+out_err:
+	pkg_free(row);
+	return NULL;
+}
+
+int mongo_cdb_filter_to_bson(const cdb_filter_t *filter, bson_t *cur)
+{
+	bson_t and_bson, *child, arr_doc, *subchild, _subchild;
+	str text_op;
+	str key;
+	char prepend_and = filter ? !!filter->next : 0;
+	int arr_idx = 0, arr_idx_len;
+	char *arr_idx_str;
+
+	if (!filter)
+		return 0;
+
+	if (prepend_and) {
+		bson_append_array_begin(cur, "$and", 4, &and_bson);
+		child = &and_bson;
+	} else {
+		child = cur;
+	}
+
+	for (; filter; filter = filter->next) {
+		if (prepend_and) {
+			arr_idx_str = int2str(arr_idx, &arr_idx_len);
+			bson_append_document_begin(child, arr_idx_str, arr_idx_len, &arr_doc);
+			arr_idx++;
+			subchild = &arr_doc;
+		} else {
+			subchild = cur;
+		}
+
+		if (filter->key.is_pk)
+			init_str(&key, "_id");
+		else
+			key = filter->key.name;
+
+		/* TODO: clean this up when forcing MongoDB 3.0+, as only then
+		 *       did they finally invent the $eq operator, doh!
+		 */
+		if (filter->op == CDB_OP_EQ) {
+			if (filter->val.is_str)
+				bson_append_utf8(subchild, key.s, key.len,
+				                 filter->val.s.s, filter->val.s.len);
+			else
+				bson_append_int32(subchild, key.s, key.len,
+				                  filter->val.i);
+			goto next_filter;
+		}
+
+		bson_append_document_begin(subchild, key.s, key.len, &_subchild);
+
+		switch (filter->op) {
+		case CDB_OP_LT:
+			init_str(&text_op, "$lt");
+			break;
+		case CDB_OP_LTE:
+			init_str(&text_op, "$lte");
+			break;
+		case CDB_OP_GT:
+			init_str(&text_op, "$gt");
+			break;
+		case CDB_OP_GTE:
+			init_str(&text_op, "$gte");
+			break;
+		default:
+			LM_BUG("unsupported operator: %d\n", filter->op);
+			return -1;
+		}
+
+		if (filter->val.is_str)
+			bson_append_utf8(&_subchild, text_op.s, text_op.len,
+			                 filter->val.s.s, filter->val.s.len);
+		else
+			bson_append_int32(&_subchild, text_op.s, text_op.len,
+			                  filter->val.i);
+
+		bson_append_document_end(subchild, &_subchild);
+
+	next_filter:
+		if (prepend_and)
+			bson_append_document_end(child, subchild);
+	}
+
+	if (prepend_and)
+		bson_append_array_end(cur, child);
+
+	return 0;
+}
+
+int mongo_con_query(cachedb_con *con, const cdb_filter_t *filter,
+                       cdb_res_t *res)
+{
+	bson_t bson_filter = BSON_INITIALIZER;
+	mongoc_cursor_t *cursor;
+	cdb_row_t *row;
+	const bson_t *doc;
+	struct timeval start;
+
+	LM_DBG("find all in %s\n", MONGO_NAMESPACE(con));
+
+	cdb_res_init(res);
+
+#if MONGOC_CHECK_VERSION(1, 5, 0)
+	if (mongo_cdb_filter_to_bson(filter, &bson_filter) != 0) {
+		LM_ERR("failed to build bson filter\n");
+		return -1;
+	}
+
+	dbg_bson("using filter: ", &bson_filter);
+
+	start_expire_timer(start, mongo_exec_threshold);
+	cursor = mongoc_collection_find_with_opts(
+	                MONGO_COLLECTION(con), &bson_filter, NULL, NULL);
+
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB query rows",
+	            con->url.s, con->url.len, 0, cdb_slow_queries, cdb_total_queries);
+
+	while (mongoc_cursor_next(cursor, &doc)) {
+#else
+	bson_t child;
+
+	BSON_APPEND_DOCUMENT_BEGIN(&bson_filter, "$query", &child);
+	if (mongo_cdb_filter_to_bson(filter, &child) != 0) {
+		LM_ERR("failed to build bson filter\n");
+		return -1;
+	}
+	bson_append_document_end(&bson_filter, &child);
+	bson_destroy(&child);
+
+	dbg_bson("using filter: ", &bson_filter);
+
+	start_expire_timer(start, mongo_exec_threshold);
+	cursor = mongoc_collection_find(MONGO_COLLECTION(con), MONGOC_QUERY_NONE,
+	                                0, 0, 0, &bson_filter, NULL, NULL);
+
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB query rows",
+	            con->url.s, con->url.len, 0, cdb_slow_queries, cdb_total_queries);
+
+	while (mongoc_cursor_more(cursor) && mongoc_cursor_next(cursor, &doc)) {
+#endif
+		row = mongo_mk_cdb_row(doc);
+		if (!row) {
+			LM_ERR("failed to create row\n");
+			goto out_err;
+		}
+
+		res->count++;
+		list_add_tail(&row->list, &res->rows);
+	}
+
+	LM_DBG("result count: %d\n", res->count);
+
+	bson_destroy(&bson_filter);
+	mongoc_cursor_destroy(cursor);
+	return 0;
+
+out_err:
+	bson_destroy(&bson_filter);
+	mongoc_cursor_destroy(cursor);
+	cdb_free_rows(res);
+	return -1;
+}
+
+int mongo_print_cdb_key(str *dest, const cdb_key_t *key, const str *subkey)
+{
+	static str static_pkg_buf;
+	str main_key;
+	int total_len;
+
+	if (key->is_pk)
+		init_str(&main_key, "_id");
+	else
+		main_key = key->name;
+
+	if (ZSTR(*subkey)) {
+		*dest = main_key;
+		return 0;
+	}
+
+	total_len = main_key.len + 1 + subkey->len;
+
+	if (pkg_str_extend(&static_pkg_buf, total_len + 1)) {
+		LM_ERR("oom\n");
+		return -1;
+	}
+
+	sprintf(static_pkg_buf.s, "%.*s.%.*s", main_key.len, main_key.s,
+	        subkey->len, subkey->s);
+
+	dest->s = static_pkg_buf.s;
+	dest->len = total_len;
+
+	return 0;
+}
+
+int mongo_cdb_dict_to_bson(const cdb_dict_t *dict, bson_t *out_doc)
+{
+	struct list_head *_;
+	bson_t bson_val = BSON_INITIALIZER;
+	cdb_pair_t *pair;
+	str key;
+
+	list_for_each (_, dict) {
+		pair = list_entry(_, cdb_pair_t, list);
+		key = pair->key.name;
+
+		switch (pair->val.type) {
+		case CDB_NULL:
+			if (!bson_append_null(out_doc, key.s, key.len)) {
+				LM_ERR("failed to append NULL doc\n");
+				goto out_err;
+			}
+			break;
+		case CDB_INT32:
+			if (!bson_append_int32(out_doc, key.s, key.len,
+			                       pair->val.val.i32)) {
+				LM_ERR("failed to append %.*s: %d\n", key.len,
+				       key.s, pair->val.val.i32);
+				goto out_err;
+			}
+			break;
+		case CDB_INT64:
+			if (!bson_append_int64(out_doc, key.s, key.len,
+			                       pair->val.val.i64)) {
+				LM_ERR("failed to append %.*s: %lld\n", key.len,
+				       key.s, (long long)pair->val.val.i64);
+				goto out_err;
+			}
+			break;
+		case CDB_STR:
+			if (!bson_append_utf8(out_doc, key.s, key.len,
+			                      pair->val.val.st.s, pair->val.val.st.len)) {
+				LM_ERR("failed to append %.*s: %.*s\n", key.len,
+				       key.s, pair->val.val.st.len, pair->val.val.st.s);
+				goto out_err;
+			}
+			break;
+		case CDB_DICT:
+			if (mongo_cdb_dict_to_bson(&pair->val.val.dict, &bson_val) != 0) {
+				LM_ERR("failed to convert dict to bson\n");
+				goto out_err;
+			}
+
+			if (!bson_append_document(out_doc, key.s, key.len, &bson_val)) {
+				LM_ERR("failed to append doc\n");
+				goto out_err;
+			}
+
+			bson_reinit(&bson_val);
+			break;
+		default:
+			LM_ERR("unsupported type %d for key %.*s\n", pair->val.type,
+			       key.len, key.s);
+			goto out_err;
+		}
+	}
+
+	bson_destroy(&bson_val);
+	return 0;
+out_err:
+	bson_destroy(&bson_val);
+	return -1;
+}
+
+int mongo_con_update(cachedb_con *con, const cdb_filter_t *row_filter,
+                     const cdb_dict_t *pairs)
+{
+	struct list_head *_;
+	bson_t filter = BSON_INITIALIZER, update = BSON_INITIALIZER;
+	bson_t bson_val = BSON_INITIALIZER;
+	bson_t set_keys = BSON_INITIALIZER, unset_keys = BSON_INITIALIZER;
+	bson_error_t error;
+	struct timeval start;
+	int ret = 0;
+	char has_set = 0, has_unset = 0;
+	cdb_pair_t *pair;
+	str key;
+
+	if (mongo_cdb_filter_to_bson(row_filter, &filter) != 0) {
+		LM_ERR("failed to build bson filter\n");
+		return -1;
+	}
+
+	list_for_each (_, pairs) {
+		pair = list_entry(_, cdb_pair_t, list);
+
+		/* we only support one level of subkey indirection --
+		 * any subkeys present at deeper nesting levels will be ignored */
+		if (mongo_print_cdb_key(&key, &pair->key, &pair->subkey) != 0) {
+			LM_ERR("oom\n");
+			ret = -1;
+			goto out;
+		}
+
+		if (pair->unset) {
+			if (!bson_append_null(&unset_keys, key.s, key.len)) {
+				LM_ERR("failed to append NULL doc\n");
+				ret = -1;
+				goto out;
+			}
+
+			has_unset = 1;
+			continue;
+		}
+
+		switch (pair->val.type) {
+		case CDB_NULL:
+			if (!bson_append_null(&set_keys, key.s, key.len)) {
+				LM_ERR("failed to append NULL doc\n");
+				ret = -1;
+				goto out;
+			}
+			break;
+		case CDB_INT32:
+			if (!bson_append_int32(&set_keys, key.s, key.len,
+			                       pair->val.val.i32)) {
+				LM_ERR("failed to append i32 val: %d\n", pair->val.val.i32);
+				ret = -1;
+				goto out;
+			}
+			break;
+		case CDB_INT64:
+			if (!bson_append_int64(&set_keys, key.s, key.len,
+			                       pair->val.val.i64)) {
+				LM_ERR("failed to append i64 val: %lld\n", (long long)pair->val.val.i64);
+				ret = -1;
+				goto out;
+			}
+			break;
+		case CDB_STR:
+			if (!bson_append_utf8(&set_keys, key.s, key.len,
+			                      pair->val.val.st.s, pair->val.val.st.len)) {
+				LM_ERR("failed to append str val: %.*s\n",
+				       pair->val.val.st.len, pair->val.val.st.s);
+				ret = -1;
+				goto out;
+			}
+			break;
+		case CDB_DICT:
+			if (mongo_cdb_dict_to_bson(&pair->val.val.dict, &bson_val) != 0) {
+				LM_ERR("failed to convert dict to bson\n");
+				ret = -1;
+				goto out;
+			}
+
+			if (!bson_append_document(&set_keys, key.s, key.len, &bson_val)) {
+				LM_ERR("failed to append key %.*s to doc\n", key.len, key.s);
+				ret = -1;
+				goto out;
+			}
+			bson_reinit(&bson_val);
+			break;
+		default:
+			LM_ERR("unsupported val type: %d\n", pair->val.type);
+			ret = -1;
+			goto out;
+		}
+
+		has_set = 1;
+	}
+
+	dbg_bson("filter: ", &filter);
+	dbg_bson("set: ", &set_keys);
+	dbg_bson("unset: ", &unset_keys);
+
+	if (!has_set && !has_unset) {
+		LM_ERR("redundant update query\n");
+		ret = -1;
+		goto out;
+	}
+
+	if (has_set && !bson_append_document(&update, "$set", 4, &set_keys)) {
+		LM_ERR("failed to append $set key\n");
+		ret = -1;
+		goto out;
+	}
+
+	if (has_unset && !bson_append_document(&update, "$unset", 6,
+	                                       &unset_keys)) {
+		LM_ERR("failed to append $set key\n");
+		ret = -1;
+		goto out;
+	}
+
+	dbg_bson("update: ", &update);
+
+	start_expire_timer(start, mongo_exec_threshold);
+	if (!mongoc_collection_update(MONGO_COLLECTION(con),
+	                           MONGOC_UPDATE_UPSERT|MONGOC_UPDATE_MULTI_UPDATE,
+	                           &filter, &update, NULL, &error)) {
+		dump_mongo_err(&error);
+		ret = -1;
+	}
+
+	_stop_expire_timer(start, mongo_exec_threshold, "MongoDB update",
+	            con->url.s, con->url.len, 0, cdb_slow_queries, cdb_total_queries);
+
+out:
+	bson_destroy(&bson_val);
+	bson_destroy(&filter);
+	bson_destroy(&set_keys);
+	bson_destroy(&unset_keys);
+	bson_destroy(&update);
+	return ret;
 }

@@ -17,11 +17,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
- *
- * History:
- * --------
- *  2009-02-01 initial version (bogdan)
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 
@@ -33,10 +29,10 @@
 #include "../../parser/parse_uri.h"
 #include "../../mem/shm_mem.h"
 #include "../../evi/evi.h"
-#include "lb_parser.h"
 #include "../../rw_locking.h"
+#include "lb_parser.h"
 #include "lb_data.h"
-#include "lb_replication.h"
+#include "lb_clustering.h"
 #include "lb_db.h"
 
 /* dialog stuff */
@@ -337,7 +333,7 @@ int add_lb_dsturi( struct lb_data *data, int id, int group, char *uri,
 	pkg_free(proxy);
 
 	if (fetch_freeswitch_stats && fs_url.s && fs_url.len > 0) {
-		dst->fs_sock = fs_api.add_hb_evs(&fs_url, &lb_str, NULL, NULL);
+		dst->fs_sock = fs_api.get_stats_evs(&fs_url, &lb_str);
 		if (!dst->fs_sock) {
 			LM_ERR("failed to create FreeSWITCH stats socket!\n");
 		}
@@ -388,7 +384,7 @@ void free_lb_data(struct lb_data *data)
 		lbd2 = lbd1;
 		lbd1 = lbd1->next;
 		if (lbd2->fs_sock) {
-			fs_api.del_hb_evs(lbd2->fs_sock, &lb_str);
+			fs_api.put_stats_evs(lbd2->fs_sock, &lb_str);
 		}
 		shm_free(lbd2);
 	}
@@ -765,6 +761,7 @@ int lb_route(struct sip_msg *req, int group, struct lb_res_str_list *rl,
 							dsts_size_cur = 0;
 						} else if( it_l < load ) {
 							/* lower availability -> new iteration */
+							if( ++j == (8 * sizeof(unsigned int)) ) { i++; j=0; }
 							continue;
 						}
 
@@ -1041,36 +1038,15 @@ int do_lb_disable_dst(struct sip_msg *req, struct lb_data *data, unsigned int ve
 /* Checks, if the IP PORT is a LB destination
  */
 int lb_is_dst(struct lb_data *data, struct sip_msg *_m,
-				pv_spec_t *pv_ip, gparam_t *pv_port, int group, int active)
+				str *ip_str, int port, int group, int active)
 {
-	pv_value_t val;
 	struct ip_addr *ip;
-	int port;
 	struct lb_dst *dst;
 	int k;
 
-	/* get the address to test */
-	if (pv_get_spec_value( _m, pv_ip, &val)!=0) {
-		LM_ERR("failed to get IP value from PV\n");
+	if ( (ip=str2ip(ip_str))==NULL  && (ip=str2ip6(ip_str))==NULL) {
+		LM_ERR("IP val is not IP <%.*s>\n",ip_str->len,ip_str->s);
 		return -1;
-	}
-	if ( (val.flags&PV_VAL_STR)==0 ) {
-		LM_ERR("IP PV val is not string\n");
-		return -1;
-	}
-	if ( (ip=str2ip( &val.rs ))==NULL ) {
-		LM_ERR("IP val is not IP <%.*s>\n",val.rs.len,val.rs.s);
-		return -1;
-	}
-
-	/* get the port to test */
-	if (pv_port) {
-		if (fixup_get_ivalue(_m, (gparam_p)pv_port, &port) != 0) {
-			LM_ERR("failed to get PORT value from PV\n");
-			return -1;
-		}
-	} else {
-		port = 0;
 	}
 
 	/* and now search !*/
@@ -1246,8 +1222,7 @@ error:
 void lb_status_changed(struct lb_dst *dst)
 {
 	/* do BIN replication if configured */
-	if (replicated_status_cluster > 0)
-		replicate_lb_status( dst );
+	replicate_lb_status( dst );
 
 	/* raise the event */
 	lb_raise_event(dst);

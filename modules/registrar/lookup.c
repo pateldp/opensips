@@ -58,18 +58,297 @@
 	( !((_f)&REG_LOOKUP_METHODFILTER_FLAG) || \
 		((_msg)->REQ_METHOD)&((_c)->methods) )
 
-#define ua_re_check(return) \
-	if (flags & REG_LOOKUP_UAFILTER_FLAG) { \
-		if (regexec(&ua_re, ptr->user_agent.s, 1, &ua_match, 0)) { \
-			return; \
-		} \
+ucontact_t **selected_cts; /* always has an extra terminating NULL ptr */
+int selected_cts_sz = 20;
+
+static int cmp_ucontact(const void *_ct1, const void *_ct2)
+{
+	ucontact_t *ct1 = *(ucontact_t **)_ct1, *ct2 = *(ucontact_t **)_ct2;
+
+	if (ct1->sipping_latency == 0) {
+		if (ct2->sipping_latency == 0)
+			return 0;
+
+		return 1;
 	}
 
-unsigned int nbranches;
+	if (ct2->sipping_latency == 0)
+		return -1;
 
-static char urimem[MAX_BRANCHES-1][MAX_URI_SIZE];
-static str branch_uris[MAX_BRANCHES-1];
+	return ct1->sipping_latency - ct2->sipping_latency;
+}
 
+int push_branch(struct sip_msg *msg, ucontact_t *ct, int *ruri_is_pushed)
+{
+	str path_dst;
+	int_str istr;
+
+	if (!ct)
+		return 1;
+
+	if (*ruri_is_pushed)
+		goto append_branch;
+
+	LM_DBG("setting as ruri <%.*s>\n", ct->c.len, ct->c.s);
+
+	if (set_ruri(msg, &ct->c) < 0) {
+		LM_ERR("unable to rewrite Request-URI\n");
+		return -3;
+	}
+
+	/* If a Path is present, use first path-uri in favour of
+	 * received-uri because in that case the last hop towards the uac
+	 * has to handle NAT. - agranig */
+	if (ct->path.s && ct->path.len) {
+		if (get_path_dst_uri(&ct->path, &path_dst) < 0) {
+			LM_ERR("failed to get dst_uri for Path\n");
+			return -3;
+		}
+		if (set_path_vector(msg, &ct->path) < 0) {
+			LM_ERR("failed to set path vector\n");
+			return -3;
+		}
+		if (set_dst_uri(msg, &path_dst) < 0) {
+			LM_ERR("failed to set dst_uri of Path\n");
+			return -3;
+		}
+	} else if (ct->received.s && ct->received.len) {
+		if (set_dst_uri(msg, &ct->received) < 0)
+			return -3;
+	}
+
+	if (!(ct->flags & FL_EXTRA_HOP)) {
+		set_ruri_q(msg, ct->q);
+
+		setbflag(msg, 0, ct->cflags);
+
+		if (ct->sock)
+			msg->force_send_socket = ct->sock;
+	}
+
+	*ruri_is_pushed = 1;
+	goto add_attr_avp;
+
+append_branch:
+	LM_DBG("setting branch R-URI <%.*s>\n", ct->c.len, ct->c.s);
+
+	if (ct->flags & FL_EXTRA_HOP) {
+		if (append_branch(msg, &ct->c, &ct->received, &msg->path_vec,
+		                  get_ruri_q(msg), getb0flags(msg),
+		                  msg->force_send_socket) == -1) {
+			LM_ERR("failed to append a branch\n");
+			return -1;
+		}
+
+	} else {
+		path_dst.len = 0;
+		if (!ZSTR(ct->path) && get_path_dst_uri(&ct->path, &path_dst) < 0) {
+			LM_ERR("failed to get dst_uri for Path\n");
+			return -1;
+		}
+
+		/* The same as for the first contact applies for branches
+		 * regarding path vs. received. */
+		LM_DBG("setting branch R-URI <%.*s>\n", ct->c.len, ct->c.s);
+		if (append_branch(msg, &ct->c,
+		           path_dst.len ? &path_dst : &ct->received,
+		           &ct->path, ct->q, ct->cflags, ct->sock) == -1) {
+			LM_ERR("failed to append a branch\n");
+			return -1;
+		}
+	}
+
+add_attr_avp:
+	if (attr_avp_name != -1) {
+		istr.s = ct->attr;
+		if (add_avp_last(AVP_VAL_STR, attr_avp_name, istr) != 0)
+			LM_ERR("Failed to populate attr avp!\n");
+	}
+
+	return 0;
+}
+
+ucontact_t **select_contacts(struct sip_msg *msg, ucontact_t *contacts,
+                        int flags, const str *sip_instance, const str *call_id,
+                        const regex_t *ua_re, int max_latency, int *ret)
+{
+	int count = 0, have_gruu = 0;
+	ucontact_t *it, *ct, **doubled;
+	regmatch_t ua_match;
+
+	for (ct = contacts; ct; ct = ct->next) {
+		LM_DBG("ct: %.*s\n", ct->c.len, ct->c.s);
+		if (!VALID_CONTACT(ct, get_act_time())) {
+			LM_DBG("skipping expired contact %.*s\n", ct->c.len, ct->c.s);
+			continue;
+		}
+
+		if (*ret < 0)
+			*ret = -2;
+
+		if (!allowed_method(msg, ct, flags))
+			continue;
+
+		if (*ret < 0)
+			*ret = -1;
+
+		if ((flags & REG_LOOKUP_UAFILTER_FLAG) &&
+			regexec(ua_re, ct->user_agent.s, 1, &ua_match, 0))
+			continue;
+
+		if (max_latency && ct->sipping_latency > max_latency)
+			continue;
+
+		/* have temp gruu */
+		if (!ZSTR(*sip_instance)) {
+			have_gruu = 1;
+			LM_DBG("ruri has gruu\n");
+
+			if (ct->instance.len-2 != sip_instance->len ||
+			    memcmp(ct->instance.s+1, sip_instance->s, sip_instance->len)) {
+				LM_DBG("no match to sip instance - [%.*s] - [%.*s]\n",
+				       ct->instance.len-2, ct->instance.s+1,
+						sip_instance->len, sip_instance->s);
+				/* not the targeted instance, search some more */
+				continue;
+			}
+
+			LM_DBG("matched sip instance\n");
+		}
+
+		/* have pub gruu */
+		if (!ZSTR(*call_id)) {
+			/* decide whether GRUU is expired or not
+			 *
+			 * first - match call-id */
+			if (ct->callid.len != call_id->len ||
+			        memcmp(ct->callid.s, call_id->s, call_id->len)) {
+				LM_DBG("no match to call id - [%.*s] - [%.*s]\n",
+				       ct->callid.len, ct->callid.s, call_id->len, call_id->s);
+				continue;
+			}
+
+			/* matched call-id, check if there are newer contacts with
+			 * same sip instace but newer last_modified */
+
+			it = ct->next;
+			while (it) {
+				if (VALID_CONTACT(it, get_act_time())) {
+					if (it->instance.len-2 == sip_instance->len &&
+					    sip_instance->s && memcmp(it->instance.s+1,
+							sip_instance->s,sip_instance->len) == 0)
+						if (it->last_modified > ct->last_modified) {
+							/* same instance id, but newer modified ->
+							 * expired GRUU, no match at all */
+							return NULL;
+						}
+				}
+
+				it = it->next;
+			}
+		}
+
+		*ret = 1;
+
+		if (count == selected_cts_sz - 1) {
+			doubled = pkg_realloc(selected_cts,
+					2 * selected_cts_sz * sizeof *selected_cts);
+			if (!doubled) {
+				LM_ERR("oom\n");
+				return NULL;
+			}
+
+			selected_cts = doubled;
+			selected_cts_sz *= 2;
+		}
+
+		selected_cts[count++] = ct;
+
+		/* If we got to this point and the URI had a ;gr parameter and it was
+		 * matched to a contact -> no point in selecting additional contacts */
+		if (have_gruu)
+			goto skip_remaining;
+	}
+
+skip_remaining:
+	selected_cts[count] = NULL;
+
+	if (flags & REG_LOOKUP_LATENCY_SORT_FLAG)
+		qsort(selected_cts, count, sizeof *selected_cts, cmp_ucontact);
+
+	return selected_cts;
+}
+
+int parse_lookup_flags(const str *input, unsigned int *flags, regex_t *ua_re,
+                        int *regexp_flags, int *max_latency)
+{
+	char *ua = NULL;
+	char* re_end = NULL;
+	int i, re_len = 0;
+
+	for (i = 0; i < input->len; i++) {
+		switch (input->s[i]) {
+		case 'm': *flags |= REG_LOOKUP_METHODFILTER_FLAG; break;
+		case 'b': *flags |= REG_LOOKUP_NOBRANCH_FLAG; break;
+		case 'g': *flags |= REG_LOOKUP_GLOBAL_FLAG; break;
+		case 'r': *flags |= REG_BRANCH_AOR_LOOKUP_FLAG; break;
+		case 'B': *flags |= REG_LOOKUP_NO_RURI_FLAG; break;
+		case 'u':
+			if (input->s[i+1] != '/') {
+				LM_ERR("no regexp start after 'u' flag\n");
+				break;
+			}
+			i++;
+			re_end = q_memchr(input->s + i + 1, '/', input->len - i - 1);
+			if (!re_end) {
+				LM_ERR("no regexp end after 'u' flag\n");
+				break;
+			}
+			i++;
+			re_len = re_end - input->s - i;
+			if (re_len == 0) {
+				LM_ERR("empty regexp\n");
+				break;
+			}
+			ua = input->s + i;
+			*flags |= REG_LOOKUP_UAFILTER_FLAG;
+			LM_DBG("found regexp /%.*s/", re_len, ua);
+
+			i += re_len;
+			break;
+		case 'i': *regexp_flags |= REG_ICASE; break;
+		case 'e': *regexp_flags |= REG_EXTENDED; break;
+		case 'y':
+			*max_latency = 0;
+			while (i<input->len-1 && isdigit(input->s[i+1])) {
+				*max_latency = *max_latency*10 + input->s[i+1] - '0';
+				i++;
+			}
+
+			if (*max_latency)
+				*flags |= REG_LOOKUP_MAX_LATENCY_FLAG;
+			else
+				*flags &= ~REG_LOOKUP_MAX_LATENCY_FLAG;
+			break;
+		case 'Y': *flags |= REG_LOOKUP_LATENCY_SORT_FLAG; break;
+		default: LM_WARN("unsupported flag %c \n", input->s[i]);
+		}
+	}
+
+	LM_DBG("final flags: %d\n", *flags);
+
+	if (*flags & REG_LOOKUP_UAFILTER_FLAG) {
+		ua[re_len] = '\0';
+		if (regcomp(ua_re, ua, *regexp_flags) != 0) {
+			LM_ERR("bad regexp '%s'\n", ua);
+			ua[re_len] = '/';
+			return -1;
+		}
+		ua[re_len] = '/';
+	}
+
+	return 0;
+}
 
 /*! \brief
  * Lookup contact in the database and rewrite Request-URI
@@ -77,77 +356,34 @@ static str branch_uris[MAX_BRANCHES-1];
  *          -2 : found but method not allowed
  *          -3 : error
  */
-int lookup(struct sip_msg* _m, char* _t, char* _f, char* _s)
+int lookup(struct sip_msg* _m, void* _t, str* flags_s, str* uri)
 {
-	unsigned int flags;
-	urecord_t* r;
-	str aor, uri;
-	ucontact_t* ptr,*it;
-	int res;
-	int ret;
-	str path_dst;
-	str flags_s;
-	char* ua = NULL;
-	char* re_end = NULL;
-	int re_len = 0;
-	char tmp;
-	regex_t ua_re;
-	int regexp_flags = 0;
-	regmatch_t ua_match;
-	pv_value_t val;
-	int_str istr;
-	str sip_instance = {0,0},call_id = {0,0};
-
-	/* branch index */
-	int idx;
-
-	/* temporary branch values*/
-	int tlen;
+	static char urimem[MAX_BRANCHES-1][MAX_URI_SIZE];
+	static str branch_uris[MAX_BRANCHES-1];
+	int idx = 0, nbranches = 0, tlen;
 	char *turi;
-
 	qvalue_t tq;
 
+	urecord_t* r;
+	str aor;
+	ucontact_t *ct, **ptr;
+	int max_latency = 0, ruri_is_pushed = 0, regexp_flags = 0;
+	unsigned int flags;
+	int rc, ret = -1;
+	str sip_instance = STR_NULL, call_id = STR_NULL;
+	regex_t ua_re;
+
 	flags = 0;
-	if (_f && _f[0]!=0) {
-		if (fixup_get_svalue( _m, (gparam_p)_f, &flags_s)!=0) {
-			LM_ERR("invalid owner uri parameter");
+	if (flags_s && flags_s->s[0] != '\0') {
+		if (parse_lookup_flags(flags_s, &flags, &ua_re, &regexp_flags,
+		                       &max_latency) != 0) {
+			LM_ERR("failed to parse flags: %.*s\n", flags_s->len, flags_s->s);
 			return -1;
 		}
-		for( res=0 ; res< flags_s.len ; res++ ) {
-			switch (flags_s.s[res]) {
-				case 'm': flags |= REG_LOOKUP_METHODFILTER_FLAG; break;
-				case 'b': flags |= REG_LOOKUP_NOBRANCH_FLAG; break;
-				case 'r': flags |= REG_BRANCH_AOR_LOOKUP_FLAG; break;
-				case 'u':
-					if (flags_s.s[res+1] != '/') {
-						LM_ERR("no regexp after 'u' flag");
-						break;
-					}
-					res++;
-					if ((re_end = strrchr(flags_s.s+res+1, '/')) == NULL) {
-						LM_ERR("no regexp after 'u' flag");
-						break;
-					}
-					res++;
-					re_len = re_end-flags_s.s-res;
-					if (re_len == 0) {
-						LM_ERR("empty regexp");
-						break;
-					}
-					ua = flags_s.s+res;
-					flags |= REG_LOOKUP_UAFILTER_FLAG;
-					LM_DBG("found regexp /%.*s/", re_len, ua);
-					res += re_len;
-					break;
-				case 'i': regexp_flags |= REG_ICASE; break;
-				case 'e': regexp_flags |= REG_EXTENDED; break;
-				default: LM_WARN("unsupported flag %c \n",flags_s.s[res]);
-			}
-		}
 	}
-	if (flags&REG_BRANCH_AOR_LOOKUP_FLAG) {
+
+	if (flags & REG_BRANCH_AOR_LOOKUP_FLAG) {
 		/* extract all the branches for further usage */
-		nbranches = 0;
 		while (
 			(turi=get_branch(nbranches, &tlen, &tq, NULL, NULL, NULL, NULL))
 				) {
@@ -164,250 +400,91 @@ int lookup(struct sip_msg* _m, char* _t, char* _f, char* _s)
 			nbranches++;
 		}
 		clear_branches();
-		idx=0;
 	}
 
+	if (!uri)
+		uri = GET_RURI(_m);
 
-	if (_s) {
-		if (pv_get_spec_value( _m, (pv_spec_p)_s, &val)!=0) {
-			LM_ERR("failed to get PV value\n");
-			return -1;
-		}
-		if ( (val.flags&PV_VAL_STR)==0 ) {
-			LM_ERR("PV vals is not string\n");
-			return -1;
-		}
-		uri = val.rs;
-	} else {
-		if (_m->new_uri.s) uri = _m->new_uri;
-		else uri = _m->first_line.u.request.uri;
-	}
-
-	if (extract_aor(&uri, &aor,&sip_instance,&call_id) < 0) {
+	if (extract_aor(uri, &aor, &sip_instance, &call_id) < 0) {
 		LM_ERR("failed to extract address of record\n");
 		return -3;
 	}
 
 	update_act_time();
 
+fetch_urecord:
 	ul.lock_udomain((udomain_t*)_t, &aor);
-	res = ul.get_urecord((udomain_t*)_t, &aor, &r);
-	if (res > 0) {
+	if (ul.cluster_mode == CM_FEDERATION_CACHEDB
+	        && (flags & REG_LOOKUP_GLOBAL_FLAG))
+		rc = ul.get_global_urecord((udomain_t*)_t, &aor, &r);
+	else
+		rc = ul.get_urecord((udomain_t*)_t, &aor, &r);
+
+	if (rc > 0) {
 		LM_DBG("'%.*s' Not found in usrloc\n", aor.len, ZSW(aor.s));
 		ul.unlock_udomain((udomain_t*)_t, &aor);
 		return -1;
 	}
 
-	if (flags & REG_LOOKUP_UAFILTER_FLAG) {
-		tmp = *(ua+re_len);
-		*(ua+re_len) = '\0';
-		if (regcomp(&ua_re, ua, regexp_flags) != 0) {
-			LM_ERR("bad regexp '%s'\n", ua);
-			*(ua+re_len) = tmp;
-			return -1;
-		}
-		*(ua+re_len) = tmp;
-	}
+#ifdef EXTRA_DEBUG
+	print_urecord(r);
+#endif
 
+	ptr = select_contacts(_m, r->contacts, flags, &sip_instance, &call_id,
+	                      &ua_re, max_latency, &ret);
 
-	ptr = r->contacts;
-	ret = -1;
-	/* look first for an un-expired and suported contact */
-search_valid_contact:
-	while ( (ptr) &&
-	!(VALID_CONTACT(ptr,get_act_time()) && (ret=-2) && allowed_method(_m,ptr,flags)))
-		ptr = ptr->next;
-	if (ptr==0) {
-		/* nothing found */
-		LM_DBG("nothing found !\n");
-		goto done;
-	}
+	/* do not attempt to push anything to RURI if the flags say so */
+	if (flags&REG_LOOKUP_NO_RURI_FLAG)
+		ruri_is_pushed = 1;
 
-	ua_re_check(
-		ret = -1;
-		ptr = ptr->next;
-		goto search_valid_contact
-	);
-
-	if (sip_instance.len && sip_instance.s) {
-		LM_DBG("ruri has gruu in lookup\n");
-		/* uri has GRUU */
-		if (ptr->instance.len-2 != sip_instance.len ||
-				memcmp(ptr->instance.s+1,sip_instance.s,sip_instance.len)) {
-			LM_DBG("no match to sip instace - [%.*s] - [%.*s]\n",ptr->instance.len-2,ptr->instance.s+1,
-					sip_instance.len,sip_instance.s);
-			/* not the targeted instance, search some more */
-			ptr = ptr->next;
-			goto search_valid_contact;
-		}
-
-		LM_DBG("matched sip instace\n");
-	}
-
-	if (call_id.len && call_id.s) {
-		/* decide whether GRUU is expired or not
-		 *
-		 * first - match call-id */
-		if (ptr->callid.len != call_id.len ||
-				memcmp(ptr->callid.s,call_id.s,call_id.len)) {
-			LM_DBG("no match to call id - [%.*s] - [%.*s]\n",ptr->callid.len,ptr->callid.s,
-					call_id.len,call_id.s);
-			ptr = ptr->next;
-			goto search_valid_contact;
-		}
-
-		/* matched call-id, check if there are newer contacts with
-		 * same sip instace bup newer last_modified */
-
-		it = ptr->next;
-		while ( it ) {
-			if (VALID_CONTACT(it,get_act_time())) {
-				if (it->instance.len-2 == sip_instance.len && sip_instance.s &&
-						memcmp(it->instance.s+1,sip_instance.s,sip_instance.len) == 0)
-					if (it->last_modified > ptr->last_modified) {
-						/* same instance id, but newer modified -> expired GRUU, no match at all */
-						break;
-					}
-			}
-			it=it->next;
-		}
-
-		if (it != NULL) {
-			ret = -1;
-			goto done;
-		}
-	}
-
-	LM_DBG("found a complete match\n");
-
-	ret = 1;
-	if (ptr) {
-		LM_DBG("setting as ruri <%.*s>\n",ptr->c.len,ptr->c.s);
-		if (set_ruri(_m, &ptr->c) < 0) {
-			LM_ERR("unable to rewrite Request-URI\n");
+	for (; *ptr; ptr++) {
+		rc = push_branch(_m, *ptr, &ruri_is_pushed);
+		if (rc == -3) {
 			ret = -3;
 			goto done;
 		}
 
-		/* If a Path is present, use first path-uri in favour of
-		 * received-uri because in that case the last hop towards the uac
-		 * has to handle NAT. - agranig */
-		if (ptr->path.s && ptr->path.len) {
-			if (get_path_dst_uri(&ptr->path, &path_dst) < 0) {
-				LM_ERR("failed to get dst_uri for Path\n");
-				ret = -3;
-				goto done;
-			}
-			if (set_path_vector(_m, &ptr->path) < 0) {
-				LM_ERR("failed to set path vector\n");
-				ret = -3;
-				goto done;
-			}
-			if (set_dst_uri(_m, &path_dst) < 0) {
-				LM_ERR("failed to set dst_uri of Path\n");
-				ret = -3;
-				goto done;
-			}
-		} else if (ptr->received.s && ptr->received.len) {
-			if (set_dst_uri(_m, &ptr->received) < 0) {
-				ret = -3;
-				goto done;
-			}
-		}
-
-		set_ruri_q( _m, ptr->q);
-
-		setbflag( _m, 0, ptr->cflags);
-
-		if (ptr->sock)
-			_m->force_send_socket = ptr->sock;
-
-		/* populate the 'attributes' avp */
-		if (attr_avp_name != -1) {
-			istr.s = ptr->attr;
-			if (add_avp_last(AVP_VAL_STR, attr_avp_name, istr) != 0) {
-				LM_ERR("Failed to populate attr avp!\n");
-			}
-		}
-
-		ptr = ptr->next;
+		if (rc == 0 && (flags & REG_LOOKUP_NOBRANCH_FLAG))
+			goto done;
 	}
 
-	/* Append branches if enabled */
-	/* If we got to this point and the URI had a ;gr parameter and it was matched
-	 * to a contact. No point in branching */
-	if ( flags&REG_LOOKUP_NOBRANCH_FLAG || (sip_instance.len && sip_instance.s) ) goto done;
-	LM_DBG("looking for branches\n");
-
-	do {
-		for( ; ptr ; ptr = ptr->next ) {
-			if (VALID_CONTACT(ptr, get_act_time()) && allowed_method(_m,ptr,flags)) {
-				path_dst.len = 0;
-				if(ptr->path.s && ptr->path.len
-				&& get_path_dst_uri(&ptr->path, &path_dst) < 0) {
-					LM_ERR("failed to get dst_uri for Path\n");
-					continue;
-				}
-
-				ua_re_check(continue);
-
-				/* The same as for the first contact applies for branches
-				 * regarding path vs. received. */
-				LM_DBG("setting branch <%.*s>\n",ptr->c.len,ptr->c.s);
-				if (append_branch(_m,&ptr->c,path_dst.len?&path_dst:&ptr->received,
-				&ptr->path, ptr->q, ptr->cflags, ptr->sock) == -1) {
-					LM_ERR("failed to append a branch\n");
-					/* Also give a chance to the next branches*/
-					continue;
-				}
-
-				/* populate the 'attributes' avp */
-				if (attr_avp_name != -1) {
-					istr.s = ptr->attr;
-					if (add_avp_last(AVP_VAL_STR, attr_avp_name, istr) != 0) {
-						LM_ERR("Failed to populate attr avp!\n");
-					}
-				}
-			}
+	if (ul.cluster_mode == CM_FEDERATION_CACHEDB
+	        && (flags & REG_LOOKUP_GLOBAL_FLAG)) {
+		for (ct = r->remote_aors; ct; ct = ct->next) {
+			rc = push_branch(_m, ct, &ruri_is_pushed);
+			if (rc == 0 && (flags & REG_LOOKUP_NOBRANCH_FLAG))
+				goto done;
 		}
-		/* 0 branches condition also filled; idx initially -1*/
-		if (!(flags&REG_BRANCH_AOR_LOOKUP_FLAG) || idx == nbranches)
-			goto done;
+	}
 
-
+	if ((flags & REG_BRANCH_AOR_LOOKUP_FLAG) && idx < nbranches) {
 		/* relsease old aor lock */
-		ul.unlock_udomain((udomain_t*)_t, &aor);
 		ul.release_urecord(r, 0);
+		ul.unlock_udomain((udomain_t *)_t, &aor);
 
-		/* idx starts from -1 */
-		uri = branch_uris[idx];
-		if (extract_aor(&uri, &aor, NULL, &call_id) < 0) {
+		uri = &branch_uris[idx];
+		LM_DBG("getting contacts from aor [%.*s] "
+		       "in branch %d\n", aor.len, aor.s, idx);
+
+		if (extract_aor(uri, &aor, NULL, &call_id) < 0) {
 			LM_ERR("failed to extract address of record for branch uri\n");
-			return -3;
+			ret = -3;
+			goto out_cleanup;
 		}
 
-		/* release old urecord */
-
-		/* get lock on new aor */
-		LM_DBG("getting contacts from aor [%.*s]"
-					"in branch %d\n", aor.len, aor.s, idx);
-		ul.lock_udomain((udomain_t*)_t, &aor);
-		res = ul.get_urecord((udomain_t*)_t, &aor, &r);
-
-		if (res > 0) {
-			LM_DBG("'%.*s' Not found in usrloc\n", aor.len, ZSW(aor.s));
-			goto done;
-		}
 		idx++;
-		ptr = r->contacts;
-	} while (1);
+		goto fetch_urecord;
+	}
 
 done:
+	if (ruri_is_pushed)
+		ret = 1;
+
 	ul.release_urecord(r, 0);
 	ul.unlock_udomain((udomain_t*)_t, &aor);
-	if (flags & REG_LOOKUP_UAFILTER_FLAG) {
+out_cleanup:
+	if (flags & REG_LOOKUP_UAFILTER_FLAG)
 		regfree(&ua_re);
-	}
 	return ret;
 }
 
@@ -448,10 +525,9 @@ struct to_body* select_uri(struct sip_msg* _m)
 		return -2; \
 	}
 
-int msg_aor_parse(struct sip_msg* _m, char *_aor, str *_saor)
+int msg_aor_parse(struct sip_msg* _m, str *_aor, str *_saor)
 {
 	str uri, aor;
-	pv_value_t val;
 	struct to_body *hdr;
 
 	if (parse_reg_headers(_m) < 0) {
@@ -474,16 +550,7 @@ int msg_aor_parse(struct sip_msg* _m, char *_aor, str *_saor)
 
 		uri = hdr->uri;
 	} else {
-		if (pv_get_spec_value(_m, (pv_spec_p)_aor, &val)) {
-			LM_ERR("failed to get aor PV value!\n");
-			return -1;
-		}
-
-		if ((val.flags&PV_VAL_STR) == 0) {
-			LM_ERR("aor PV vals is not string\n");
-			return -1;
-		}
-		uri = val.rs;
+		uri = *_aor;
 	}
 
 	if (extract_aor(&uri, &aor, 0, 0) < 0) {
@@ -505,7 +572,7 @@ int msg_aor_parse(struct sip_msg* _m, char *_aor, str *_saor)
  *	- "to" header on any other SIP REQUEST
  *	- aor parameter of the function
  */
-int is_registered(struct sip_msg* _m, char *_d, char* _a)
+int is_registered(struct sip_msg* _m, void *_d, str* _a)
 {
 	int ret=NOT_FOUND;
 	urecord_t* r;
@@ -556,15 +623,14 @@ int is_registered(struct sip_msg* _m, char *_d, char* _a)
  *  callid params are provided
  *  - the contact parameter (third parameter)
  */
-int is_contact_registered(struct sip_msg* _m, char *_d, char* _a,
-							char* _c, char* _cid)
+int is_contact_registered(struct sip_msg* _m, void *_d, str* _a,
+							str* _c, str* _cid)
 {
 	int exp;
 
-	str aor;
 	str callid = {NULL, 0};
 	str curi = {NULL, 0};
-	pv_value_t val;
+	str aor;
 
 	udomain_t* ud = (udomain_t*)_d;
 	urecord_t* r;
@@ -600,25 +666,11 @@ int is_contact_registered(struct sip_msg* _m, char *_d, char* _a,
 
 		curi = ct->uri;
 	} else {
-		if (_c) {
-			if (pv_get_spec_value(_m, (pv_spec_p)_c, &val)!=0 ||
-			(val.flags&PV_VAL_STR)==0 ) {
-				LM_ERR("failed to retrieve string value from CONTACT "
-					"parameter!\n");
-				return -1;
-			}
-			curi = val.rs;
-		}
+		if (_c)
+			curi = *_c;
 
-		if (_cid) {
-			if (pv_get_spec_value(_m, (pv_spec_p)_cid, &val)!=0 ||
-			(val.flags&PV_VAL_STR)==0 ) {
-				LM_ERR("failed to retrieve string value from CALLID "
-					"parameter!\n");
-				return -1;
-			}
-			callid = val.rs;
-		}
+		if (_cid)
+			callid = *_cid;
 	}
 
 	ul.lock_udomain(ud, &aor);
@@ -671,25 +723,19 @@ out_found_unlock:
  * IPs comes from:
  * - the IPs avp given as a third parameter
  */
-int is_ip_registered(struct sip_msg* _m, char* _d, char* _a, char *_out_pv)
+int is_ip_registered(struct sip_msg* _m, void* _d, str* _a, pv_spec_t *spec)
 {
 	str aor;
-	str host, pv_host={NULL, 0};
+	str pv_host={NULL, 0};
 	struct sip_uri tmp_uri;
 	str uri;
-
 	char is_avp=1;
-
 	udomain_t* ud = (udomain_t*)_d;
-
 	urecord_t* r;
-
 	ucontact_t *c;
-
 	struct usr_avp *avp;
-	pv_spec_p spec = (pv_spec_p)_out_pv;
 	pv_value_t val;
-
+	struct ip_addr *ipp, ip;
 
 	if (msg_aor_parse(_m, _a, &aor)) {
 		LM_ERR("failed to parse!\n");
@@ -726,32 +772,54 @@ int is_ip_registered(struct sip_msg* _m, char* _d, char* _a, char *_out_pv)
 			uri = c->received;
 		else
 			uri = c->c;
+
+		/* extract the IP from contact */
 		if (parse_uri(uri.s, uri.len, &tmp_uri) < 0) {
 			LM_ERR("contact [%.*s] is not valid! Will not store it!\n",
 				  uri.len, uri.s);
 		}
-		host = tmp_uri.host;
-
-		if (!is_avp) {
-			if (pv_host.len == host.len
-				&& !memcmp(host.s, pv_host.s, pv_host.len))
-				goto out_unlock_found;
-
-			/* skip the part with avp */
+		if ( (ipp=str2ip(&tmp_uri.host))==NULL &&
+		(ipp=str2ip6(&tmp_uri.host))==NULL ) {
+			LM_ERR("failed to get IP from contact/received <%.*s>, skipping\n",
+				tmp_uri.host.len, tmp_uri.host.s);
 			continue;
 		}
+		ip = *ipp;
 
-		avp = NULL;
-		while ((avp=search_first_avp(spec->pvp.pvn.u.isname.type,
-					spec->pvp.pvn.u.isname.name.n, (int_str*)&pv_host,avp))) {
-			if (!(avp->flags&AVP_VAL_STR)) {
-				LM_NOTICE("avp value should be string\n");
+		if (!is_avp) {
+
+			/* convert the param IP to ip_addr too*/
+			if ( (ipp=str2ip(&pv_host))==NULL &&
+			(ipp=str2ip6(&pv_host))==NULL ) {
+				LM_ERR("param IP  <%.*s> is not valid, skipping\n",
+					pv_host.len, pv_host.s);
 				continue;
 			}
 
-			if (pv_host.len == host.len
-					&& !memcmp(host.s, pv_host.s, pv_host.len))
+			if (ip_addr_cmp(&ip, ipp))
 				goto out_unlock_found;
+
+		} else {
+
+			avp = NULL;
+			while ((avp=search_first_avp(spec->pvp.pvn.u.isname.type,
+					spec->pvp.pvn.u.isname.name.n, (int_str*)&pv_host,avp))) {
+				if (!(avp->flags&AVP_VAL_STR)) {
+					LM_NOTICE("avp value should be string\n");
+					continue;
+				}
+
+				/* convert the param IP to ip_addr too*/
+				if ( (ipp=str2ip(&pv_host))==NULL &&
+				(ipp=str2ip6(&pv_host))==NULL ) {
+					LM_ERR("param IP  <%.*s> is not valid, skipping\n",
+						pv_host.len, pv_host.s);
+					continue;
+				}
+
+				if (ip_addr_cmp(&ip, ipp))
+					goto out_unlock_found;
+			}
 		}
 	}
 

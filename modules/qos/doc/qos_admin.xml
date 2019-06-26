@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 		<title>Overview</title>
 
 		<para>The qos module provides a way to keep track of
@@ -65,7 +65,7 @@
 	</para>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -97,10 +97,10 @@
 	</para>
 	</section>
 	</section>
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
-		<title><varname>qos_flag</varname> (string/integer)</title>
+	<section id="param_qos_flag" xreflabel="qos_flag">
+		<title><varname>qos_flag</varname> (string)</title>
 		
 		<para>Keeping with &osips;, the module will not do
 		anything to any message unless instructed to do so via
@@ -117,9 +117,6 @@
 
 		<para>This parameter must be set of the module will
 		not load.</para>
-
-		<para><emphasis>WARNING: </emphasis>Setting INT flags is deprecated!
-		Use quoted strings instead!</para>
 
 		<para>
 		<emphasis>
@@ -145,7 +142,7 @@ route {
 	</section>
 
 	</section>
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
 	<para>There are no exported functions that could be used in scripts.
 	</para>
@@ -156,7 +153,7 @@ route {
 	<para>There are no exported statistics for the qos module.</para>
 	</section>
 
-	<section>
+	<section id="exported_mi_functions" xreflabel="Exported MI Functions">
 	<title>Exported MI Functions</title>
 	<para>There are no exported MI functions for the qos module.
 	Check the dialog MI functions for a way to inspect the internals
@@ -164,8 +161,8 @@ route {
 	</para>
 	</section>
 
-	<section>
-	<title>Exported pseudo-variables</title>
+	<section id="exported_pseudo_variables">
+	<title>Exported Pseudo-Variables</title>
 	<para>There are no exported pseudo-variables for the qos module.
 	</para>
 	</section>

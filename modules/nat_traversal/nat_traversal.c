@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007-2009 Dan Pascu
+ * Copyright (C) 2007-2019 Dan Pascu
  *
  * This file is part of opensips, a free SIP server.
  *
@@ -40,7 +40,6 @@
 #include "../../timer.h"
 #include "../../resolve.h"
 #include "../../data_lump.h"
-#include "../../mod_fix.h"
 #include "../../script_cb.h"
 #include "../../sl_cb.h"
 #include "../../parser/msg_parser.h"
@@ -50,7 +49,7 @@
 #include "../../parser/contact/parse_contact.h"
 #include "../dialog/dlg_load.h"
 #include "../tm/tm_load.h"
-
+#include "clustering.h"
 
 
 
@@ -173,7 +172,7 @@ typedef struct Keepalive_Params {
 //
 static int NAT_Keepalive(struct sip_msg *msg);
 static int FixContact(struct sip_msg *msg);
-static int ClientNatTest(struct sip_msg *msg, unsigned int *tests);
+static int ClientNatTest(struct sip_msg *msg, int *tests);
 
 static Bool test_private_contact(struct sip_msg *msg);
 static Bool test_source_address(struct sip_msg *msg);
@@ -216,14 +215,6 @@ stat_var *registered_endpoints = 0;
 stat_var *subscribed_endpoints = 0;
 stat_var *dialog_endpoints = 0;
 
-static NetInfo private_networks[] = {
-    {"10.0.0.0",    0x0a000000UL, 0xff000000UL},  // RFC 1918  10.0.0.0/8
-    {"172.16.0.0",  0xac100000UL, 0xfff00000UL},  // RFC 1918  172.16.0.0/12
-    {"192.168.0.0", 0xc0a80000UL, 0xffff0000UL},  // RFC 1918  192.168.0.0/16
-    {"100.64.0.0",  0x64400000UL, 0xffc00000UL},  // RFC 6598  100.64.0.0/10
-    {NULL,          0UL,          0UL}
-};
-
 static NatTest NAT_Tests[] = {
     {NTPrivateContact, test_private_contact},
     {NTSourceAddress,  test_source_address},
@@ -232,12 +223,11 @@ static NatTest NAT_Tests[] = {
     {NTNone,           NULL}
 };
 
-
 static cmd_export_t commands[] = {
-    {"nat_keepalive",   (cmd_function)NAT_Keepalive, 0, NULL, 0, REQUEST_ROUTE},
-    {"fix_contact",     (cmd_function)FixContact,    0, NULL, 0, REQUEST_ROUTE | ONREPLY_ROUTE | BRANCH_ROUTE |LOCAL_ROUTE},
-    {"client_nat_test", (cmd_function)ClientNatTest, 1, fixup_uint_null, 0, REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE|LOCAL_ROUTE},
-    {0, 0, 0, 0, 0, 0}
+    {"nat_keepalive",   (cmd_function)NAT_Keepalive, {{0, 0, 0}}, REQUEST_ROUTE},
+    {"fix_contact",     (cmd_function)FixContact,    {{0, 0, 0}}, REQUEST_ROUTE | ONREPLY_ROUTE | BRANCH_ROUTE | LOCAL_ROUTE},
+    {"client_nat_test", (cmd_function)ClientNatTest, {{CMD_PARAM_INT, 0, 0}, {0, 0, 0}}, REQUEST_ROUTE | ONREPLY_ROUTE | FAILURE_ROUTE | BRANCH_ROUTE | LOCAL_ROUTE},
+    {0, 0, {{0, 0, 0}}, 0}
 };
 
 static param_export_t parameters[] = {
@@ -246,6 +236,8 @@ static param_export_t parameters[] = {
     {"keepalive_from",           STR_PARAM, &keepalive_params.from},
     {"keepalive_extra_headers",  STR_PARAM, &keepalive_params.extra_headers},
     {"keepalive_state_file",     STR_PARAM, &keepalive_state_file},
+    {"cluster_id",               INT_PARAM, &nt_cluster_id},
+    {"cluster_sharing_tag",      STR_PARAM, &nt_cluster_shtag},
     {0, 0, 0}
 };
 
@@ -267,35 +259,39 @@ static stat_export_t statistics[] = {
 #endif
 
 static dep_export_t deps = {
-	{ /* OpenSIPS module dependencies */
-		{ MOD_TYPE_DEFAULT, "sl",     DEP_ABORT  },
-		{ MOD_TYPE_DEFAULT, "tm",     DEP_ABORT  },
-		{ MOD_TYPE_DEFAULT, "dialog", DEP_SILENT },
-		{ MOD_TYPE_NULL, NULL, 0 },
-	},
-	{ /* modparam dependencies */
-		{ NULL, NULL },
-	},
+    // OpenSIPS module dependencies
+    {
+        {MOD_TYPE_DEFAULT, "sl",     DEP_ABORT},
+        {MOD_TYPE_DEFAULT, "tm",     DEP_ABORT},
+        {MOD_TYPE_DEFAULT, "dialog", DEP_SILENT},
+        {MOD_TYPE_NULL, NULL, 0},
+    },
+    // modparam dependencies
+    {
+        {NULL, NULL}
+    }
 };
 
 struct module_exports exports = {
-    "nat_traversal", // module name
-    MOD_TYPE_DEFAULT,// class of this module
-    MODULE_VERSION,  // module version
-    DEFAULT_DLFLAGS, // dlopen flags
-    &deps,           // OpenSIPS module dependencies
-    commands,        // exported functions
-    0,               // exported async functions
-    parameters,      // exported parameters
-    NULL,            // exported statistics (initialized early in mod_init)
-    NULL,            // exported MI functions
-    pvars,           // exported pseudo-variables
-    NULL,            // exported transformations
-    NULL,            // extra processes
-    mod_init,        // module init function (before fork. kids will inherit)
-    reply_filter,    // reply processing function
-    mod_destroy,     // destroy function
-    child_init       // child init function
+    "nat_traversal",  // module name
+    MOD_TYPE_DEFAULT, // class of this module
+    MODULE_VERSION,   // module version
+    DEFAULT_DLFLAGS,  // dlopen flags
+    NULL,             // load function
+    &deps,            // OpenSIPS module dependencies
+    commands,         // exported functions
+    NULL,             // exported async functions
+    parameters,       // exported parameters
+    NULL,             // exported statistics (initialized early in mod_init)
+    NULL,             // exported MI functions
+    pvars,            // exported pseudo-variables
+    NULL,             // exported transformations
+    NULL,             // extra processes
+    mod_init,         // module init function (before fork. kids will inherit)
+    reply_filter,     // reply processing function
+    mod_destroy,      // destroy function
+    child_init,       // child init function
+    NULL              // reload confirm function
 };
 
 
@@ -751,31 +747,7 @@ get_contact_uri(struct sip_msg* msg, struct sip_uri *uri, contact_t **_c)
 }
 
 
-#define is_private_address(x) (private_address(x)==1 ? 1 : 0)
-
-// Test if IP in `address' belongs to a private network
-static INLINE int
-private_address(str *address)
-{
-    struct ip_addr *ip;
-    uint32_t netaddr;
-    int i;
-
-    ip = str2ip(address);
-    if (ip == NULL)
-        return -1; // invalid address to test
-
-    netaddr = ntohl(ip->u.addr32[0]);
-
-    for (i=0; private_networks[i].name!=NULL; i++) {
-        if ((netaddr & private_networks[i].mask)==private_networks[i].address) {
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
+#define is_private_address(x) (ip_addr_is_1918(x)==1 ? 1 : 0)
 
 // Test if address of signaling is different from address in 1st Via field
 static Bool
@@ -1551,7 +1523,7 @@ FixContact(struct sip_msg *msg)
 
 
 static int
-ClientNatTest(struct sip_msg *msg, unsigned int *tests)
+ClientNatTest(struct sip_msg *msg, int *tests)
 {
     int i;
 
@@ -1615,7 +1587,7 @@ send_keepalive(NAT_Contact *contact)
                    keepalive_params.extra_headers);
 
     if (len >= sizeof(buffer)) {
-        LM_ERR("keepalive message is longer than %lu bytes\n", (unsigned long)sizeof(buffer));
+        LM_ERR("keepalive message is longer than %zu bytes\n", sizeof(buffer));
         return;
     }
 
@@ -1626,13 +1598,13 @@ send_keepalive(NAT_Contact *contact)
     nat_port = strtol(ptr+1, NULL, 10);
     hostent = sip_resolvehost(&nat_ip, NULL, NULL, False, NULL);
     hostent2su(&to, hostent, 0, nat_port);
+    tolen=sockaddru_len(to);
 
-	tolen=sockaddru_len(to);
 again:
-	if (sendto(contact->socket->socket, buffer, len, 0, &to.s, tolen)==-1) {
-		if (errno==EINTR) goto again;
-		LM_ERR("sendto() failed with %s(%d)\n", strerror(errno),errno);
-	}
+    if (sendto(contact->socket->socket, buffer, len, 0, &to.s, tolen)==-1) {
+        if (errno==EINTR) goto again;
+        LM_ERR("sendto() failed with %s(%d)\n", strerror(errno),errno);
+    }
 }
 
 
@@ -1649,6 +1621,9 @@ keepalive_timer(unsigned int ticks, void *counter)
     HashSlot *slot;
     time_t now;
     int i;
+
+    if ( !nt_cluster_shtag_is_active() )
+        return;
 
     now = time(NULL);
 
@@ -1868,17 +1843,24 @@ mod_init(void)
         LM_NOTICE("using 10 seconds for keepalive_interval\n");
         keepalive_interval = 10;
     }
+
     // allocate a shm variable to keep the counter used by the keepalive
     // timer routine - it must be shared as the routine get executed
     // in different processes
-    if (NULL==(param=(int*) shm_malloc(sizeof(int)))) {
+    param = (int*)shm_malloc(sizeof(int));
+    if (param == NULL) {
         LM_ERR("cannot allocate shm memory for keepalive counter\n");
         return -1;
     }
     *param = 0;
-    if (register_timer( "nt-pinger", keepalive_timer, (void*)(long)param, 1,
-    TIMER_FLAG_DELAY_ON_DELAY)<0) {
+
+    if (register_timer( "nt-pinger", keepalive_timer, (void*)(long)param, 1, TIMER_FLAG_DELAY_ON_DELAY) < 0) {
         LM_ERR("failed to register keepalive timer\n");
+        return -1;
+    }
+
+    if (nt_cluster_id>0 && nt_init_cluster()<0) {
+        LM_ERR("failed to initialized the clustering support\n");
         return -1;
     }
 
@@ -1936,7 +1918,7 @@ preprocess_request(struct sip_msg *msg, void *_param)
         msg->msg_flags |= FL_NAT_TRACK_DIALOG;
     }
 
-	return SCB_RUN_ALL;
+    return SCB_RUN_ALL;
 }
 
 

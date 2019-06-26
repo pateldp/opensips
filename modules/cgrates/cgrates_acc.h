@@ -37,13 +37,16 @@
  *  - -3: invalid message type
  *  - -4: invalid message
  */
-int w_cgr_acc(struct sip_msg* msg, char *flag_c, char* acc_c, char *dst_c, char *tag_c);
+int w_cgr_acc(struct sip_msg* msg, void *flag_c, str* acc_c, str *dst_c,
+		str *tag_c);
 
 struct cgr_acc_sess {
 	/* should we guard anything here? */
 
 	branch_bm_t branch_mask;
 	unsigned flags;
+	str originid;
+	str originhost;
 	str acc;
 	str dst;
 	time_t start_time;
@@ -62,13 +65,18 @@ struct cgr_acc_ctx {
 
 	/* variables */
 	struct list_head *sessions;
+
+	/* link to all contexts */
+	struct list_head link;
 };
 
+int cgr_acc_init(void);
 struct cgr_acc_ctx *cgr_tryget_acc_ctx(void);
 void cgr_ref_acc_ctx(struct cgr_acc_ctx *ctx, int how, const char *who);
 void cgr_loaded_callback(struct dlg_cell *dlg, int type,
 			struct dlg_cb_params *_params);
 int cgr_acc_terminate(json_object *param, json_object **ret);
+int cgr_acc_sessions(json_object *param, json_object **ret);
 
 #define CGRF_DO_CDR		(1<<0)
 #define CGRF_DO_MISSED	(1<<1)

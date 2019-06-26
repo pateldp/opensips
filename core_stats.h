@@ -74,10 +74,11 @@ extern stat_var* unsupported_methods;
 /*! \brief Set in get_hdr_field(). */
 extern stat_var* bad_msg_hdr;
 
+/*! \brief SIP message processing which exceeded 'threshold' duration */
+extern stat_var* slow_msgs;
+
 #ifdef PKG_MALLOC
 int init_pkg_stats(int no_procs);
-
-pkg_status_holder* get_pkg_status_holder(int proc_id);
 #endif
 
 #endif /*STATISTICS*/

@@ -61,9 +61,13 @@ struct body_part{
 	 *    for free on it */
 	str body;
 
-	/* the whole part ( body + headers)
-	 *   set only if this is a received part */
-	str all_data;
+	/* the SIP headers of the part
+	 *  If received part, ot points inside the msg buf (it may be empty 
+	 *     it is a single part body!)
+	 *  If a new part, it may hold additional SIP header (other then
+	 *     Content-Type)  but in the same mem chunk as the whole part
+	 *     -> no need for free on it */
+	str headers;
 
 	/* whatever information might be received from parsing the part
 	 * This may be present for received and new parts too! */
@@ -85,8 +89,9 @@ struct body_part{
 	(((_part)->flags&SIP_BODY_PART_FLAG_DELETED)!=0)
 
 
-#define SIP_BODY_FLAG_NEW  (1<<0)
-#define SIP_BODY_FLAG_SHM  (1<<1)
+#define SIP_BODY_FLAG_NEW       (1<<0)
+#define SIP_BODY_FLAG_SHM       (1<<1)
+#define SIP_BODY_RCV_MULTIPART  (1<<2)
 
 struct sip_msg_body {
 	/* original number of parts in the SIP body */
@@ -123,7 +128,8 @@ int parse_sip_body(struct sip_msg * msg);
 
 void free_sip_body(struct sip_msg_body *);
 
-struct body_part* add_body_part(struct sip_msg *msg, str *mime_s, str *body);
+struct body_part* add_body_part(struct sip_msg *msg, str *mime_s,
+	str *hdrs, str *body);
 
 int delete_body_part(struct sip_msg *msg, struct body_part *part);
 

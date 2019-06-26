@@ -205,15 +205,6 @@ static int l_sipstate_setUserDebug(lua_State *L)
   return 0;
 }
 
-static int l_sipstate_WarnMissingFreeFixup(lua_State *L)
-{
-  int n;
-
-  n = luaL_checkinteger(L, 1);
-  warn_missing_free_fixup = n;
-  return 0;
-}
-
 static int l_sipstate_getpid(lua_State *L)
 {
   int pid;
@@ -266,7 +257,7 @@ static int l_sipstate_getpkginfo(lua_State *L)
 {
   struct mem_info info;
 
-  MY_MEMINFO(mem_block, &info);
+  SHM_INFO(mem_block, &info);
   return sipstate_getmeminfo(L, &info);
 }
 
@@ -323,7 +314,6 @@ static const struct luaL_reg siplua_state_mylib [] =
     {"print", l_sipstate_print},
     {"notice", l_sipstate_notice},
     {"setUserDebug", l_sipstate_setUserDebug},
-    {"WarnMissingFreeFixup", l_sipstate_WarnMissingFreeFixup},
     {"getpid", l_sipstate_getpid},
     {"getmem", l_sipstate_getmem},
     {"getmeminfo", l_sipstate_getpkginfo},
@@ -427,12 +417,31 @@ int sipstate_load(const char *filename)
     }
 }
 
-int sipstate_call(struct sip_msg *msg, const char *fnc, const char *mystr)
+int sipstate_call(struct sip_msg *msg, const str *_fnc_s, const str *_mystr_s)
 {
   lua_State *L = siplua_L;
   int ref;
   const char *errmsg;
   int n;
+  char *fnc, *mystr = NULL;
+
+  fnc = pkg_malloc(_fnc_s->len+1);
+  if (!fnc) {
+    LM_ERR("No more pkg mem!\n");
+    return -1;
+  }
+  memcpy(fnc, _fnc_s->s, _fnc_s->len);
+  fnc[_fnc_s->len] = 0;
+
+  if (_mystr_s) {
+    mystr = pkg_malloc(_mystr_s->len+1);
+    if (!mystr) {
+      LM_ERR("No more pkg mem!\n");
+      return -1;
+    }
+    memcpy(mystr, _mystr_s->s, _mystr_s->len);
+    mystr[_mystr_s->len] = 0;
+  }
 
   if (lua_auto_reload)
     sipstate_load(NULL);
@@ -463,5 +472,10 @@ int sipstate_call(struct sip_msg *msg, const char *fnc, const char *mystr)
       lua_remove(L, -1);
 /*       siplua_log(L_DBG , "siplua Lua function %s returned %d\n", fnc, n); */
     }
+
+  pkg_free(fnc);
+  if (mystr)
+    pkg_free(mystr);
+
   return n;
 }

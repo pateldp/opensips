@@ -83,7 +83,8 @@
 							&& !((pv)->pvp.pvn.u.isname.type&AVP_NAME_STR))
 #define pv_has_sname(pv) ((pv)->pvp.pvn.type==PV_NAME_INTSTR \
 							&& (pv)->pvp.pvn.u.isname.type&AVP_NAME_STR)
-#define pv_is_w(pv)	((pv)->setf!=NULL)
+#define pv_is_w(pv)   ((pv)->setf)
+#define pv_type(type) (type < PVT_EXTRA ? type : type - PVT_EXTRA)
 
 enum _pv_type {
 	PVT_NONE=0,           PVT_EMPTY,             PVT_NULL,
@@ -120,7 +121,7 @@ enum _pv_type {
 	PVT_AUTH_ALGORITHM,   PVT_AUTH_OPAQUE,       PVT_AUTH_CNONCE,
 	PVT_RU_Q,             PVT_ROUTE_PARAM,       PVT_ROUTE_TYPE,
 	PVT_LINE_NUMBER,      PVT_CFG_FILE_NAME,     PVT_LOG_LEVEL,
-	PVT_XLOG_LEVEL, PVT_AF,
+	PVT_XLOG_LEVEL, 	  PVT_AF,				 PVT_HDR_NAME,
 	/* registered by json module */
 	PVT_JSON,
 	/* registered by xml module */
@@ -221,6 +222,9 @@ typedef struct _pv_elem
 	pv_spec_t spec;
 	struct _pv_elem *next;
 } pv_elem_t, *pv_elem_p;
+
+extern int pv_print_buf_size;
+int init_pvar_support(void);
 
 char* pv_parse_spec(str *in, pv_spec_p sp);
 int pv_get_spec_value(struct sip_msg* msg, pv_spec_p sp, pv_value_t *value);

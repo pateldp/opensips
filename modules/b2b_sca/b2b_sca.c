@@ -48,9 +48,10 @@ extern str app_state[];
 static int mod_init(void);
 static void mod_destroy(void);
 static int child_init(int rank);
-int sca_init_request(struct sip_msg* msg);
-int sca_bridge_request(struct sip_msg* msg, str* arg1, str* arg2);
-static struct mi_root* mi_sca_list(struct mi_root* cmd, void* param);
+int sca_init_request(struct sip_msg* msg, int *shared_entity);
+int sca_bridge_request(struct sip_msg* msg, str* arg1);
+mi_response_t *mi_sca_list(const mi_params_t *params,
+								struct mi_handler *async_hdl);
 
 /** Global variables */
 struct tm_binds tmb;
@@ -85,9 +86,13 @@ str presence_server = {NULL, 0};
 /** Exported functions */
 static cmd_export_t cmds[]=
 {
-	{"sca_init_request"  ,(cmd_function)sca_init_request  ,1,fixup_pvar_pvar,0,REQUEST_ROUTE},
-	{"sca_bridge_request",(cmd_function)sca_bridge_request,1,fixup_pvar_pvar,0,REQUEST_ROUTE},
-	{ 0,                 0,                              0 , 0 , 0,  0}
+	{"sca_init_request"  ,(cmd_function)sca_init_request, {
+		{CMD_PARAM_INT,0,0}, {0,0,0}},
+		REQUEST_ROUTE},
+	{"sca_bridge_request",(cmd_function)sca_bridge_request, {
+		{CMD_PARAM_STR,0,0}, {0,0,0}},
+		REQUEST_ROUTE},
+	{0,0,{{0,0,0}},0}
 };
 
 /** Exported parameters */
@@ -158,8 +163,11 @@ static param_export_t params[]=
 
 /** MI commands */
 static mi_export_t mi_cmds[] = {
-	{ "sca_list",   0, mi_sca_list, 0,  0,  0},
-	{ 0,            0,           0, 0,  0,  0}
+	{ "sca_list", 0,0,0,{
+		{mi_sca_list, {0}},
+		{EMPTY_MI_RECIPE}}
+	},
+	{EMPTY_MI_EXPORT}
 };
 
 static dep_export_t deps = {
@@ -180,6 +188,7 @@ struct module_exports exports= {
         MOD_TYPE_DEFAULT,               /* class of this module */
         MODULE_VERSION,                 /* module version */
         DEFAULT_DLFLAGS,                /* dlopen flags */
+        0,				                /* load function */
         &deps,                          /* OpenSIPS module dependencies */
         cmds,                           /* exported functions */
         0,                              /* exported async functions */
@@ -192,7 +201,8 @@ struct module_exports exports= {
         mod_init,                       /* module initialization function */
         (response_function) 0,          /* response handling function */
         (destroy_function) mod_destroy, /* destroy function */
-        child_init                      /* per-child init function */
+        child_init,                     /* per-child init function */
+		0                               /* reload confirm function */
 };
 
 /** Module init function */
@@ -480,55 +490,72 @@ struct to_body* get_appearance_name_addr(struct sip_msg* msg)
 	return msg->from->parsed;
 }
 
-
-static struct mi_root* mi_sca_list(struct mi_root* cmd, void* param)
+mi_response_t *mi_sca_list(const mi_params_t *params,
+								struct mi_handler *async_hdl)
 {
 	int i, index;
-	struct mi_root *rpl_tree;
-	struct mi_node *node=NULL, *node1=NULL, *rpl=NULL;
-	struct mi_attr* attr;
 	b2b_sca_record_t *rec;
 	b2b_sca_call_t *call;
 	str_lst_t *watcher;
+	mi_response_t *resp;
+	mi_item_t *resp_arr;
+	mi_item_t *resp_item, *watchers_arr, *apps_arr, *app_item;
 
-	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
-	if (rpl_tree==NULL) return NULL;
-	rpl = &rpl_tree->node;
-	rpl->flags |= MI_IS_ARRAY;
+	resp = init_mi_result_array(&resp_arr);
+	if (!resp)
+		return 0;
 
 	for(index = 0; index<b2b_sca_hsize; index++) {
 		lock_get(&b2b_sca_htable[index].lock);
 		rec = b2b_sca_htable[index].first;
 		while(rec) {
-			node = add_mi_node_child(rpl, MI_IS_ARRAY|MI_DUP_VALUE,
-				"shared_line", 11,rec->shared_line.s, rec->shared_line.len);
-			if(node == NULL) goto error;
+			resp_item = add_mi_object(resp_arr, NULL, 0);
+			if (!resp_item)
+				goto error;
+
+			if (add_mi_string(resp_item, MI_SSTR("shared_line"),
+				rec->shared_line.s, rec->shared_line.len) < 0)
+				goto error;
+
+			watchers_arr = add_mi_array(resp_item, MI_SSTR("watchers"));
+			if (!watchers_arr)
+				goto error;
 			watcher = rec->watchers;
 			while (watcher) {
-				attr = add_mi_attr(node, MI_DUP_VALUE, "watcher", 7,
-					watcher->watcher.s, watcher->watcher.len);
-				if(attr == NULL) goto error;
+				if (add_mi_string(watchers_arr, 0, 0,
+					watcher->watcher.s, watcher->watcher.len) < 0)
+					goto error;
 				watcher = watcher->next;
 			}
+
+			apps_arr = add_mi_array(resp_item, MI_SSTR("appearances"));
+			if (!apps_arr)
+				goto error;
 			for (i=0; i<MAX_APPEARANCE_INDEX; i++) {
 				if (rec->call[i]) {
 					call = rec->call[i];
-					node1 = add_mi_node_child(node, MI_DUP_VALUE,
-							"appearance", 10,
-							call->appearance_index_str.s,
-							call->appearance_index_str.len);
-					if(node1 == NULL) goto error;
-					attr = add_mi_attr(node1, MI_DUP_VALUE, "state", 5,
-							app_state[call->call_state].s,
-							app_state[call->call_state].len);
-					if(attr == NULL) goto error;
-					attr = add_mi_attr(node1, MI_DUP_VALUE, "b2b_key", 7,
-							call->b2bl_key.s, call->b2bl_key.len);
-					if(attr == NULL) goto error;
-					attr = add_mi_attr(node1, MI_DUP_VALUE, "app_uri", 7,
-							call->call_info_apperance_uri.s,
-							call->call_info_apperance_uri.len);
-					if(attr == NULL) goto error;
+					app_item = add_mi_object(apps_arr, NULL, 0);
+					if (!app_item)
+						goto error;
+
+					if (add_mi_string(app_item, MI_SSTR("index"),
+						call->appearance_index_str.s,
+						call->appearance_index_str.len) < 0)
+						goto error;
+
+					if (add_mi_string(app_item, MI_SSTR("state"),
+						app_state[call->call_state].s,
+						app_state[call->call_state].len) < 0)
+						goto error;
+
+					if (add_mi_string(app_item, MI_SSTR("b2b_key"),
+						call->b2bl_key.s, call->b2bl_key.len) < 0)
+						goto error;
+
+					if (add_mi_string(app_item, MI_SSTR("app_uri"),
+						call->call_info_apperance_uri.s,
+						call->call_info_apperance_uri.len) < 0)
+						goto error;
 				}
 			}
 
@@ -536,11 +563,13 @@ static struct mi_root* mi_sca_list(struct mi_root* cmd, void* param)
 		}
 		lock_release(&b2b_sca_htable[index].lock);
 	}
-	return rpl_tree;
+
+	return resp;
+
 error:
 	lock_release(&b2b_sca_htable[index].lock);
 	LM_ERR("Unable to create reply\n");
-	free_mi_tree(rpl_tree);
+	free_mi_response(resp);
 	return NULL;
 }
 

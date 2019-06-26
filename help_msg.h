@@ -71,7 +71,7 @@ Options:\n\
                   addr= host|ip_address|interface_name. E.g: -l locahost, \n\
                   -l udp:127.0.0.1:5080, -l eth0:5062 The default behavior\n\
                   is to listen on all the interfaces.\n\
-    -n processes Number of child processes to fork per interface\n\
+    -n processes Number of worker processes to fork per UDP interface\n\
                   (default: 8)\n\
     -r           Use dns to check if is necessary to add a \"received=\"\n\
                   field to a via\n\
@@ -79,23 +79,38 @@ Options:\n\
                   (to use both use `-rR`)\n\
     -v           Turn on \"via:\" host checking when forwarding replies\n\
     -d           Debugging mode (multiple -d increase the level)\n\
-    -D           Do not fork into daemon mode\n\
+    -D           Run in debug mode\n\
     -F           Daemon mode, but leave main process foreground\n\
     -E           Log to stderr\n\
-    -N processes Number of tcp child processes (default: equal to `-n`)\n\
+    -N processes Number of TCP worker processes (default: equal to `-n`)\n\
     -W method    poll method\n\
     -V           Version number\n\
     -h           This help message\n\
     -b nr        Maximum receive buffer size which will not be exceeded by\n\
                   auto-probing procedure even if  OS allows\n\
+    -a allocator The memory allocator to use for all memory segments\n\
+                  Possible values: \n\
+                      F_MALLOC    F_MALLOC_DBG\n\
+                      Q_MALLOC    Q_MALLOC_DBG\n\
+                      HP_MALLOC   HP_MALLOC_DBG\n\
+    -k allocator The pkg memory allocator to use (overrides -a)\n\
+    -s allocator The shared memory allocator to use (overrides -a)\n\
+    -e allocator The restart-persistent memory allocator to use (overrides -a)\n\
     -m nr        Size of shared memory allocated in Megabytes\n\
     -M nr        Size of pkg memory allocated in Megabytes\n\
     -w dir       Change the working directory to \"dir\" (default \"/\")\n\
     -t dir       Chroot to \"dir\"\n\
     -u uid       Change uid \n\
     -g gid       Change gid \n\
+    -p pp_cmd    Preprocess the configuration file (along with any others\n\
+                  included) using the specified system command. The command \n\
+                  shall receive input via stdin and it must output the\n\
+                  result to stdout\n\
     -P file      Create a pid file\n\
     -G file      Create a pgid file\n"
+#ifdef UNIT_TESTS
+"    -T           Fork, run unit tests and exit.\n"
+#endif
 ;
 
 #endif

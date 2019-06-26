@@ -4,7 +4,7 @@
 
 	<title>&adminguide;</title>
 
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		This is a module to help with &nat; traversal. In particular,
@@ -80,7 +80,7 @@
 	</itemizedlist>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -91,6 +91,12 @@
 			<para>
 				<emphasis>usrloc</emphasis> module - only if the NATed
 				contacts are to be pinged.
+			</para>
+			</listitem>
+			<listitem>
+			<para>
+				<emphasis>clusterer</emphasis> - only if "cluster_id"
+				option is enabled.
 			</para>
 			</listitem>
 			</itemizedlist>
@@ -112,9 +118,10 @@
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+
+	<section id="param_natping_interval" xreflabel="natping_interval">
 		<title><varname>natping_interval</varname> (integer)</title>
 		<para>
 		Period of time in seconds between sending the NAT pings to all
@@ -139,7 +146,8 @@ modparam("nathelper", "natping_interval", 10)
 </programlisting>
 		</example>
 	</section>
-	<section>
+
+	<section id="param_ping_nated_only" xreflabel="ping_nated_only">
 		<title><varname>ping_nated_only</varname> (integer)</title>
 		<para>
 		If this variable is set then only contacts that have
@@ -160,7 +168,8 @@ modparam("nathelper", "ping_nated_only", 1)
 </programlisting>
 		</example>
 	</section>
-	<section>
+
+	<section id="param_natping_partitions" xreflabel="natping_partitions">
 		<title><varname>natping_partitions</varname> (integer)</title>
 		<para>
 		How many partitions/chunks to be used for sending the pingings.
@@ -181,7 +190,8 @@ modparam("nathelper", "natping_partitions", 4)
 </programlisting>
 		</example>
 	</section>
-	<section>
+
+	<section id="param_natping_socket" xreflabel="natping_socket">
 		<title><varname>natping_socket</varname> (string)</title>
 		<para>
 		Spoof the natping's source-ip to this address. Works only for IPv4.
@@ -200,7 +210,8 @@ modparam("nathelper", "natping_socket", "192.168.1.1:5006")
 </programlisting>
 		</example>
 	</section>
-	<section>
+
+	<section id="param_received_avp" xreflabel="received_avp">
 		<title><varname>received_avp</varname> (str)</title>
 		<para>
 		The name of the Attribute-Value-Pair (AVP) used to store the URI
@@ -231,7 +242,8 @@ modparam("nathelper", "received_avp", "$avp(received)")
 </programlisting>
 		</example>
 	</section>
-	<section>
+
+	<section id="param_force_socket" xreflabel="force_socket">
 		<title><varname>force_socket</varname> (string)</title>
 		<para>
 		Sending socket to be used for pinging contacts without local socket
@@ -254,57 +266,98 @@ modparam("nathelper", "force_socket", "localhost:33333")
 </programlisting>
 		</example>
 	</section>
-	<section>
-		<title><varname>sipping_bflag</varname> (string/integer)</title>
+
+	<section id="param_sipping_bflag" xreflabel="sipping_bflag">
+		<title><varname>sipping_bflag</varname> (string)</title>
 		<para>
 		What branch flag should be used by the module to identify NATed
 		contacts for which it should perform NAT ping via a SIP request
 		instead if dummy UDP package.
 		</para>
 		<para>
-		<emphasis>WARNING: </emphasis>Setting INT flags is deprecated!
-		Use quoted strings instead!
-		</para>
-		<para>
 		<emphasis>
-			Default value is "NULL" (disabled).
+			Default value is NULL (disabled).
 		</emphasis>
 		</para>
 		<example>
 		<title>Set <varname>sipping_bflag</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("nathelper", "sipping_bflag", "SIP_PING_FLAG")
+modparam("nathelper", "sipping_bflag", "SIPPING_ENABLE")
 ...
 </programlisting>
 		</example>
 	</section>
-	<section>
-		<title><varname>remove_on_timeout_bflag</varname> (string/integer)</title>
+
+	<section id="param_remove_on_timeout_bflag" xreflabel="remove_on_timeout_bflag">
+		<title><varname>remove_on_timeout_bflag</varname> (string)</title>
 		<para>
-		What flag to be used in order to activate usrloc contact removal when
-		<emphasis>ping_threshold</emphasis> is exceeded.
-		</para>
-		<para>
-		<emphasis>WARNING: </emphasis>Setting INT flags is deprecated!
-		Use quoted strings instead!
+		What branch flag to be used in order to activate usrloc contact removal when
+		the <xref linkend="param_ping_threshold"/> is exceeded.
 		</para>
 		<para>
 		<emphasis>
-			Default value is "NULL" (disabled).
+			Default value is NULL (disabled).
 		</emphasis>
 		</para>
 		<example>
 		<title>Set <varname>remove_on_timeout_bflag</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("nathelper", "remove_on_timeout_bflag", "RM_ONTO_FLAG")
+modparam("nathelper", "remove_on_timeout_bflag", "SIPPING_RTO")
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section>
+	<section id="param_sipping_latency_flag" xreflabel="sipping_latency_flag">
+		<title><varname>sipping_latency_flag</varname> (string)</title>
+		<para>
+		The branch flag which will be used in order to enable contact pinging
+		latency computation and reporting via the usrloc E_UL_LATENCY_UPDATE
+		event.
+		</para>
+		<para>
+		<emphasis>
+			Default value is NULL (disabled).
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>sipping_latency_flag</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("nathelper", "sipping_latency_flag", "SIPPING_CALC_LATENCY")
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="param_sipping_ignore_rpl_codes" xreflabel="sipping_ignore_rpl_codes">
+		<title><varname>sipping_ignore_rpl_codes</varname> (CSV string)</title>
+		<para>
+		A comma-separated list of SIP reply status codes to contact pings which
+		are to be discarded. This may be useful for "full-sharing" user
+		location topologies, where the location nodes are not directly facing
+		the UAs, hence the intermediary SIP component may generate replies to
+		offline contact ping attempts (e.g. 408 - Request Timeout) -- such ping
+		replies should be ignored.
+		</para>
+		<para>
+		<emphasis>
+			Default value is "NULL" (all reply status codes are accepted).
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>sipping_ignore_rpl_codes</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("nathelper", "sipping_ignore_rpl_codes", "408, 480, 404")
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="param_sipping_from" xreflabel="sipping_from">
 		<title><varname>sipping_from</varname> (string)</title>
 		<para>
 		The parameter sets the SIP URI to be used in generating the SIP
@@ -326,7 +379,8 @@ modparam("nathelper", "sipping_from", "sip:pinger@siphub.net")
 </programlisting>
 		</example>
 	</section>
-	<section>
+
+	<section id="param_sipping_method" xreflabel="sipping_method">
 		<title><varname>sipping_method</varname> (string)</title>
 		<para>
 		The parameter sets the SIP method to be used in generating the SIP
@@ -346,7 +400,8 @@ modparam("nathelper", "sipping_method", "INFO")
 </programlisting>
 		</example>
 	</section>
-	<section>
+
+	<section id="param_nortpproxy_str" xreflabel="nortpproxy_str">
 		<title><varname>nortpproxy_str</varname> (string)</title>
 		<para>
 		The parameter sets the SDP attribute used by nathelper to mark
@@ -372,7 +427,8 @@ modparam("nathelper", "nortpproxy_str", "a=sdpmangled:yes\r\n")
 </programlisting>
 		</example>
 	</section>
-	<section>
+
+	<section id="param_natping_tcp" xreflabel="natping_tcp">
 		<title><varname>natping_tcp</varname> (integer)</title>
 		<para>
 		If the flag is set, TCP/TLS clients will also be pinged with
@@ -393,8 +449,7 @@ modparam("nathelper", "natping_tcp", 1)
 		</example>
 	</section>
 
-
-	<section>
+	<section id="param_oldip_skip" xreflabel="oldip_skip">
 		<title><varname>oldip_skip</varname> (string)</title>
 		<para>
 		Parameter which specifies whether old media ip and old origin ip
@@ -417,12 +472,12 @@ modparam("nathelper", "oldip_skip", "oc")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_ping_threshold" xreflabel="ping_threshold">
 		<title><varname>ping_threshold</varname> (int)</title>
 		<para>
 			If a contact does not respond in <emphasis>ping_threshold</emphasis>
 			seconds since the ping has been sent, the contact shall be removed
-			after <emphasis>max_pings_lost</emphasis> unresponded pings.
+			after <xref linkend="param_max_pings_lost"/> unresponded pings.
 		</para>
 		<para>
 		<emphasis>
@@ -439,7 +494,7 @@ modparam("nathelper", "ping_threshold", 10)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_max_pings_lost" xreflabel="max_pings_lost">
 		<title><varname>max_pings_lost</varname> (int)</title>
 		<para>
 			Number of unresponded pings after which the contact shall be removed
@@ -460,15 +515,79 @@ modparam("nathelper", "max_pings_lost", 5)
 		</example>
 	</section>
 
+	<section id="param_cluster_id" xreflabel="cluster_id">
+		<title><varname>cluster_id</varname> (integer)</title>
+		<para>
+		The ID of the cluster the module is part of. The clustering support is 
+		used by the nathelper module for controlling the pinging process. When 
+		part of a cluster of multiple nodes, the nodes can agree upon which node
+		is the one responsible for pinging.
+		</para>
+		<para>
+		The clustering with sharing tag support may be used to control which 
+		node in the cluster will perform the pinging/probing to the
+		contacts. See the
+		<xref linkend="param_cluster_sharing_tag"/> option.
+		</para>
+		<para>
+		For more info on how to define and populate a cluster (with OpenSIPS 
+		nodes) see the "clusterer" module.
+		</para>
+		<para>
+		<emphasis>
+			Default value is <quote>0 (none)</quote>.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>cluster_id</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+# Be part of cluster ID 9
+modparam("nathelper", "cluster_id", 9)
+...
+</programlisting>
+		</example>
+	</section>
 
-
+	<section id="param_cluster_sharing_tag" xreflabel="cluster_sharing_tag">
+		<title><varname>cluster_sharing_tag</varname> (string)</title>
+		<para>
+		The name of the sharing tag (as defined per clusterer modules) to 
+		control which node is responsible for perform pinging of the 
+		contacts.
+		If defined, only the node with active status of this tag will 
+		perform the pinging.
+		</para>
+		<para>
+		The <xref linkend="param_cluster_id"/> must be defined for this option
+		to work.
+		</para>
+		<para>
+		This is an optional parameter. If not set, all the nodes in the cluster
+		will individually do the pinging.
+		</para>
+		<para>
+		<emphasis>
+			Default value is <quote>empty (none)</quote>.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>cluster_sharing_tag</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+# only the node with the active "vip" sharing tag will perform pinging
+modparam("nathelper", "cluster_id", 9)
+modparam("nathelper", "cluster_sharing_tag", "vip")
+...
+</programlisting>
+		</example>
+	</section>
 
 </section>
 
-
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_fix_nated_contact" xreflabel="fix_nated_contact()">
 		<title>
 		<function moreinfo="none">fix_nated_contact([uri_params])</function>
 		</title>
@@ -482,6 +601,12 @@ modparam("nathelper", "max_pings_lost", 5)
 		not be seen in the async resume route. So make sure you call it in all the
 		resume routes where you need the contact fixed.
 		</para>
+		<para>Parameters:</para>
+		<itemizedlist>
+			<listitem><para>
+				<emphasis>uri_params (string, optional)</emphasis>
+			</para></listitem>
+		</itemizedlist>
 		<para>
 		This function can be used from REQUEST_ROUTE, ONREPLY_ROUTE, BRANCH_ROUTE.
 		</para>
@@ -498,9 +623,9 @@ if (search("User-Agent: Cisco ATA.*") {
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_fix_nated_sdp" xreflabel="fix_nated_sdp()">
 		<title>
-		<function moreinfo="none">fix_nated_sdp(flags [, ip_address])</function>
+		<function moreinfo="none">fix_nated_sdp(flags [, ip_address [, sdp_fields]])</function>
 		</title>
 		<para>
 		Alters the SDP information in orer to facilitate NAT traversal. What
@@ -512,7 +637,7 @@ if (search("User-Agent: Cisco ATA.*") {
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 			<listitem><para>
-			<emphasis>flags</emphasis> - the value may be a bitwise OR of
+			<emphasis>flags (int)</emphasis> - the value may be a bitwise OR of
 			the following flags:
 			</para>
 			<itemizedlist>
@@ -524,7 +649,7 @@ if (search("User-Agent: Cisco ATA.*") {
 				<listitem>
 					<para><emphasis>0x02</emphasis> - rewrite media
 					&ip; address (c=) with source address of the message
-					or the provided IP address (the provide IP address take
+					or the provided IP address (the provided IP address takes
 					precedence over the source address).</para>
 				</listitem>
 				<listitem>
@@ -534,17 +659,26 @@ if (search("User-Agent: Cisco ATA.*") {
 				<listitem>
 					<para><emphasis>0x08</emphasis> - rewrite IP from
 					origin description (o=) with source address of the message
-					or the provided IP address (the provide IP address take
+					or the provided IP address (the provided IP address takes
 					precedence over the source address).</para>
+				</listitem>
+				<listitem>
+					<para><emphasis>0x10</emphasis> - force rewrite of
+					null media IP and/or origin IP address.
+					Without this flag, null IPs are left untouched.</para>
 				</listitem>
 			</itemizedlist>
 			</listitem>
 			<listitem><para>
-			<emphasis>ip_address</emphasis> - IP to be used for rewriting SDP.
-			If not specified, the received signalling IP will be used. The
-			parameter allows pseudo-variables usage. NOTE: For the IP to be
-			used, you need to use 0x02 or 0x08 flags, otherwise it will have
-			no effect.
+			<emphasis>ip_address (string, optional)</emphasis> - IP to be used for
+			rewriting SDP. If not specified, the received signalling IP will be used.
+			NOTE: For the IP to be used, you need to use 0x02 or 0x08 flags,
+			otherwise it will have no effect.
+			</para>
+			</listitem>
+			<listitem><para>
+			<emphasis>sdp_fields (string, optional)</emphasis> - SDP field(s) to be appended to SDP.
+			Note: Each SDP field must be preceded by "\r\n".
 			</para>
 			</listitem>
 		</itemizedlist>
@@ -556,12 +690,17 @@ if (search("User-Agent: Cisco ATA.*") {
 		<title><function>fix_nated_sdp</function> usage</title>
 		<programlisting format="linespecific">
 ...
-if (search("User-Agent: Cisco ATA.*") {fix_nated_sdp("3");};
+# Add "a=direction:active" SDP line
+# Rewrite media IP (c= line)
+# Add extra "a=x-attr1" SDP line
+# Add extra "a=x-attr2" SDP line
+if (search("User-Agent: Cisco ATA.*")
+    {fix_nated_sdp(3,,"\r\na=x-attr1\r\na=x-attr2");};
 ...
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_add_rcv_param" xreflabel="add_rcv_param()">
 		<title>
 		<function moreinfo="none">add_rcv_param([flag])</function>,
 		</title>
@@ -577,11 +716,11 @@ if (search("User-Agent: Cisco ATA.*") {fix_nated_sdp("3");};
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 			<listitem><para>
-			<emphasis>flag</emphasis> - flags to indicate if the parameter
-			should be added to Contact URI or Contact header. If the flag is
-			non-zero, the parameter will be added to the Contact URI. If not
-			used or equal to zero, the parameter will go to the Contact
-			header.
+			<emphasis>flag (int, optional)</emphasis> - flags to indicate if
+			the parameter should be added to Contact URI or Contact header.
+			If the flag is non-zero, the parameter will be added to the Contact
+			URI. If not used or equal to zero, the parameter will go to the
+			Contact header.
 			</para></listitem>
 		</itemizedlist>
 		<para>
@@ -593,12 +732,12 @@ if (search("User-Agent: Cisco ATA.*") {fix_nated_sdp("3");};
 ...
 add_rcv_param(); # add the parameter to the Contact header
 ....
-add_rcv_param("1"); # add the parameter to the Contact URI
+add_rcv_param(1); # add the parameter to the Contact URI
 ...
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_fix_nated_register" xreflabel="fix_nated_register()">
 		<title>
 		<function moreinfo="none">fix_nated_register()</function>
 		</title>
@@ -620,7 +759,7 @@ fix_nated_register();
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_nat_uac_test" xreflabel="nat_uac_test()">
 		<title>
 			<function>nat_uac_test(flags)</function>
 		</title>
@@ -628,7 +767,8 @@ fix_nated_register();
 			Tries to guess if client's request originated behind a nat.
 			The parameter determines what heuristics is used.
 		</para>
-		<para>Meaning of the flags is as follows:</para>
+		<para>Meaning of the <emphasis>flags (int)</emphasis> parameter
+		is as follows:</para>
 		<itemizedlist>
 			<listitem><para>
 			<emphasis>1</emphasis> -  Contact header field is searched
@@ -669,29 +809,31 @@ fix_nated_register();
 	</section>
 	</section>
 
-	<section>
-	<title><acronym>MI</acronym> Commands</title>
-		<section>
+	<section id="exported_mi_functions" xreflabel="Exported MI Functions">
+	<title>Exported MI Functions</title>
+		<section id="mi_nh_enable_ping" xreflabel="nh_enable_ping">
 			<title><function moreinfo="none">nh_enable_ping</function></title>
 			<para>
-			Enables natping if parameter value greater than 0.
-			Disables natping if parameter value is 0.
-			With no parameter, it returns the current natping status.
+			Gets or sets the natpinging status.
 			</para>
-			<para>
-			The function may takean optional parameter (for set operations) -
-			a number in decimal format.
-			</para>
+			<para>Parameters:</para>
+			<itemizedlist>
+				<listitem><para>
+					<emphasis>status</emphasis> (optional) - if not provided the function
+					returns the current natping status. Otherwise, enables natping if
+					parameter value greater than 0 or disables natping if parameter value is 0.
+				</para></listitem>
+			</itemizedlist>
 			<example>
 			<title><function moreinfo="none">nh_enable_ping</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$ opensipsctl fifo nh_enable_ping
+$ opensips-cli -x mi nh_enable_ping
 Status:: 1
 $
-$ opensipsctl fifo nh_enable_ping 0
+$ opensips-cli -x mi nh_enable_ping 0
 $
-$ opensipsctl fifo nh_enable_ping
+$ opensips-cli -x mi nh_enable_ping
 Status:: 0
 $
 ...

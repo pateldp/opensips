@@ -29,6 +29,9 @@
 
 #include "../str.h"
 
+#define DB_TLS_DOMAIN_PARAM "tls_domain"
+#define DB_TLS_DOMAIN_PARAM_EQ DB_TLS_DOMAIN_PARAM "="
+
 /** Structure representing a database ID */
 struct db_id {
 	char* scheme;        /**< URL scheme */
@@ -37,6 +40,7 @@ struct db_id {
 	char* host;          /**< Host or IP, case insensitive */
 	unsigned short port; /**< Port number */
 	char* database;      /**< Database, case sensitive */
+	char *parameters;	 /**< Parameters, case sensitive */
 	str url;			 /**< Pointer to the original url> */
 };
 

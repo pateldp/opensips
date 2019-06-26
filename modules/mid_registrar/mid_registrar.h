@@ -52,14 +52,8 @@ enum mid_reg_mode {
 };
 
 enum mid_reg_insertion_mode {
-	INSERT_BY_CONTACT,
-	INSERT_BY_PATH,
-};
-
-//TODO: remove the Path-based mid-registrar logic starting with OpenSIPS 2.4
-enum mid_reg_matching_mode {
-	MATCH_BY_PARAM,
-	MATCH_BY_USER,
+	MR_REPLACE_USER,
+	MR_APPEND_PARAM,
 };
 
 struct ct_mapping {
@@ -67,6 +61,12 @@ struct ct_mapping {
 	str new_username;
 	int zero_expires;
 	uint64_t ctid;
+
+	int expires;
+	unsigned int methods;
+	qvalue_t q;
+	str received;
+	str instance;
 
 	struct list_head list;
 };
@@ -100,11 +100,21 @@ struct mid_reg_info {
 
 	udomain_t *dom; /* used during 200 OK ul_api operations */
 	str aor;        /* used during both "reg out" and "resp in" */
+	str ownership_tag; /* a sharing tag which helps decide ownership */
+
+	/* ucontact_info dup'ed fields */
+	str user_agent;
+	unsigned int ul_flags;
+	unsigned int cflags;
+
+	int pending_replies;
+	rw_lock_t *tm_lock;
 };
 
 struct save_ctx {
 	unsigned int flags;
 	str aor;
+	str ownership_tag;
 	unsigned int max_contacts;
 	unsigned int expires;
 	int expires_out;
@@ -131,8 +141,8 @@ extern int retry_after;
 extern unsigned int outgoing_expires;
 
 extern enum mid_reg_mode reg_mode;
-extern enum mid_reg_insertion_mode insertion_mode;
-extern enum mid_reg_matching_mode matching_mode;
+extern enum mid_reg_insertion_mode ctid_insertion;
+extern str ctid_param;
 
 extern str register_method;
 extern str contact_hdr;
@@ -150,9 +160,6 @@ extern str gruu_secret;
 
 extern int tcp_persistent_flag;
 
-extern int ucontact_data_idx;
-extern int urecord_data_idx;
-
 struct mid_reg_info *mri_alloc(void);
 struct mid_reg_info *mri_dup(struct mid_reg_info *mri);
 void mri_free(struct mid_reg_info *mri);
@@ -163,5 +170,6 @@ struct mid_reg_info *get_ct(void);
 int extract_aor(str* _uri, str* _a,str *sip_instance,str *call_id);
 
 int get_expires_hf(struct sip_msg* _m);
+str get_extra_ct_params(struct sip_msg *msg);
 
 #endif /* __MID_REG_ */

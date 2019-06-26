@@ -4,7 +4,7 @@
 
 	<title>&adminguide;</title>
 
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		The ACC module is used to account transaction information to different
@@ -14,7 +14,7 @@
 	<para>
 		To account a transaction and to choose which set of backends to be
 		used, the script writer only has to mark the transaction for
-		accounting by using the <xref linkend="do_accounting"/> script function.
+		accounting by using the <xref linkend="func_do_accounting"/> script function.
 		Note that the function is not actually doing the accounting at that
 		very time, it is just setting a marker - the actual accounting
 		will be done later when the transaction or dialog will be
@@ -97,7 +97,12 @@
 	<para>
 		The SQL, Event Interface and AAA backend support are compiled in the
 		module.
-        </para>
+	</para>
+	<para>
+	A very comprehensive description of how the accounting module works in
+	terms accounting scope, accounting events and accounting backends can
+	be found in this online <ulink url="https://www.opensips.org/Documentation/Tutorials-Advanced-Accounting/">Advanced Accounting Tutorial</ulink>.
+	</para>
 	<section>
 		<title>General Example</title>
 		<programlisting format="linespecific">
@@ -110,7 +115,7 @@ if ($ru=~"sip:+40") /* calls to Romania */ {
         exit;
     }
 
-    if (is_method("INVITE") &amp;&amp; !db_check_from()) {
+    if (is_method("INVITE") &amp;&amp; $au!=$fU) {
         xlog("FROM URI != digest username\n");
         sl_send_reply("403","Forbidden");
     }
@@ -124,7 +129,7 @@ if ($ru=~"sip:+40") /* calls to Romania */ {
 
 	<section id="ACC-extra-id">
 		<title>Extra accounting</title>
-		<section>
+		<section id="overview_extra" xreflabel="Overview: Extra IDs">
 			<title>Overview</title>
 			<para>
 			Along the static default information, the ACC module
@@ -156,7 +161,7 @@ if ($ru=~"sip:+40") /* calls to Romania */ {
 			<para>
 				Extra values are consistent during the whole call. Setting a
 			value during a request, will cause it to remain visible during all replies. Also,
-			concerning CDR logging, setting a value on the initial INVITIE will
+			concerning CDR logging, setting a value on the initial INVITE will
 			result in having that value throughout the dialog.
 			</para>
 			<para>
@@ -194,7 +199,7 @@ if ($ru=~"sip:+40") /* calls to Romania */ {
 modparam("acc", "extra_fields", "log: a -> test_a")
 </programlisting>
 				will enable you to set the value for <emphasis>test_a</emphasis> field
-				of the log only by setting <emphasis>$acc_etra(a)</emphasis> variable.
+				of the log only by setting <emphasis>$acc_extra(a)</emphasis> variable.
 				Otherwise, the field shall be logged with no value(null).
 			</para>
 		</section>
@@ -209,7 +214,7 @@ modparam("acc", "extra_fields", "log: a -> test_a")
 
 	<section id="multi-call-legs">
 		<title>Multi Call-Legs accounting</title>
-		<section>
+		<section id="overview_multi_call_legs" xreflabel="Overview: Multi Call Legs">
 			<title>Overview</title>
 			<para>
 			A SIP call can have multiple legs due forwarding actions. For
@@ -229,7 +234,7 @@ modparam("acc", "extra_fields", "log: a -> test_a")
 			<para>
 				First how it works: The idea is to have a variable to store
 			a set of values for each leg. The meaning of
-			the variable content is stricly decided by the script writer - it can
+			the variable content is strictly decided by the script writer - it can
 			be the origin and source of the leg, its status or any other
 			related information. By default there is defined only one leg. Script
 			writer has to decide when is the time to create a new leg, by using
@@ -304,7 +309,7 @@ modparam("acc", "extra_fields", "log: a -> test_a")
 
 	<section id="ACC-cdr-id">
 		<title>CDRs accounting</title>
-		<section>
+		<section id="overview_cdr_accounting" xreflabel="Overview: CDR Accounting">
 			<title>Overview</title>
 			<para>
 			ACC module can now also maintain session/dialog accounting. This
@@ -317,7 +322,7 @@ modparam("acc", "extra_fields", "log: a -> test_a")
 			<para>
 			In order to have CDRs accounting, first you need to set the
 			<emphasis>cdr</emphasis> flag when calling
-			<xref linkend="do_accounting"/> script function for the
+			<xref linkend="func_do_accounting"/> script function for the
 			initial INVITE of the dialog.
 			</para>
 		</section>
@@ -337,7 +342,7 @@ modparam("acc", "extra_fields", "log: a -> test_a")
 
 
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 		<title>Dependencies</title>
 		<section>
 			<title>&osips; Modules</title>
@@ -384,10 +389,10 @@ modparam("acc", "extra_fields", "log: a -> test_a")
 		</section>
 	</section>
 
-	<section id="ACC-param-id">
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
 	<!-- Generic ACC parameters -->
-	<section>
+	<section id="param_early_media" xreflabel="early_media">
 		<title><varname>early_media</varname> (integer)</title>
 		<para>
 		Should be early media (any provisional reply with body) accounted too ?
@@ -402,7 +407,7 @@ modparam("acc", "early_media", 1)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_report_cancels" xreflabel="report_cancels">
 		<title><varname>report_cancels</varname> (integer)</title>
 		<para>
 		By default, CANCEL reporting is disabled -- most accounting
@@ -419,7 +424,7 @@ modparam("acc", "report_cancels", 1)
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_detect_direction" xreflabel="detect_direction">
 		<title><varname>detect_direction</varname> (integer)</title>
 		<para>
 		Controls the direction detection for sequential requests. If
@@ -442,7 +447,7 @@ modparam("acc", "detect_direction", 1)
 		</example>
 	</section>
 
-	<section>
+	<section id="param_extra_fields" xreflabel="extra_fields">
 		<title><varname>extra_fields</varname> (string)</title>
 		<para>
 		Defines the tag-log_value set to be used in extra fields accounting.
@@ -473,7 +478,7 @@ modparam("acc", "extra_fields","a->2345;b->2346")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_leg_fields" xreflabel="leg_fields">
 		<title><varname>leg_fields</varname> (string)</title>
 		<para>
 		Defines the tag-log_value set to be used in multi-leg accounting.
@@ -491,10 +496,10 @@ modparam("acc", "extra_fields","a->2345;b->2346")
 		<programlisting format="linespecific">
 # for syslog-based accounting, use any text you want to be printed
 # if setting $(acc_leg(a)[0]) you will see "My_a_Field=&lt;value&gt; in logs
-# if setting $(acc_extra(b)[0]) you will see "b=&lt;value&gt; in logs
+# if setting $(acc_leg(b)[0]) you will see "b=&lt;value&gt; in logs
 modparam("acc", "leg_fields", "log: a->My_a_Field; b")
 # for mysql-based accounting, use the names of the columns
-# $acc_extra(a) = &lt;value&gt;  results in setting col_a with &lt;value&gt; in db
+# $acc_leg(a) = &lt;value&gt;  results in setting col_a with &lt;value&gt; in db
 modparam("acc", "leg_fields", "db: a->col_a; col_b")
 # for AAA-based accounting, use the names of the AAA AVPs
 modparam("acc", "leg_fields","aaa:a->AAA_LEG_SRC;b->AAA_LEG_DST")
@@ -505,7 +510,7 @@ modparam("acc", "leg_fields","a->2345;b->2346")
 	</section>
 
 
-	<section>
+	<section id="param_log_level" xreflabel="log_level">
 		<title><varname>log_level</varname> (integer)</title>
 		<para>
 		Log level at which accounting messages are issued to syslog.
@@ -520,7 +525,7 @@ modparam("acc", "log_level", 2)   # Set log_level to 2
 </programlisting>
 		</example>
 	</section>
-		<section>
+		<section id="param_log_facility" xreflabel="log_facility">
 		<title><varname>log_facility</varname> (string)</title>
 		<para>
 		Log facility to which accounting messages are issued to syslog.
@@ -540,7 +545,7 @@ modparam("acc", "log_facility", "LOG_DAEMON")
 
 	<!-- AAA specific ACC parameters -->
 
-	<section>
+	<section id="param_aaa_url" xreflabel="aaa_url">
 		<title><varname>aaa_url</varname> (string)</title>
 		<para>
 		This is the url representing the AAA protocol used and the location of the configuration file of this protocol.
@@ -562,7 +567,7 @@ modparam("acc", "aaa_url", "radius:/etc/radiusclient-ng/radiusclient.conf")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_service_type" xreflabel="service_type">
 		<title><varname>service_type</varname> (integer)</title>
 		<para>
 		AAA service type used for accounting.
@@ -579,7 +584,7 @@ modparam("acc", "service_type", 15)
 		</example>
 	</section>
 	<!-- SQL specific ACC parameters -->
-	<section>
+	<section id="param_db_table_acc" xreflabel="db_table_acc">
 		<title><varname>db_table_acc</varname> (string)</title>
 		<para>
 		Table name of accounting successfull calls -- database specific.
@@ -594,7 +599,7 @@ modparam("acc", "db_table_acc", "myacc_table")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_db_table_missed_calls" xreflabel="db_table_missed_calls">
 		<title><varname>db_table_missed_calls</varname> (string)</title>
 		<para>
 		Table name for accounting missed calls -- database specific.
@@ -609,7 +614,7 @@ modparam("acc", "db_table_missed_calls", "myMC_table")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_db_url" xreflabel="db_url">
 		<title><varname>db_url</varname> (string)</title>
 		<para>
 		SQL address -- database specific. If is set to NULL or empty string,
@@ -625,7 +630,7 @@ modparam("acc", "db_url", "mysql://user:password@localhost/opensips")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_acc_method_column" xreflabel="acc_method_column">
 		<title><varname>acc_method_column</varname> (string)</title>
 		<para>
 		Column name in accounting table to store the request's method name as
@@ -641,7 +646,7 @@ modparam("acc", "acc_method_column", "method")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_acc_from_tag_column" xreflabel="acc_from_tag_column">
 		<title><varname>acc_from_tag_column</varname> (string)</title>
 		<para>
 		Column name in accounting table to store the From header TAG parameter.
@@ -656,7 +661,7 @@ modparam("acc", "acc_from_tag_column", "from_tag")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_acc_to_tag_column" xreflabel="acc_to_tag_column">
 		<title><varname>acc_to_tag_column</varname> (string)</title>
 		<para>
 		Column name in accounting table to store the To header TAG parameter.
@@ -671,7 +676,7 @@ modparam("acc", "acc_to_tag_column", "to_tag")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_acc_callid_column" xreflabel="acc_callid_column">
 		<title><varname>acc_callid_column</varname> (string)</title>
 		<para>
 		Column name in accounting table to store the request's Callid value.
@@ -686,7 +691,7 @@ modparam("acc", "acc_callid_column", "callid")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_acc_sip_code_column" xreflabel="acc_sip_code_column">
 		<title><varname>acc_sip_code_column</varname> (string)</title>
 		<para>
 		Column name in accounting table to store the final reply's numeric code
@@ -702,7 +707,7 @@ modparam("acc", "acc_sip_code_column", "sip_code")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_acc_sip_reason_column" xreflabel="acc_sip_reason_column">
 		<title><varname>acc_sip_reason_column</varname> (string)</title>
 		<para>
 		Column name in accounting table to store the final reply's reason
@@ -718,7 +723,7 @@ modparam("acc", "acc_sip_reason_column", "sip_reason")
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="param_acc_time_column" xreflabel="acc_time_column">
 		<title><varname>acc_time_column</varname> (string)</title>
 		<para>
 		Column name in accounting table to store the time stamp of the
@@ -735,7 +740,7 @@ modparam("acc", "acc_time_column", "time")
 		</example>
 	</section>
 
-	<section>
+	<section id="param_acc_created_avp_name" xreflabel="acc_created_avp_name">
 		<title><varname>acc_created_avp_name</varname> (string)</title>
 		<para>
 		The name of the openSips avp that will be used to hold the
@@ -754,47 +759,60 @@ modparam("acc", "acc_created_avp_name", "call_created_avp")
 	</section>
 	</section>
 
-	<section>
-	<title>Exported Variables</title>
-	<section>
+	<section id="exported_pseudo_variables" xreflabel="Exported Pseudo-Variables">
+	<title>Exported Pseudo-Variables</title>
+	<section id="pv_acc_extra" xreflabel="$acc_extra">
 		<title>$acc_extra(tag_name)</title>
 		<para> This variable can addresed with the tag names defined
-			using <emphasis>extra_fields</emphasis> parameter. If
-			<emphasis>do_accounting()</emphasis> isn't called, this
+			using <xref linkend="param_extra_fields"/>. If
+			<xref linkend="func_do_accounting"/> isn't called, this
 			variable is visible during the whole processing of one message,
 			enabling calling <emphasis>acc_XXX_request()</emphasis>.
-			If <emphasis>do_accounting()</emphasis> is called, the variable
+			If <xref linkend="func_do_accounting"/> is called, the variable
 			will be visible from the first call of this function until the
 			actual accounting is being made.
 		</para>
 	</section>
 
-	<section>
+	<section id="pv_acc_leg" xreflabel="$acc_leg">
 		<title>$(acc_leg(tag_name)[leg_index])</title>
 		<para> This variable can be addressed with the tag names defined
-			using <emphasis>leg_fields</emphasis> parameter and  a valid
-			leg index( &lt;= <emphasis>acc_current_leg</emphasis>).
-			This variable can't be used unless <emphasis>do_accounting()
-			</emphasis> function is used. The variable also accepts negative
-			indexes, which start from -1(value for the last leg).
+			using <xref linkend="param_leg_fields"/> and  a valid leg index
+			(&lt;= <xref linkend="pv_acc_current_leg"/>). This variable cannot
+			be used unless <xref linkend="func_do_accounting"/> is used. The
+			variable also accepts negative indexes, which start from -1
+			(the lastly added leg).
+		</para>
+		<para>
+<programlisting>
+# the "caller" value of the current leg
+$acc_leg(caller)
+
+# the "caller" value of the lastly added leg
+$(acc_leg(caller)[-1]) # equivalent to $acc_leg(caller)
+                       # equivalent to $(acc_leg(caller)[$acc_current_leg])
+
+# the "caller" value of the next-to-last leg
+$(acc_leg(caller)[-2])
+
+</programlisting>
 		</para>
 	</section>
 
-	<section>
-		<title>acc_current_leg - read-only</title>
-		<para> Variable holding the value for the current leg. Calling
-			<emphasis>acc_new_leg()</emphasis> will increase the value
-			of this variable.
+	<section id="pv_acc_current_leg" xreflabel="$acc_current_leg">
+		<title>$acc_current_leg (read-only)</title>
+		<para> Holds the index of the current leg, starting from 0.  Calling
+			<xref linkend="func_acc_new_leg"/> will increment this index.
 		</para>
 	</section>
 
 	</section>
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section id="do_accounting">
+	<section id="func_do_accounting" xreflabel="do_accounting()">
 		<title>
-			<function moreinfo="none">do_accounting(type, flags, table)</function>
+			<function moreinfo="none">do_accounting(type, [flags], [table])</function>
 		</title>
 		<para>
 			<function moreinfo="none">do_accounting()</function> replaces all the
@@ -807,7 +825,7 @@ modparam("acc", "acc_created_avp_name", "call_created_avp")
 		Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>type</emphasis> - the type of accounting you want to do.
+			<para><emphasis>type (string)</emphasis> - the type of accounting you want to do.
 			All types have to be separated by '|'. The following parameters can
 			be used: </para>
 			<itemizedlist>
@@ -826,7 +844,7 @@ modparam("acc", "acc_created_avp_name", "call_created_avp")
 			</itemizedlist>
 		</listitem>
 		<listitem>
-			<para><emphasis>flags</emphasis> - flags for the accounting type you have
+			<para><emphasis>flags (string, optional)</emphasis> - flags for the accounting type you have
 			selected. All the types have to be separated by '|'. The following
 			parameters can be used: </para>
 			<itemizedlist>
@@ -853,7 +871,7 @@ modparam("acc", "acc_created_avp_name", "call_created_avp")
 			</itemizedlist>
 		</listitem>
 		<listitem>
-			<para><emphasis>table</emphasis> - table where to do the accounting;
+			<para><emphasis>table (string, optional)</emphasis> - table where to do the accounting;
 			it replaces old table_avp parameter;</para>
 		</listitem>
 		</itemizedlist>
@@ -885,7 +903,7 @@ modparam("acc", "acc_created_avp_name", "call_created_avp")
 
 	</section>
 
-	<section id="drop_accouting">
+	<section id="func_drop_accounting" xreflabel="drop_accounting()">
 		<title>
 			<function moreinfo="none">drop_accounting([type], [flags])</function>
 		</title>
@@ -900,7 +918,7 @@ modparam("acc", "acc_created_avp_name", "call_created_avp")
 		Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>type</emphasis> - the type of accounting you want to stop.
+			<para><emphasis>type (string, optional)</emphasis> - the type of accounting you want to stop.
 			All the types have to be separated by '|'. The following parameters can
 			be used: </para>
 			<itemizedlist>
@@ -919,7 +937,7 @@ modparam("acc", "acc_created_avp_name", "call_created_avp")
 			</itemizedlist>
 		</listitem>
 		<listitem>
-			<para><emphasis>flags</emphasis> - flags to be reset for the accouting type you have
+			<para><emphasis>flags (string, optional)</emphasis> - flags to be reset for the accouting type you have
 			selected. All the types have to be separated by '|'. The following
 			parameters can be used: </para>
 			<itemizedlist>
@@ -960,7 +978,7 @@ modparam("acc", "acc_created_avp_name", "call_created_avp")
 			drop_accounting("log");
 			/* or stop missed calls and cdr accounting for syslog;
 			 * normal accounting will still be enabled */
-			drop_accounting("log","missed|cdr");
+			drop_accounting("log", "missed|cdr");
 			/* or stop all types of accounting  */
 			drop_accounting();
 		}
@@ -972,7 +990,7 @@ modparam("acc", "acc_created_avp_name", "call_created_avp")
 
 
 
-	<section>
+	<section id="func_acc_log_request" xreflabel="acc_log_request()">
 		<title>
 			<function moreinfo="none">acc_log_request(comment)</function>
 		</title>
@@ -987,9 +1005,9 @@ modparam("acc", "acc_created_avp_name", "call_created_avp")
 		Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>comment</emphasis> - Comment describing how the
+			<para><emphasis>comment (string)</emphasis> - Comment describing how the
 			request completed - this string has to contain a reply code
-			followed by a reply reason phrase (ex: "404 Nobody home"). Variables
+			followed by a reply reason phrase (ex: "480 Nobody Home"). Variables
 			are accepted in this string.</para>
 		</listitem>
 		</itemizedlist>
@@ -1006,7 +1024,7 @@ acc_log_request("403 Destination not allowed");
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_acc_db_request" xreflabel="acc_db_request()">
 		<title>
 			<function moreinfo="none">acc_db_request(comment, table)</function>
 		</title>
@@ -1021,13 +1039,13 @@ acc_log_request("403 Destination not allowed");
 		</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>comment</emphasis> - Comment describing how the
+			<para><emphasis>comment (string)</emphasis> - Comment describing how the
 			request completed - this string has to contain a reply code
-			followed by a reply reason phrase (ex: "404 Nobody home"). Variables
+			followed by a reply reason phrase (ex: "480 Nobody Home"). Variables
 			are accepted in this string.</para>
 		</listitem>
 		<listitem>
-			<para><emphasis>table</emphasis> - Database table to be used.</para>
+			<para><emphasis>table (string)</emphasis> - Database table to be used.</para>
 		</listitem>
 		</itemizedlist>
 		<para>
@@ -1039,12 +1057,12 @@ acc_log_request("403 Destination not allowed");
 		<programlisting format="linespecific">
 ...
 acc_db_request("Some comment", "Some table");
-acc_db_request("$T_reply_code $(&lt;reply&gt;rr)","acc");
+acc_db_request("$T_reply_code $(&lt;reply&gt;rr)", "acc");
 ...
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_acc_aaa_request" xreflabel="acc_aaa_request()">
 		<title>
 			<function moreinfo="none">acc_aaa_request(comment)</function>
 		</title>
@@ -1058,7 +1076,7 @@ acc_db_request("$T_reply_code $(&lt;reply&gt;rr)","acc");
 		Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>comment</emphasis> - Comment describing how the
+			<para><emphasis>comment (string)</emphasis> - Comment describing how the
 			request completed - this string has to contain a reply code
 			followed by a reply reason phrase (ex: "404 Nobody home"). Variables
 			are accepted in this string.</para>
@@ -1077,7 +1095,7 @@ acc_aaa_request("403 Destination not allowed");
 </programlisting>
 		</example>
 	</section>
-	<section>
+	<section id="func_acc_evi_request" xreflabel="acc_evi_request()">
 		<title>
 			<function moreinfo="none">acc_evi_request(comment)</function>
 		</title>
@@ -1088,17 +1106,16 @@ acc_aaa_request("403 Destination not allowed");
 		Interface as <emphasis>E_ACC_EVENT</emphasis> if the reply code is a
 		positive one (lower than 300), or <emphasis>E_ACC_MISSED_EVENT</emphasis>
 		for negative or no codes. More information on this in
-		<xref linkend="ACC-events-id"/>.
+		<xref linkend="exported_events"/>.
 		</para>
 		<para>
 		Meaning of the parameters is as follows:
 		</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>comment</emphasis> - Comment describing how the
+			<para><emphasis>comment (string)</emphasis> - Comment describing how the
 			request completed - this string has to contain a reply code
-			followed by a reply reason phrase (ex: "404 Nobody home"). Variables
-			are accepted in this string.</para>
+			followed by a reply reason phrase (ex: "404 Nobody home")</para>
 		</listitem>
 		</itemizedlist>
 		<para>
@@ -1114,16 +1131,15 @@ acc_evi_request("403 Destination not allowed");
 </programlisting>
 		</example>
 	</section>
-	</section>
 
-	<section>
+	<section id="func_acc_new_leg" xreflabel="acc_new_leg()">
 		<title>
 			<function moreinfo="none">acc_new_leg()</function>
 		</title>
 		<para>
-			Creates a new leg only if multi-leg accounting is used. The value of
-			<emphasis>acc_current_leg</emphasis> variable is incremented. All the
-			values of the new leg will be initialised with null.
+			Creates a new leg and increments <xref linkend="pv_acc_current_leg"/>
+			only if multi-leg accounting is used.  All values of the new leg
+			will be initialized to null.
 		</para>
 		<para>
 			This function can be used from REQUEST_ROUTE, FAILURE_ROUTE,
@@ -1138,11 +1154,12 @@ acc_evi_request("403 Destination not allowed");
 </programlisting>
 		</example>
 	</section>
+	</section>
 
 
-	<section id="ACC-events-id">
+	<section id="exported_events" xreflabel="Exported Events">
 	<title>Exported Events</title>
-	<section>
+	<section id="event_E_ACC_CDR" xreflabel="E_ACC_CDR">
 		<title>
 		<function moreinfo="none">E_ACC_CDR</function>
 		</title>
@@ -1202,7 +1219,7 @@ acc_evi_request("403 Destination not allowed");
 
 		</itemizedlist>
 	</section>
-	<section>
+	<section id="event_E_ACC_EVENT" xreflabel="E_ACC_EVENT">
 		<title>
 		<function moreinfo="none">E_ACC_EVENT</function>
 		</title>
@@ -1245,7 +1262,7 @@ acc_evi_request("403 Destination not allowed");
 			</para></listitem>
 		</itemizedlist>
 	</section>
-	<section>
+	<section id="event_E_ACC_MISSED_EVENT" xreflabel="E_ACC_MISSED_EVENT">
 		<title>
 		<function moreinfo="none">E_ACC_MISSED_EVENT</function>
 		</title>

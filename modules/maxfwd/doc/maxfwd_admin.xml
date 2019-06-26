@@ -4,7 +4,7 @@
 	
 	<title>&adminguide;</title>
 	
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		The module implements all the operations regarding MaX-Forward header 
@@ -12,7 +12,7 @@
 		the value of the existent one.
 	</para>
 	</section>
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -43,9 +43,9 @@
 	</section>
 	</section>
 
-	<section>
+	<section id="exported_parameters" xreflabel="Exported Parameters">
 	<title>Exported Parameters</title>
-	<section>
+	<section id="param_max_limit" xreflabel="max_limit">
 		<title><varname>max_limit</varname> (integer)</title>
 		<para>
 		Set an upper limit for the max-forward value in the outgoing requests.
@@ -77,9 +77,9 @@ modparam("maxfwd", "max_limit", 32)
 	</section>
 
 
-	<section>
+	<section id="exported_functions" xreflabel="exported_functions">
 	<title>Exported Functions</title>
-	<section>
+	<section id="func_mf_process_maxfwd_header" xreflabel="mf_process_maxfwd_header()">
 		<title>
 		<function moreinfo="none">mf_process_maxfwd_header(max_value)</function>
 		</title>
@@ -118,7 +118,7 @@ modparam("maxfwd", "max_limit", 32)
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>max_value</emphasis> - Value to be added if 
+			<para><emphasis>max_value</emphasis> (int) - Value to be added if 
 			there is no Max-Forwards header field in the message.
 			</para>
 		</listitem>
@@ -132,8 +132,8 @@ modparam("maxfwd", "max_limit", 32)
 ...
 # initial sanity checks -- messages with
 # max_forwards==0, or excessively long requests
-if (!mf_process_maxfwd_header("10") &amp;&amp; $retcode==-1) {
-	sl_send_reply("483","Too Many Hops");
+if (!mf_process_maxfwd_header(10) &amp;&amp; $retcode==-1) {
+	sl_send_reply(483,"Too Many Hops");
 	exit;
 };
 ...
@@ -141,7 +141,7 @@ if (!mf_process_maxfwd_header("10") &amp;&amp; $retcode==-1) {
 		</example>
 	</section>
 
-	<section>
+	<section id="func_is_maxfwd_lt" xreflabel="is_maxfwd_lt()">
 		<title>
 		<function moreinfo="none">is_maxfwd_lt(max_value)</function>
 		</title>
@@ -154,7 +154,7 @@ if (!mf_process_maxfwd_header("10") &amp;&amp; $retcode==-1) {
 		<itemizedlist>
 		<listitem>
 			<para><emphasis>1 (true)</emphasis> - header was found or set and 
-			its value is stricly less than <quote>max_value</quote>.
+			its value is strictly less than <quote>max_value</quote>.
 			</para>
 		</listitem>
 		<listitem>
@@ -179,7 +179,7 @@ if (!mf_process_maxfwd_header("10") &amp;&amp; $retcode==-1) {
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem>
-			<para><emphasis>max_value</emphasis> - value to check the 
+			<para><emphasis>max_value</emphasis> (int) - value to check the 
 			Max-Forward.value against (as less than).
 			</para>
 		</listitem>
@@ -190,8 +190,8 @@ if (!mf_process_maxfwd_header("10") &amp;&amp; $retcode==-1) {
 ...
 # next hope is a gateway, so make no sens to
 # forward if MF is 0 (after decrement)
-if ( is_maxfwd_lt("1") ) {
-	sl_send_reply("483","Too Many Hops");
+if ( is_maxfwd_lt(1) ) {
+	sl_send_reply(483,"Too Many Hops");
 	exit;
 };
 ...

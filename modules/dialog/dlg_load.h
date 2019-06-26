@@ -28,13 +28,14 @@
 #define _DIALOG_DLG_LOAD_H_
 
 #include "dlg_cb.h"
+#include "dlg_ctx.h"
 #include "dlg_handlers.h"
 #include "dlg_profile.h"
 #include "dlg_vals.h"
 #include "../../sr_module.h"
 
 typedef struct dlg_cell *(*get_dlg_f) (void);
-typedef int (*match_dialog_f) (struct sip_msg *);
+typedef int (*match_dialog_f) (struct sip_msg *msg, int _seq_match_mode);
 
 struct dlg_binds {
 	register_dlgcb_f     register_dlgcb;
@@ -60,6 +61,18 @@ struct dlg_binds {
 	unref_dlg_f          unref_dlg;
 
 	get_rr_param_f       get_rr_param;
+
+	dlg_ctx_register_int_f dlg_ctx_register_int;
+	dlg_ctx_register_str_f dlg_ctx_register_str;
+	dlg_ctx_register_ptr_f dlg_ctx_register_ptr;
+
+	dlg_ctx_put_int_f dlg_ctx_put_int;
+	dlg_ctx_put_str_f dlg_ctx_put_str;
+	dlg_ctx_put_ptr_f dlg_ctx_put_ptr;
+
+	dlg_ctx_get_int_f dlg_ctx_get_int;
+	dlg_ctx_get_str_f dlg_ctx_get_str;
+	dlg_ctx_get_ptr_f dlg_ctx_get_ptr;
 };
 
 
@@ -72,7 +85,7 @@ static inline int load_dlg_api( struct dlg_binds *dlgb )
 	load_dlg_f load_dlg;
 
 	/* import the DLG auto-loading function */
-	if ( !(load_dlg=(load_dlg_f)find_export("load_dlg", 0, 0)))
+	if ( !(load_dlg=(load_dlg_f)find_export("load_dlg", 0)))
 		return -1;
 
 	/* let the auto-loading function load all DLG stuff */

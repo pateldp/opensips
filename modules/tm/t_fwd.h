@@ -44,7 +44,9 @@ int t_forward_nonack( struct cell *t, struct sip_msg* p_msg,
 
 int add_phony_uac( struct cell *t);
 
-int t_add_reason(struct sip_msg *msg, char *val);
+int t_add_reason(struct sip_msg *msg, str *reason);
+
+int t_set_reason(struct sip_msg *msg, str *reason);
 
 int t_forward_ack( struct sip_msg* p_msg );
 
@@ -56,6 +58,8 @@ typedef int (*tgetbranch_f)(void);
 int get_branch_index(void);
 
 int t_inject_branch( struct cell *t, struct sip_msg *msg, int flags);
+
+void get_cancel_reason(struct sip_msg *msg, int flags, str *reason);
 
 #endif
 

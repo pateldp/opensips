@@ -4,7 +4,7 @@
 
 	<title>&adminguide;</title>
 
-	<section>
+	<section id="overview" xreflabel="Overview">
 	<title>Overview</title>
 	<para>
 		This is a module that enables media streams to be proxied
@@ -31,8 +31,8 @@
 		Load-balancing will be performed over a set and the admin has the
 		ability to choose what set should be used. The set is selected via
 		its id - the id being defined with the set. Refer to the
-		<quote>rtpengine_sock</quote> module parameter definition for syntax
-		description.
+		<quote><xref linkend="param_rtpengine_sock"/></quote> module parameter
+		definition for syntax description.
 	</para>
 	<para>
 		The balancing inside a set is done automatically by the module based on
@@ -65,7 +65,7 @@
 	</para>
 	</section>
 
-	<section>
+	<section id="dependencies" xreflabel="Dependencies">
 	<title>Dependencies</title>
 	<section>
 		<title>&osips; Modules</title>
@@ -98,8 +98,8 @@
 	</section>
 
 	<section>
-	<title>Parameters</title>
-	<section id="rtpengine.p.rtpengine_sock">
+	<title>Exported Parameters</title>
+	<section id="param_rtpengine_sock" xreflabel="rtpengine_sock">
 		<title><varname>rtpengine_sock</varname> (string)</title>
 		<para>
 		Definition of socket(s) used to connect to (a set) &rtp; proxy. It may
@@ -128,7 +128,7 @@ modparam("rtpengine", "rtpengine_sock",
 </programlisting>
 		</example>
 	</section>
-	<section id="rtpengine.p.rtpengine_disable_tout">
+	<section id="param_rtpengine_disable_tout" xreflabel="rtpengine_disable_tout">
 		<title><varname>rtpengine_disable_tout</varname> (integer)</title>
 		<para>
 		Once an &rtp; proxy was found unreachable and marked as disabled, the rtpengine
@@ -149,7 +149,7 @@ modparam("rtpengine", "rtpengine_disable_tout", 20)
 </programlisting>
 		</example>
 	</section>
-	<section id="rtpengine.p.rtpengine_tout">
+	<section id="param_rtpengine_tout" xreflabel="rtpengine_tout">
 		<title><varname>rtpengine_tout</varname> (integer)</title>
 		<para>
 		Timeout value in waiting for reply from &rtp; proxy.
@@ -168,7 +168,7 @@ modparam("rtpengine", "rtpengine_tout", 2)
 </programlisting>
 		</example>
 	</section>
-	<section id="rtpengine.p.rtpengine_retr">
+	<section id="param_rtpengine_retr" xreflabel="rtpengine_retr">
 		<title><varname>rtpengine_retr</varname> (integer)</title>
 		<para>
 		How many times the module should retry to send and receive after
@@ -188,7 +188,7 @@ modparam("rtpengine", "rtpengine_retr", 2)
 </programlisting>
 		</example>
 	</section>
-	<section id="rtpengine.p.extra_id_pv">
+	<section id="param_extra_id_pv" xreflabel="extra_id_pv">
 		<title><varname>extra_id_pv</varname> (string)</title>
 		<para>
 			The parameter sets the PV defination to use when the <quote>b</quote>
@@ -207,7 +207,7 @@ modparam("rtpengine", "extra_id_pv", "$avp(extra_id)")
 		</example>
 	</section>
 
-	<section id="rtpengine.p.setid_pv">
+	<section id="param_setid_avp" xreflabel="setid_avp">
 		<title><varname>setid_avp</varname> (string)</title>
 		<para>
 			The parameter defines an AVP that, if set,
@@ -229,19 +229,96 @@ modparam("rtpengine", "setid_avp", "$avp(setid)")
 		</example>
 	</section>
 
+	<section id="param_db_url" xreflabel="db_url">
+		<title><varname>db_url</varname> (string)</title>
+		<para>
+			Database URL, used to load RTPEngines sockets
+			from db, instead of specifying them in the
+			script (<xref linkend="param_rtpengine_sock"/>
+			module parameter).
+		</para>
+		<para>
+			Default value is <quote>NULL</quote>, no database
+			is used.
+		</para>
+		<example>
+		<title>Set <varname>db_url</varname> parameter</title>
+<programlisting format="linespecific">
+...
+modparam("rtpengine", "db_url", 
+		"mysql://opensips:opensipsrw@localhost/opensips")
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="param_db_table" xreflabel="db_table">
+		<title><varname>db_table</varname> (string)</title>
+		<para>
+			The table where the RTPEngines sockets are stored.
+			Used when Database URL is provisioned.
+		</para>
+		<para>
+			Default value is <quote>rtpengines</quote>.
+		</para>
+		<example>
+		<title>Set <varname>db_table</varname> parameter</title>
+<programlisting format="linespecific">
+...
+modparam("rtpengine", "db_table", "rtpengine_new")
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="param_socket_column" xreflabel="socket_column">
+		<title><varname>socket_column</varname> (string)</title>
+		<para>
+			The name of the rtpengine socket column in the database table.
+		</para>
+		<para>
+			Default value is <quote>socket</quote>.
+		</para>
+		<example>
+		<title>Set <varname>socket_column</varname> parameter</title>
+<programlisting format="linespecific">
+...
+modparam("rtpengine", "socket_column", "sock")
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="param_set_column" xreflabel="set_column">
+		<title><varname>set_column</varname> (string)</title>
+		<para>
+			The name of the rtpengine set column in the database table.
+		</para>
+		<para>
+			Default value is <quote>set_id</quote>.
+		</para>
+		<example>
+		<title>Set <varname>set_column</varname> parameter</title>
+<programlisting format="linespecific">
+...
+modparam("rtpengine", "set_column", "set_new")
+...
+</programlisting>
+		</example>
+	</section>
+
 	</section>
 
 	<section>
-	<title>Functions</title>
-	<section id="rtpengine.f.rtpengine_use_set">
+	<title>Exported Functions</title>
+	<section id="func_rtpengine_use_set" xreflabel="rtpengine_use_set()">
 		<title>
 		<function moreinfo="none">rtpengine_use_set(setid)</function>
 		</title>
 		<para>
 		Sets the ID of the &rtp; proxy set to be used for the next
 		rtpengine_delete(), rtpengine_offer(), rtpengine_answer()
-		or rtpengine_manage() command. The parameter can be an integer or
-		a config variable holding an integer.
+		or rtpengine_manage() command. The parameter is an integer.
 		</para>
 		<para>
 		This function can be used from REQUEST_ROUTE, ONREPLY_ROUTE,
@@ -251,15 +328,15 @@ modparam("rtpengine", "setid_avp", "$avp(setid)")
 		<title><function>rtpengine_use_set</function> usage</title>
 		<programlisting format="linespecific">
 ...
-rtpengine_use_set("2");
+rtpengine_use_set(2);
 rtpengine_offer();
 ...
 </programlisting>
 		</example>
 	</section>
-        <section id="rtpengine.f.rtpengine_offer">
+		<section id="func_rtpengine_offer" xreflabel="rtpengine_offer()">
                 <title>
-                <function moreinfo="none">rtpengine_offer([flags[, sock_pvar[, sdp_pvar]]])</function>
+                <function moreinfo="none">rtpengine_offer([flags[, sock_var[, sdp_pvar[, body]]]])</function>
                 </title>
                 <para>
                 Rewrites &sdp; body to ensure that media is passed through
@@ -271,11 +348,13 @@ rtpengine_offer();
 		<itemizedlist>
 		<listitem>
 			<para>
-			<emphasis>flags(optional)</emphasis> - flags to turn on some features.
+			<emphasis>flags(string, optional)</emphasis> - flags to turn on some features.
 			</para>
 			<para>The <quote>flags</quote> string is a list of space-separated items. Each item
 			is either an individual token, or a token in <quote>key=value</quote> format. The
 			possible tokens are described below.</para>
+			<para> When passing an option that &osips; is not aware of, it will be
+			blindly sent to the rtpengine daemon to be processed.</para>
 			<itemizedlist>
 				<listitem><para>
 				<emphasis>via-branch=...</emphasis> - Include the <quote>branch</quote>
@@ -286,7 +365,7 @@ rtpengine_offer();
 				<quote>auto</quote> - use the first <quote>Via</quote> header if this is
 				a request, or the second one if this is a reply;
 				<quote>extra</quote> - don't take the value from a header, but instead use
-				the value of the <quote>extra_id_pv</quote> variable.
+				the value of the <quote><xref linkend="param_extra_id_pv"/></quote> variable.
 				This can be used to create one media session per branch
 				on the &rtp; proxy. When sending a subsequent <quote>delete</quote> command to
 				the &rtp; proxy, you can then stop just the session for a specific branch when
@@ -392,6 +471,10 @@ rtpengine_offer();
 				Not supported by Sipwise rtpengine.
 				</para></listitem>
 				<listitem><para>
+				<emphasis>loop-protect</emphasis> - flag that instructs &rtp; to
+				avoid rewriting the SDP when looping the same message.
+				</para></listitem>
+				<listitem><para>
 				<emphasis>ICE=...</emphasis> - controls the &rtp; proxy's behaviour
 				regarding ICE attributes within the &sdp; body. Possible values
 				are: <quote>force</quote> - 
@@ -432,6 +515,21 @@ rtpengine_offer();
 				dialogues within a call are being torn down.
 				</para></listitem>
 				<listitem><para>
+				<emphasis>to-tag=...</emphasis> - use the specified string as <quote>To</quote>
+				tag instead of the actual <quote>To</quote> tag from the &sip; message, and
+				force inclusion of the tag in the message as per above.
+				</para></listitem>
+				<listitem><para>
+				<emphasis>from-tag=...</emphasis> - use the specified string as
+				<quote>From</quote> tag instead of the actual <quote>From</quote>
+				tag from the &sip; message.
+				</para></listitem>
+				<listitem><para>
+				<emphasis>call-id=...</emphasis> - use the specified string as
+				<quote>Call-ID</quote> instead of the actual <quote>Call-ID</quote>
+				from the &sip; message.
+				</para></listitem>
+				<listitem><para>
 				<emphasis>rtcp-mux-demux</emphasis> - if rtcp-mux (RFC 5761) was
 				offered, make the &rtp; proxy accept the offer, but not offer it to the
 				recipient of this message.
@@ -447,6 +545,11 @@ rtpengine_offer();
 				originally or not.
 				</para></listitem>
 				<listitem><para>
+				<emphasis>rtcp-mux-require</emphasis> - Similar to offer but pretends that
+				the client has accepted rtcp-mux. This breaks RFC 5761 and will not advertise
+				seperate RTCP ports. This option is necessary for WebRTC clients.
+				</para></listitem>
+				<listitem><para>
 				<emphasis>rtcp-mux-accept</emphasis> - if rtcp-mux was offered, make the
 				&rtp; proxy accept the offer and also offer it to the recipient of this
 				message. Can be combined with <quote>rtcp-mux-offer</quote> to always offer it.
@@ -460,21 +563,39 @@ rtpengine_offer();
 				record the call or not. When using this parameter, you may pass further
 				information in the <quote>metadata</quote>.
 				</para></listitem>
+				<listitem><para>
+				<emphasis>transcode-CODEC</emphasis> - used only for offer, indicates that
+				rtpengine should transcode the CODEC towards the B-side. Example:
+				<emphasis>transcode-PCMA</emphasis> will present to the B-side the PCMA codec.
+				</para></listitem>
+				<listitem><para>
+				<emphasis>codec-strip-CODEC</emphasis> - used only for offer, indicates that
+				the A-side of the call will not end up talking CODEC. Example:
+				<emphasis>codec-strip-PCMA</emphasis> will prevent the A-side from receiving
+				the PCMA codec.
+				</para></listitem>
+				<listitem><para>
+				<emphasis>codec-mask-CODEC</emphasis> - used only for offer, indicates that
+				the A-side will use the CODEC, but it will not be presented to the B-side. Example:
+				<emphasis>codec-mask-PCMA</emphasis> will make the A-side receive the PCMA codec,
+				but B-side will use something else.
+				</para></listitem>
 			</itemizedlist>
 		</listitem>
-		<para>
-			When passing an option that &osips; is not aware of, it will be
-			blindly sent to the rtpengine daemon to be processed.
-		</para>
 		<listitem><para>
-		<emphasis>sock_pvar(optional)</emphasis> - pvar used to store the rtpengine
+		<emphasis>sock_var(var, optional)</emphasis> - variable used to store the rtpengine
 		socket chosen for this call.
 		</para></listitem>
 		<listitem><para>
-		<emphasis>sdp_pvar(optional)</emphasis> - pvar used to store the full SDP
+		<emphasis>sdp_var(var, optional)</emphasis> - variable used to store the full SDP
 		received from rtpengine. You can perform any additional changes on this
 		string. <emphasis>Important: </emphasis> when providing this variable, the
 		message body is no longer changed, so you have to manually replace it!.
+		</para></listitem>
+		<listitem><para>
+		<emphasis>body(string, optional)</emphasis> - used to provide a specific body
+		to the rtpengine_* function. If this parameter is missing the body of
+		the current message is used.
 		</para></listitem>
 		</itemizedlist>
 		<para>
@@ -519,12 +640,12 @@ onreply_route[2]
 		<title><function>rtpengine_offer</function> usage with body replace</title>
 		<programlisting format="linespecific">
 ...
-if (rtpengine_offer(, "$var(socket)", "$var(body)")) {
+if (rtpengine_offer(, $var(socket), $var(body), $rb)) {
     xlog("Used rtpengine $var(socket)\n");
     # make all the changes on the resulted SDP in $var(body)
     ...
     remove_body_part();
-    add_body_part("$var(body)", "application/sdp");
+    add_body_part($var(body), "application/sdp");
 }
 ...
 </programlisting>
@@ -544,15 +665,27 @@ $json(recording_keys/toUser) = $dlg_val(recording_to_user);
 $json(recording_keys/toDomain) = $dlg_val(recording_to_domain);
 
 $var(rtpengine_flags) = $var(rtpengine_flags) + " metadata=" + $(json(recording_keys){s.encode.hexa});
-rtpengine_offer("$var(rtpengine_flags)");
+rtpengine_offer($var(rtpengine_flags));
+...
+</programlisting>
+                </example>
+		<example>
+		<title><function>rtpengine_offer</function> usage for transcoding</title>
+		<programlisting format="linespecific">
+...
+# Goal: make A-side talk PCMA and B-side talk opus
+# * do not present PCMA to B-side: codec-mask-PCMA, but use it on A-side
+# * do not use opus for A-side: codec-strip-opus
+# * offer opus to B-side: transcode-opus
+rtpengine_offer("... codec-mask-PCMA codec-strip-opus transcode-opus ...");
 ...
 </programlisting>
                 </example>
 
 	</section>
-        <section id="rtpengine.f.rtpengine_answer">
+		<section id="func_rtpengine_answer" xreflabel="rtpengine_answer()">
                 <title>
-                <function moreinfo="none">rtpengine_answer([flags[, sock_pvar[, sdp_pvar]]])</function>
+                <function moreinfo="none">rtpengine_answer([flags[, sock_pvar[, sdp_pvar[, body]]]])</function>
                 </title>
 		<para>
 		Rewrites &sdp; body to ensure that media is passed through
@@ -575,9 +708,9 @@ rtpengine_offer("$var(rtpengine_flags)");
 		</para>
 		</example>
         </section>
-	<section id="rtpengine.f.rtpengine_delete">
+	<section id="func_rtpengine_delete" xreflabel="rtpengine_delete()">
 		<title>
-		<function moreinfo="none">rtpengine_delete([flags[, sock_pvar]])</function>
+		<function moreinfo="none">rtpengine_delete([flags[, sock_var]])</function>
 		</title>
 		<para>
 		Tears down the RTPProxy session for the current call.
@@ -599,9 +732,9 @@ rtpengine_delete();
 		</example>
 	</section>
 
-    <section id="rtpengine.f.rtpengine_manage">
+	<section id="func_rtpengine_manage" xreflabel="rtpengine_manage()">
         <title>
-        <function moreinfo="none">rtpengine_manage([flags[, sock_pvar[, sdp_pvar]]])</function>
+        <function moreinfo="none">rtpengine_manage([flags[, sock_var[, sdp_var[, body]]]])</function>
         </title>
 		<para>
 		Manage the RTPProxy session - it combines the functionality of
@@ -666,24 +799,28 @@ rtpengine_manage();
 		</example>
         </section>
 
-	<section id="rtpengine.f.start_recording">
+	<section id="func_rtpengine_start_recording" xreflabel="rtpengine_start_recording()">
 		<title>
-		<function moreinfo="none">rtpengine_start_recording([sock_pvar])</function>
+		<function moreinfo="none">rtpengine_start_recording([flags [, sock_var]])</function>
 		</title>
 		<para>
 		This function will send a signal to the &rtp; proxy to record
 		the RTP stream on the &rtp; proxy.
-		<emphasis>This function is not supported by Sipwise rtpengine at the moment!</emphasis>
 		</para>
 		<para>Meaning of the parameters is as follows:</para>
 		<itemizedlist>
 		<listitem><para>
-		<emphasis>sock_pvar(optional)</emphasis> - pvar used to store the rtpengine
+		<emphasis>flags(string, optional)</emphasis> - flags used to change the behavior
+		of the recorder. An importat value to set is the <emphasis>call-id</emphasis>
+		value, which can be used to start recording a different call than the requested one.
+		</para></listitem>
+		<listitem><para>
+		<emphasis>sock_var(var, optional)</emphasis> - variable used to store the rtpengine
 		socket chosen for this call.
 		</para></listitem>
 		</itemizedlist>
 		<para>
-		This function can be used from REQUEST_ROUTE and ONREPLY_ROUTE.
+		This function can be used from any route.
 		</para>
 		<example>
 		<title><function>rtpengine_start_recording</function> usage</title>
@@ -695,17 +832,229 @@ rtpengine_start_recording();
 		</example>
 	</section>
 
+	<section id="func_rtpengine_stop_recording" xreflabel="rtpengine_stop_recording()">
+		<title>
+		<function moreinfo="none">rtpengine_stop_recording([flags [, sock_var]])</function>
+		</title>
+		<para>
+		This function will send a signal to the &rtp; proxy to stop
+		recording the RTP stream on the &rtp; proxy.
+		</para>
+		<para>Meaning of the parameters is as follows:</para>
+		<itemizedlist>
+		<listitem><para>
+		<emphasis>flags(string, optional)</emphasis> - flags used to change the behavior
+		of the recorder. An importat value to set is the <emphasis>call-id</emphasis>
+		value, which can be used to start recording a different call than the requested one.
+		</para></listitem>
+		<listitem><para>
+		<emphasis>sock_var(var, optional)</emphasis> - variable used to store the rtpengine
+		socket chosen for this call.
+		</para></listitem>
+		</itemizedlist>
+		<para>
+		This function can be used from any route.
+		</para>
+		<example>
+		<title><function>rtpengine_stop_recording</function> usage</title>
+		<programlisting format="linespecific">
+...
+rtpengine_stop_recording();
+...
+		</programlisting>
+		</example>
+	</section>
+
+	<section id="func_rtpengine_play_media" xreflabel="rtpengine_play_media()">
+		<title>
+		<function moreinfo="none">rtpengine_play_media(flags, [duration_spec[, sock_var[, sockvar]]])</function>
+		</title>
+		<para>
+		This function will start playing a media file to one of the endpoints.
+		</para>
+		<para>Meaning of the parameters is as follows:</para>
+		<itemizedlist>
+		<listitem><para>
+		<emphasis>flags(string)</emphasis> - a list of flags simialar to
+			the other functions. One of the <emphasis>file</emphasis>,
+			<emphasis>blob</emphasis> or <emphasis>db-id</emphasis> parameters
+			is mandatory to indicate the content of the media file to be played.
+			<emphasis>file</emphasis> is a common choice for specifying rtpengine
+			to get media from a file path, <emphasis>blob</emphasis> to take
+			the content from an inline string and <emphasis>db-id</emphasis> to
+			get the content from the database.
+			<para>
+			The direction of the media stream is controlled by the
+			<emphasis>from-tag</emphasis> parameter, <emphasis>address</emphasis>
+			(media address from the SDP), or <emphasis>label</emphasis>, if the
+			media stream contains a label. If all of them are missing, the media
+			file is played to the initiator of the SIP request, and will work similar
+			to a ringback tone.
+			</para>
+		</para></listitem>
+		<listitem><para>
+		<emphasis>duration_spec(var, optional)</emphasis> - a pseudo variable that
+			will contain the duration of the played file. It will be set to
+			<emphasis>-1</emphasis> if the duration could not be determined.
+		</para></listitem>
+		<listitem><para>
+		<emphasis>sock_var(var, optional)</emphasis> - variable used to store the rtpengine
+		socket chosen for this call.
+		</para></listitem>
+		</itemizedlist>
+		<para>
+		This function can be used from any route.
+		</para>
+		<example>
+		<title>Ringback tone using <function>rtpengine_play_media</function></title>
+		<programlisting format="linespecific">
+...
+if (is_method("INVITE") &amp;&amp; !has_totag())
+	rtpengine_play_media("file=/path/to/ringback_tone_file.wav");
+...
+		</programlisting>
+		</example>
+		<example>
+		<title>Manage music on hold using <function>rtpengine_play_media</function></title>
+		<programlisting format="linespecific">
+...
+if (is_method("INVITE") &amp;&amp; has_totag()) {
+	if (is_audio_on_hold()) {
+		$dlg_val(on_hold) = "1";
+		rtpengine_play_media("from-tag=$tt file=/path/to/moh_file.wav");
+	} else if ($dlg_val(on_hold) == "1") {
+		$dlg_val(on_hold) = "0";
+		rtpengine_stop_media("from-tag=$tt");
+	}
+}
+...
+		</programlisting>
+		</example>
+	</section>
+
+	<section id="func_rtpengine_stop_media" xreflabel="rtpengine_stop_media()">
+		<title>
+		<function moreinfo="none">rtpengine_stop_media([flags[, sockvar]])</function>
+		</title>
+		<para>
+			This function will stop playing a media file previously started
+			by a <function>rtpengine_play_media()</function> call. The meaning
+			of its parameters is similar to the previous functions. Note that this
+			function should be called with similar parameters as its matching
+			<function>rtpengine_play_media()</function> call, otherwise
+			RTPEngine will not be able to stop media playing.
+		</para>
+		<para>
+		This function can be used from any route.
+		</para>
+		<example>
+		<title>Ringback tone stop using <function>rtpengine_stop_media</function></title>
+		<programlisting format="linespecific">
+...
+if (is_method("INVITE") &amp;&amp; $rs == 200)
+	rtpengine_stop_media();
+...
+		</programlisting>
+		</example>
+	</section>
+
+	<section id="func_rtpengine_block_media" xreflabel="rtpengine_block_media()">
+		<title>
+		<function moreinfo="none">rtpengine_block_media([flags[, sockvar]])</function>
+		</title>
+		<para>
+			This function will block the media sent from one of the endpoints.
+			The direction to be blocked is controled by the <emphasis>flags</emphasis>
+			parameter, the <emphasis>from-tag</emphasis> value.
+		</para>
+		<para>
+		This function can be used from any route.
+		</para>
+		<example>
+		<title>Example of <function>rtpengine_block_media</function> usage</title>
+		<programlisting format="linespecific">
+...
+rtpengine_block_media();
+...
+		</programlisting>
+		</example>
+	</section>
+
+	<section id="func_rtpengine_unblock_media" xreflabel="rtpengine_unblock_media()">
+		<title>
+		<function moreinfo="none">rtpengine_unblock_media([flags[, sockvar]])</function>
+		</title>
+		<para>
+			This function will resume/unblock the media sent from one of the endpoints.
+			The direction to be blocked is controled by the <emphasis>flags</emphasis>
+			parameter, the <emphasis>from-tag</emphasis> value.
+		</para>
+		<para>
+		This function can be used from any route.
+		</para>
+		<example>
+		<title>Example of <function>rtpengine_unblock_media</function> usage</title>
+		<programlisting format="linespecific">
+...
+rtpengine_unblock_media();
+...
+		</programlisting>
+		</example>
+	</section>
+
+	<section id="func_rtpengine_block_dtmf" xreflabel="rtpengine_block_dtmf()">
+		<title>
+		<function moreinfo="none">rtpengine_block_dtmf([flags[, sockvar]])</function>
+		</title>
+		<para>
+			This function will block the DTMF media sent from one of the endpoints.
+			The direction to be blocked is controled by the <emphasis>flags</emphasis>
+			parameter, the <emphasis>from-tag</emphasis> value.
+		</para>
+		<para>
+		This function can be used from any route.
+		</para>
+		<example>
+		<title>Example of <function>rtpengine_block_dtmf</function> usage</title>
+		<programlisting format="linespecific">
+...
+rtpengine_block_dtmf();
+...
+		</programlisting>
+		</example>
+	</section>
+
+	<section id="func_rtpengine_unblock_dtmf" xreflabel="rtpengine_unblock_dtmf()">
+		<title>
+		<function moreinfo="none">rtpengine_unblock_dtmf([flags[, sockvar]])</function>
+		</title>
+		<para>
+			This function will resume/unblock the DTMF media sent from one of the endpoints.
+			The direction to be blocked is controled by the <emphasis>flags</emphasis>
+			parameter, the <emphasis>from-tag</emphasis> value.
+		</para>
+		<para>
+		This function can be used from any route.
+		</para>
+		<example>
+		<title>Example of <function>rtpengine_unblock_dtmf</function> usage</title>
+		<programlisting format="linespecific">
+...
+rtpengine_unblock_dtmf();
+...
+		</programlisting>
+		</example>
+	</section>
 
 	</section>
 
-	<section>
-		<title>Exported Pseudo Variables</title>
-		<section>
+	<section id="exported_pseudo_variables">
+		<title>Exported Pseudo-Variables</title>
+		<section id="pv_rtpstat_0" xreflabel="$rtpstat">
 			<title><function moreinfo="none">$rtpstat</function></title>
 			<para>
 			Returns the &rtp; statistics from the &rtp; proxy. The &rtp; statistics from the &rtp; proxy
-			are provided as a string and it does contain several packet counters. The statistics
-			must be retrieved before the session is deleted	(before <function>rtpengine_delete()</function>).
+			are provided as a string and it does contain several packet counters.
 			</para>
 
 		<example>
@@ -716,25 +1065,179 @@ rtpengine_start_recording();
 ...
 		</programlisting>
 		</example>
-	        </section>
+		</section>
+		<section id="pv_rtpstat" xreflabel="$rtpstat">
+			<title><function moreinfo="none">$rtpstat(STAT)[index]</function></title>
+			<para>
+			Returnes one of the pre-fined statistics listed below:
+			</para>
+			<itemizedlist>
+			<listitem><para>
+					<emphasis>MOS-average</emphasis> - without an index, it returns the average
+					MOS value, expressed in an integer between 0 and 50, of all the RTP streams
+					involved in the call, both caller and callee. If index is specified, it has
+					to be one of the <emphasis>from-tag</emphasis>
+					or <emphasis>to-tag</emphasis> involved in the call. In this case, the variable
+					will return the average MOS of all the streams generated by that endpoint
+					with the associated tag value. If you need more granular statistics, check
+					the <emphasis>$rtpquery</emphasis> variable.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>jitter-average</emphasis> - similar behavior with
+					<emphasis>MOS-average</emphasis>, but returnes the average jitter.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>roundtrip-average</emphasis> - similar behavior with
+					<emphasis>MOS-average</emphasis>, but returnes the average roundtrip.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>packetloss-average</emphasis> - similar behavior with
+					<emphasis>MOS-average</emphasis>, but returnes the average packet loss.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>MOS-min</emphasis> - without an index, it returns the minimum
+					MOS value (integer value between 0 and 50) of all RTP streams involved in the
+					call, both caller and callee.
+					If the index is specified, it has the same effect as for
+					<emphasis>MOS-average</emphasis>.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>jitter-min</emphasis> - similar behavior with
+					<emphasis>MOS-min</emphasis>, but returnes the minimum jitter of a leg/call.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>roundtrip-min</emphasis> - similar behavior with
+					<emphasis>MOS-min</emphasis>, but returnes the minimum roundtrip of a leg/call.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>packetloss-min</emphasis> - similar behavior with
+					<emphasis>MOS-min</emphasis>, but returnes the minimum packet loss of a leg/call.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>MOS-max</emphasis> - without an index, it returns the maximum
+					MOS value (integer value between 0 and 50) of all RTP streams involved in the
+					call, both caller and callee.
+					If the index is specified, it has the same effect as for
+					<emphasis>MOS-average</emphasis>.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>jitter-max</emphasis> - similar behavior with
+					<emphasis>MOS-max</emphasis>, but returnes the maximum jitter of a leg/call.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>roundtrip-max</emphasis> - similar behavior with
+					<emphasis>MOS-max</emphasis>, but returnes the maximum roundtrip of a leg/call.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>packetloss-max</emphasis> - similar behavior with
+					<emphasis>MOS-max</emphasis>, but returnes the maximum packet loss of a leg/call.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>MOS-min-at</emphasis> - without an index, it returns the time in
+					seconds elapsed from the start of the call when the MOS value is minimum.
+					If the index is specified, it has the same effect as for
+					<emphasis>MOS-average</emphasis>.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>jitter-min-at</emphasis> - similar behavior with
+					<emphasis>MOS-min-at</emphasis>, but returnes the time when the minimum
+					jitter was detected.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>roundtrip-min-at</emphasis> - similar behavior with
+					<emphasis>MOS-min-at</emphasis>, but returnes the time when the minimum
+					roundtrip was detected.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>packetloss-min-at</emphasis> - similar behavior with
+					<emphasis>MOS-min-at</emphasis>, but returnes the time when the minimum
+					packet loss of a leg/call was detected.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>MOS-max-at</emphasis> - without an index, it returns the time in
+					seconds elapsed from the start of the call when the MOS value is maximum.
+					If the index is specified, it has the same effect as for
+					<emphasis>MOS-average</emphasis>.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>jitter-max-at</emphasis> - similar behavior with
+					<emphasis>MOS-max-at</emphasis>, but returnes the time when the maximum
+					value of jitter was detected.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>roundtrip-max-at</emphasis> - similar behavior with
+					<emphasis>MOS-max-at</emphasis>, but returnes the time when the maximum
+					value of roundtrip was detected.
+			</para></listitem>
+			<listitem><para>
+					<emphasis>packetloss-min-at</emphasis> - similar behavior with
+					<emphasis>MOS-max-at</emphasis>, but returnes the time when the maximum
+					packet loss of a leg/call was detected.
+			</para></listitem>
+			</itemizedlist>
+
+			<para>
+				<emphasis>NOTE:</emphasis> all these statistics are computed based on the
+				statistics generated by RTPEngine. Some of them might not be available for
+				all the calls (i.e. MOS cannot be computed if the call is too short, or if
+				the phones do not properly report RTP statistics over RTCP). In these cases
+				the variable returns the <emphasis>NULL</emphasis> value.
+			</para>
+		<example>
+		<title>$rtpstat(STAT)</title>
+		<programlisting format="linespecific">
+...
+    xlog("Average MOS of the entire call is $rtpstat(MOS-average)\r\n");
+    xlog("Average MOS of caller is $(rtpstat(MOS-average)[$ft])\r\n");
+    xlog("Average MOS of callee is $(rtpstat(MOS-average)[$tt])\r\n");
+    xlog("Min MOS of caller is $(rtpstat(MOS-min)[$ft]) reported at $(rtpstat(MOS-min-at)[$ft])\r\n");
+...
+		</programlisting>
+		</example>
+		</section>
+		<section id="pv_rtpquery" xreflabel="$rtpquery">
+			<title><function moreinfo="none">$rtpquery</function></title>
+			<para>
+			Does a Query command to the &rtp; proxy and returns the answer in a JSON format.
+			You can use this variable to fetch arbitrary data from the &rtp; proxy such as
+			raw statistics about the call, or other indicators.
+			</para>
+			<para>
+			You can use a <emphasis>$json()</emphasis> variable to parse
+			its output and extract any information from the query, such as
+			RTP statistics, or MOS values.
+			</para>
+
+		<example>
+		<title>$rtpquery Usage</title>
+		<programlisting format="linespecific">
+...
+	$json(reply) := $rtpquery;
+	xlog("Total RTP Stats: $json(reply/totals)\n");
+...
+		</programlisting>
+		</example>
+		</section>
 
 	</section>
 
-	<section>
-		<title><acronym>MI</acronym> Commands</title>
-		<section id="rtpengine.m.rtpengine_enable">
+	<section id="exported_mi_functions" xreflabel="Exported MI Functions">
+	<title>Exported MI Functions</title>
+		<section id="mi_rtpengine_enable" xreflabel="rtpengine_enable">
 			<title><function moreinfo="none">rtpengine_enable</function></title>
 			<para>
-			Enables a &rtp; proxy if parameter value is greater than 0.
-			Disables it if a zero value is given.
+			Enables/disables a &rtp; proxy.
 			</para>
-			<para>
-			The first parameter is the &rtp; proxy url (exactly as defined in
-			the config file).
-			</para>
-			<para>
-			The second parameter value must be a number in decimal.
-			</para>
+			<para>Parameters:</para>
+			<itemizedlist>
+				<listitem><para>
+					<emphasis>url</emphasis> - the &rtp; proxy url (exactly as
+					defined in the config file).
+				</para></listitem>
+				<listitem><para>
+					<emphasis>enable</emphasis> - 1 - enable, 0 - disable the &rtp; proxy.
+				</para></listitem>
+			</itemizedlist>
 			<para>
 			NOTE: if a &rtp; proxy is defined multiple times (in the same or
 			different set), all of its instances will be enables/disabled.
@@ -744,13 +1247,13 @@ rtpengine_start_recording();
 			<function moreinfo="none">rtpengine_enable</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$ opensipsctl fifo rtpengine_enable udp:192.168.2.133:8081 0
+$ opensips-cli -x mi rtpengine_enable udp:192.168.2.133:8081 0
 ...
 			</programlisting>
 			</example>
 		</section>
 
-		<section id="rtpengine.m.rtpengine_show">
+		<section id="mi_rtpengine_show" xreflabel="rtpengine_show">
 			<title><function moreinfo="none">rtpengine_show</function></title>
 			<para>
 			Displays all the &rtp; proxies and their information: set and
@@ -764,17 +1267,43 @@ $ opensipsctl fifo rtpengine_enable udp:192.168.2.133:8081 0
 				<function moreinfo="none">rtpengine_show</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$ opensipsctl fifo rtpengine_show
+$ opensips-cli -x mi rtpengine_show
 ...
 			</programlisting>
 			</example>
 		</section>
 
-		<section id="rtpengine.m.teardown">
+		<section id="mi_rtpengine_reload" xreflabel="rtpengine_reload">
+			<title><function moreinfo="none">rtpengine_reload</function></title>
+			<para>
+			Reloads all rtpengine sets from the database. Used only when the
+			<quote><xref linkend="param_db_url"/></quote> parameter is set.
+			</para>
+			<para>
+			No parameter.
+			</para>
+			<example>
+			<title>
+				<function moreinfo="none">rtpengine_reload</function> usage</title>
+			<programlisting format="linespecific">
+...
+$ opensips-cli -x mi rtpengine_reload
+...
+			</programlisting>
+			</example>
+		</section>
+
+		<section id="mi_teardown" xreflabel="teardown">
 			<title><function moreinfo="none">teardown</function></title>
 			<para>
 			Terminates the SIP dialog by the SIP Call-ID given as parameter.
 			</para>
+			<para>Parameters:</para>
+			<itemizedlist>
+				<listitem><para>
+					<emphasis>callid</emphasis> - SIP Call-ID.
+				</para></listitem>
+			</itemizedlist>
 			<para>
 			Note this is a just a wrapper function over the 
 			<quote>dlg_end_dlg</quote> MI function provided by the
@@ -787,7 +1316,7 @@ $ opensipsctl fifo rtpengine_show
 				<function moreinfo="none">teardown</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$ opensipsctl fifo teardown Y2IwYjQ2YmE2ZDg5MWVkNDNkZGIwZjAzNGM1ZDY0ZDQ
+$ opensips-cli -x mi teardown Y2IwYjQ2YmE2ZDg5MWVkNDNkZGIwZjAzNGM1ZDY0ZDQ
 ...
 			</programlisting>
 			</example>

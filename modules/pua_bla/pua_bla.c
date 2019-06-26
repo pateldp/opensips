@@ -55,13 +55,14 @@ int bla_set_flag(struct sip_msg* , char*, char*);
 str server_address= {0, 0};
 str presence_server= {0, 0};
 
-
-static cmd_export_t cmds[]=
-{
-	{"bla_set_flag", (cmd_function)bla_set_flag,           0, 0, 0, REQUEST_ROUTE},
-	{"bla_handle_notify", (cmd_function)bla_handle_notify, 0, 0, 0, REQUEST_ROUTE},
-	{0, 0, 0, 0, 0, 0}
+static cmd_export_t cmds[]={
+	{"bla_set_flag", (cmd_function)bla_set_flag, {{0,0,0}},
+		REQUEST_ROUTE},
+	{"bla_handle_notify", (cmd_function)bla_handle_notify, {{0,0,0}},
+		REQUEST_ROUTE},
+	{0,0,{{0,0,0}},0}
 };
+
 static param_export_t params[]=
 {
 	{"server_address",	 STR_PARAM, &server_address.s    },
@@ -89,6 +90,7 @@ struct module_exports exports= {
 	MOD_TYPE_DEFAULT,           /* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS,            /* dlopen flags */
+	0,				            /* load function */
 	&deps,                      /* OpenSIPS module dependencies */
 	 cmds,						/* exported functions */
 	 0,							/* exported async functions */
@@ -101,7 +103,8 @@ struct module_exports exports= {
 	 mod_init,					/* module initialization function */
 	 (response_function) 0,		/* response handling function */
  	 destroy,					/* destroy function */
-	 child_init                 /* per-child init function */
+	 child_init,                /* per-child init function */
+	 0                          /* reload confirm function */
 };
 
 /**
@@ -144,7 +147,7 @@ static int mod_init(void)
 	else
 		bla_outbound_proxy.len= strlen(bla_outbound_proxy.s);
 
-	bind_pua= (bind_pua_t)find_export("bind_pua", 1,0);
+	bind_pua= (bind_pua_t)find_export("bind_pua",0);
 	if (!bind_pua)
 	{
 		LM_ERR("Can't bind pua\n");
@@ -183,7 +186,7 @@ static int mod_init(void)
 		return -1;
 	}
 
-	bind_usrloc = (bind_usrloc_t)find_export("ul_bind_usrloc", 1, 0);
+	bind_usrloc = (bind_usrloc_t)find_export("ul_bind_usrloc", 0);
 	if (!bind_usrloc)
 	{
 		LM_ERR("Can't bind usrloc\n");
@@ -200,25 +203,25 @@ static int mod_init(void)
 		return -1;
 	}
 
-	if(ul.register_ulcb(UL_CONTACT_INSERT, bla_contact_cb , NULL)< 0)
+	if(ul.register_ulcb(UL_CONTACT_INSERT, bla_contact_cb)< 0)
 	{
 		LM_ERR("can not register callback for"
 				" insert\n");
 		return -1;
 	}
-	if(ul.register_ulcb(UL_CONTACT_EXPIRE, bla_contact_cb, NULL)< 0)
+	if(ul.register_ulcb(UL_CONTACT_EXPIRE, bla_contact_cb)< 0)
 	{
 		LM_ERR("can not register callback for"
 				" insert\n");
 		return -1;
 	}
-	if(ul.register_ulcb(UL_CONTACT_UPDATE, bla_contact_cb, NULL)< 0)
+	if(ul.register_ulcb(UL_CONTACT_UPDATE, bla_contact_cb)< 0)
 	{
 		LM_ERR("can not register callback for"
 				" update\n");
 		return -1;
 	}
-	if(ul.register_ulcb(UL_CONTACT_DELETE, bla_contact_cb, NULL)< 0)
+	if(ul.register_ulcb(UL_CONTACT_DELETE, bla_contact_cb)< 0)
 	{
 		LM_ERR("can not register callback for"
 				" delete\n");

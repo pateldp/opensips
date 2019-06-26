@@ -67,17 +67,14 @@ struct rr_binds path_rrb;
  * Exported functions
  */
 static cmd_export_t cmds[] = {
-	{ "add_path",          (cmd_function)add_path,              0,
-			0,              0,  REQUEST_ROUTE },
-	{ "add_path",          (cmd_function)add_path_usr,          1,
-			fixup_str_null, 0, REQUEST_ROUTE },
-	{ "add_path_received", (cmd_function)add_path_received,     0,
-			0,              0, REQUEST_ROUTE },
-	{ "add_path_received", (cmd_function)add_path_received_usr, 1,
-			fixup_str_null, 0, REQUEST_ROUTE },
-	{ 0, 0, 0, 0, 0, 0 }
+	{"add_path", (cmd_function)add_path, {
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE},
+	{"add_path_received", (cmd_function)add_path, {
+		{CMD_PARAM_STR|CMD_PARAM_OPT,0,0}, {0,0,0}},
+		REQUEST_ROUTE},
+	{0,0,{{0,0,0}},0}
 };
-
 
 /*
  * Exported parameters
@@ -114,6 +111,7 @@ struct module_exports exports = {
 	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	0,				 /* load function */
 	&deps,           /* OpenSIPS module dependencies */
 	cmds,       /* Exported functions */
 	0,          /* Exported async functions */
@@ -126,7 +124,8 @@ struct module_exports exports = {
 	mod_init,   /* module initialization function */
 	0,          /* response function */
 	destroy,    /* destroy function */
-	child_init  /* child initialization function */
+	child_init, /* child initialization function */
+	0           /* reload confirm function */
 };
 
 

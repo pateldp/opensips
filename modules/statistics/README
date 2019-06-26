@@ -1,16 +1,4 @@
 Statistics Module
-
-Bogdan Iancu
-
-Edited by
-
-Bogdan Iancu
-
-   Copyright © 2006 Voice Sistem SRL
-
-   Copyright © 2007-2017 OpenSIPS Project
-   Revision History
-   Revision $Revision: 8740 $ $Date$
      __________________________________________________________
 
    Table of Contents
@@ -36,9 +24,25 @@ Bogdan Iancu
               1.5.3. stat_iter_init(group, iter)
               1.5.4. stat_iter_next(name, val, iter)
 
-        1.6. Exported pseudo-variables
+        1.6. Exported Pseudo-Variables
 
               1.6.1. $stat
+
+   2. Contributors
+
+        2.1. By Commit Statistics
+        2.2. By Commit Activity
+
+   3. Documentation
+
+        3.1. Contributors
+
+   List of Tables
+
+   2.1. Top contributors by DevScore^(1), authored commits^(2) and
+          lines added/removed^(3)
+
+   2.2. Most recently active contributors^(1) to this module
 
    List of Examples
 
@@ -117,20 +121,19 @@ modparam("statistics", "stat_groups", "method, packet, response")
    Updates the value of the statistic variable with the new value.
 
    Meaning of the parameters is as follows:
-     * variable - variable to be updated (it can be a string or a
-       pseudovariable);
-     * value - value to update with; it may be also negative;
-       variables (holding integer values) are also allowed.
+     * variable (string) - variable to be updated;
+     * value (int) - value to update with; it may be also
+       negative.
 
    This function can be used from REQUEST_ROUTE, BRANCH_ROUTE,
    FAILURE_ROUTE and ONREPLY_ROUTE.
 
    Example 1.3. update_stat usage
 ...
-update_stat("register_counter", "+1");
+update_stat("register_counter", 1);
 ...
 $var(a_calls) = "active_calls";
-update_stat("$var(a_calls)", "-1");
+update_stat($var(a_calls), -1);
 ...
 
 1.5.2.  reset_stat(variable)
@@ -138,8 +141,7 @@ update_stat("$var(a_calls)", "-1");
    Resets to zero the value of the statistic variable.
 
    Meaning of the parameters is as follows:
-     * variable - variable to be reset-ed (it can be a string or a
-       pseudovariable).
+     * variable (string) - variable to be reset-ed
 
    This function can be used from REQUEST_ROUTE, BRANCH_ROUTE,
    FAILURE_ROUTE and ONREPLY_ROUTE.
@@ -149,7 +151,7 @@ update_stat("$var(a_calls)", "-1");
 reset_stat("register_counter");
 ...
 $var(reg_counter) = "register_counter";
-update_stat("$var(reg_counter)");
+update_stat($var(reg_counter));
 ...
 
 1.5.3.  stat_iter_init(group, iter)
@@ -158,9 +160,9 @@ update_stat("$var(reg_counter)");
    statistics belonging to the given "group".
 
    Meaning of the parameters is as follows:
-     * group - string
-     * iter - string (internally matched to a corresponding
-       iterator)
+     * group (string)
+     * iter (string) - internally matched to a corresponding
+       iterator
 
    This function can be used from REQUEST_ROUTE, BRANCH_ROUTE,
    FAILURE_ROUTE and ONREPLY_ROUTE.
@@ -178,23 +180,25 @@ stat_iter_init("packet", "iter");
    reaching the end of iteration.
 
    Meaning of the parameters is as follows:
-     * name - script variable
-     * val - script variable
-     * iter - string (internally matched to a corresponding
-       iterator)
+     * name (var)
+     * val (var)
+     * iter (string) - internally matched to a corresponding
+       iterator
 
    This function can be used from REQUEST_ROUTE, BRANCH_ROUTE,
    FAILURE_ROUTE and ONREPLY_ROUTE.
 
    Example 1.6. stat_iter_next usage
 ...
-stat_iter_init("packet", "iter");
-while (stat_iter_next("$var(k)", "$var(v)", "iter")) {
-        ...
+# periodically clear packet-related data
+timer_route [clear_packet_stats, 7200] {
+        stat_iter_init("packet", "iter");
+        while (stat_iter_next($var(stat), $var(val), "iter"))
+                reset_stat("packet:$var(stat)");
 }
 ...
 
-1.6. Exported pseudo-variables
+1.6. Exported Pseudo-Variables
 
 1.6.1. $stat
 
@@ -216,3 +220,78 @@ xlog("SHM used size = $stat(used_size), no_invites = $stat(method:invite
 ...
 $stat(err_requests) = 0;
 ...
+
+Chapter 2. Contributors
+
+2.1. By Commit Statistics
+
+   Table 2.1. Top contributors by DevScore^(1), authored
+   commits^(2) and lines added/removed^(3)
+     Name DevScore Commits Lines ++ Lines --
+   1. Bogdan-Andrei Iancu (@bogdan-iancu) 34 20 1037 227
+   2. Liviu Chircu (@liviuchircu) 24 16 513 157
+   3. Daniel-Constantin Mierla (@miconda) 11 9 22 18
+   4. Razvan Crainea (@razvancrainea) 9 7 15 10
+   5. Vlad Patrascu (@rvlad-patrascu) 9 4 97 201
+   6. Vlad Paiu (@vladpaiu) 5 2 144 1
+   7. Anca Vamanu 4 2 14 16
+   8. Henning Westerholt (@henningw) 4 2 4 4
+   9. Ionut Ionita (@ionutrazvanionita) 3 1 17 1
+   10. Ovidiu Sas (@ovidiusas) 3 1 15 2
+
+   All remaining contributors: Konstantin Bokarius, Julián Moreno
+   Patiño, Peter Lemenkov (@lemenkov), Edson Gellert Schubert.
+
+   (1) DevScore = author_commits + author_lines_added /
+   (project_lines_added / project_commits) + author_lines_deleted
+   / (project_lines_deleted / project_commits)
+
+   (2) including any documentation-related commits, excluding
+   merge commits. Regarding imported patches/code, we do our best
+   to count the work on behalf of the proper owner, as per the
+   "fix_authors" and "mod_renames" arrays in
+   opensips/doc/build-contrib.sh. If you identify any
+   patches/commits which do not get properly attributed to you,
+   please submit a pull request which extends "fix_authors" and/or
+   "mod_renames".
+
+   (3) ignoring whitespace edits, renamed files and auto-generated
+   files
+
+2.2. By Commit Activity
+
+   Table 2.2. Most recently active contributors^(1) to this module
+                      Name                   Commit Activity
+   1.  Razvan Crainea (@razvancrainea)     Feb 2012 - May 2019
+   2.  Liviu Chircu (@liviuchircu)         Mar 2014 - May 2019
+   3.  Vlad Patrascu (@rvlad-patrascu)     May 2017 - May 2019
+   4.  Bogdan-Andrei Iancu (@bogdan-iancu) Mar 2006 - Apr 2019
+   5.  Peter Lemenkov (@lemenkov)          Jun 2018 - Jun 2018
+   6.  Ionut Ionita (@ionutrazvanionita)   Apr 2017 - Apr 2017
+   7.  Julián Moreno Patiño                Feb 2016 - Feb 2016
+   8.  Vlad Paiu (@vladpaiu)               Jul 2010 - Feb 2011
+   9.  Anca Vamanu                         Oct 2007 - Sep 2009
+   10. Ovidiu Sas (@ovidiusas)             Jun 2008 - Jun 2008
+
+   All remaining contributors: Daniel-Constantin Mierla
+   (@miconda), Konstantin Bokarius, Edson Gellert Schubert,
+   Henning Westerholt (@henningw).
+
+   (1) including any documentation-related commits, excluding
+   merge commits
+
+Chapter 3. Documentation
+
+3.1. Contributors
+
+   Last edited by: Liviu Chircu (@liviuchircu), Vlad Patrascu
+   (@rvlad-patrascu), Peter Lemenkov (@lemenkov), Bogdan-Andrei
+   Iancu (@bogdan-iancu), Razvan Crainea (@razvancrainea), Vlad
+   Paiu (@vladpaiu), Ovidiu Sas (@ovidiusas), Daniel-Constantin
+   Mierla (@miconda), Konstantin Bokarius, Edson Gellert Schubert.
+
+   Documentation Copyrights:
+
+   Copyright © 2007-2017 OpenSIPS Project
+
+   Copyright © 2006 Voice Sistem SRL

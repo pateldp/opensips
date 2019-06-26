@@ -452,13 +452,13 @@ int lumps_len(struct sip_msg* msg, struct lump* lumps,
 				if (msg->rcv.bind_address){ \
 					new_len+=rcv_address_str->len; \
 				} else \
-					report_programming_bug("null bind address 1"); \
+					LM_BUG("null bind address 1"); \
 				break; \
 			case SUBST_RCV_PORT: \
 				if (msg->rcv.bind_address){ \
 					new_len+=rcv_port_str->len; \
 				} else \
-					report_programming_bug("null bind address 2"); \
+					LM_BUG("null bind address 2"); \
 				break; \
 			case SUBST_RCV_PROTO: \
 				if (msg->rcv.bind_address){ \
@@ -482,7 +482,7 @@ int lumps_len(struct sip_msg* msg, struct lump* lumps,
 								msg->rcv.bind_address->proto); \
 					}\
 				} else \
-					report_programming_bug("null bind address 3"); \
+					LM_BUG("null bind address 3"); \
 				break; \
 			case SUBST_RCV_ALL: \
 				if (msg->rcv.bind_address){ \
@@ -512,19 +512,19 @@ int lumps_len(struct sip_msg* msg, struct lump* lumps,
 								msg->rcv.bind_address->proto); \
 					}\
 				} else \
-					report_programming_bug("null bind address 4"); \
+					LM_BUG("null bind address 4"); \
 				break; \
 			case SUBST_SND_IP: \
 				if (send_sock){ \
 					new_len+=send_address_str->len; \
 				} else \
-					report_programming_bug("null send_socket 1"); \
+					LM_BUG("null send_socket 1"); \
 				break; \
 			case SUBST_SND_PORT: \
 				if (send_sock){ \
 					new_len+=send_port_str->len; \
 				} else \
-					report_programming_bug("null send_socket 2"); \
+					LM_BUG("null send_socket 2"); \
 				break; \
 			case SUBST_SND_PROTO: \
 				if (send_sock){ \
@@ -547,7 +547,7 @@ int lumps_len(struct sip_msg* msg, struct lump* lumps,
 								send_sock->proto); \
 					}\
 				} else \
-					report_programming_bug("null send_socket 3"); \
+					LM_BUG("null send_socket 3"); \
 				break; \
 			case SUBST_SND_ALL: \
 				if (send_sock){ \
@@ -578,7 +578,7 @@ int lumps_len(struct sip_msg* msg, struct lump* lumps,
 								send_sock->proto); \
 					}\
 				} else \
-					report_programming_bug("null send_socket 4"); \
+					LM_BUG("null send_socket 4"); \
 				break; \
 			case SUBST_NOP: /* do nothing */ \
 				break; \
@@ -685,21 +685,21 @@ skip_before:
 				new_len += t->len;
 				break;
 			case LUMP_ADD_OPT:
-				report_programming_bug("LUMP_ADD_OPT");
+				LM_BUG("LUMP_ADD_OPT");
 				/* we don't do anything here, it's only a condition for
 				 * before & after */
 				break;
 			case LUMP_SKIP:
-				report_programming_bug("LUMP_SKIP");
+				LM_BUG("LUMP_SKIP");
 				/* we don't do anything here, it's only a condition for
 				 * before & after */
 				break;
 			case LUMP_ADD_SUBST:
-				report_programming_bug("LUMP_ADD_SUBST");
+				LM_BUG("LUMP_ADD_SUBST");
 				SUBST_LUMP_LEN(t);
 				break;
 			default:
-				report_programming_bug("op for data lump (%x)", r->op);
+				LM_BUG("op for data lump (%x)", r->op);
 		}
 
 		for (r = t->after; r; r = r->after) {
@@ -1089,7 +1089,7 @@ void process_lumps(	struct sip_msg* msg,
 							break;
 						default:
 							/* only ADD allowed for before/after */
-							report_programming_bug("invalid op 1 (%x)",r->op);
+							LM_BUG("invalid op 1 (%x)",r->op);
 					}
 				}
 skip_nop_before:
@@ -1128,7 +1128,7 @@ skip_nop_before:
 							break;
 						default:
 							/* only ADD allowed for before/after */
-							report_programming_bug("invalid op 2 (%x)", r->op);
+							LM_BUG("invalid op 2 (%x)", r->op);
 					}
 				}
 skip_nop_after:
@@ -1136,7 +1136,7 @@ skip_nop_after:
 			case LUMP_ADD:
 			case LUMP_ADD_SUBST:
 			case LUMP_ADD_OPT:
-				report_programming_bug("ADD|SUBST|OPT");
+				LM_BUG("ADD|SUBST|OPT");
 				/* skip if this is an OPT lump and the condition is
 				 * not satisfied */
 				if ((t->op==LUMP_ADD_OPT) &&
@@ -1167,7 +1167,7 @@ skip_nop_after:
 							break;
 						default:
 							/* only ADD allowed for before/after */
-							report_programming_bug("invalid op 3 (%x)", r->op);
+							LM_BUG("invalid op 3 (%x)", r->op);
 					}
 				}
 skip_before:
@@ -1185,7 +1185,7 @@ skip_before:
 						break;
 					default:
 						/* should not ever get here */
-						report_programming_bug("invalid op 4 %d", t->op);
+						LM_BUG("invalid op 4 %d", t->op);
 				}
 				/* process after */
 				for(r=t->after;r;r=r->after){
@@ -1211,13 +1211,13 @@ skip_before:
 							break;
 						default:
 							/* only ADD allowed for before/after */
-							report_programming_bug("invalid op 5 (%x)", r->op);
+							LM_BUG("invalid op 5 (%x)", r->op);
 					}
 				}
 skip_after:
 				break;
 			case LUMP_SKIP:
-				report_programming_bug("LUMP_SKIP");
+				LM_BUG("LUMP_SKIP");
 				/* if a SKIP lump, go to the last in the list*/
 				if (!t->next || !t->next->next)
 					continue;
@@ -1225,7 +1225,7 @@ skip_after:
 					;
 				break;
 			default:
-				report_programming_bug("invalid op 6 (%x)", t->op);
+				LM_BUG("invalid op 6 (%x)", t->op);
 		}
 	}
 
@@ -1319,9 +1319,11 @@ static unsigned int prep_reassemble_body_parts( struct sip_msg* msg,
 			}
 		}
 
-		/* if the part was the only one received -> nothing to do */
-		if ( !((part->flags & SIP_BODY_PART_FLAG_NEW)==0
-		&& msg->body->part_count==1) ) {
+		/* if the part is new (0->1 addition or 1->1 replacement) or
+		 * if the part is kept from a stipped multi-part  (n->1)
+		 *   =>  replace the msg content-type with the new one */
+		if ( (part->flags & SIP_BODY_PART_FLAG_NEW)
+		|| msg->body->part_count>1 ) {
 			/* replace the Content-Type hdr */
 			if (msg->content_type)
 				ct = del_lump(msg, msg->content_type->name.s-msg->buf,
@@ -1332,20 +1334,50 @@ static unsigned int prep_reassemble_body_parts( struct sip_msg* msg,
 			if (ct==NULL) {
 				LM_ERR("failed to remove old CT / create anchor\n");
 			} else {
-				hdr = (char*)pkg_malloc( 14 + part->mime_s.len +CRLF_LEN );
-				if (hdr==NULL) {
-					LM_ERR("failed to allocate new ct hdr\n");
+				/* if a new part, we need to build the CT header; if a 
+				 * received part, simply copied from the part */
+				if (part->flags & SIP_BODY_PART_FLAG_NEW) {
+					hdr = (char*)pkg_malloc( 14 + part->mime_s.len +CRLF_LEN +
+						part->headers.len);
+					if (hdr==NULL) {
+						LM_ERR("failed to allocate new ct hdr\n");
+					} else {
+						memcpy( hdr, "Content-Type: ", 14);
+						memcpy( hdr+14, part->mime_s.s, part->mime_s.len);
+						memcpy( hdr+14+part->mime_s.len, CRLF, CRLF_LEN);
+						if (part->headers.len)
+							memcpy( hdr+14+part->mime_s.len+CRLF_LEN,
+								part->headers.s, part->headers.len);
+						if (insert_new_lump_before(ct, hdr,
+						14+part->mime_s.len+CRLF_LEN+part->headers.len,
+						HDR_CONTENTTYPE_T) == NULL) {
+							LM_ERR("failed to create insert lump\n");
+							pkg_free(hdr);
+						}
+					}
 				} else {
-					memcpy( hdr, "Content-Type: ", 14);
-					memcpy( hdr+14, part->mime_s.s, part->mime_s.len);
-					memcpy( hdr+14+part->mime_s.len, CRLF, CRLF_LEN);
-					if (insert_new_lump_before(ct, hdr,
-					14+part->mime_s.len+CRLF_LEN, HDR_CONTENTTYPE_T) == NULL) {
-						LM_ERR("failed to create insert lump\n");
-						pkg_free(hdr);
+					hdr = (char*)pkg_malloc( part->headers.len);
+					if (hdr==NULL) {
+						LM_ERR("failed to allocate new ct hdr\n");
+					} else {
+						memcpy( hdr, part->headers.s, part->headers.len);
+						if (insert_new_lump_before(ct, hdr,
+						part->headers.len, HDR_CONTENTTYPE_T) == NULL) {
+							LM_ERR("failed to create insert lump\n");
+							pkg_free(hdr);
+						}
 					}
 				}
 			}
+		} else
+		/* if it is an 1->1 keeping the part, try to preserve the
+		 * the packing (multi-part or not) of this part */
+		if ( (part->flags & SIP_BODY_PART_FLAG_NEW)==0 &&
+		msg->body->part_count==1 &&
+		msg->body->flags & SIP_BODY_RCV_MULTIPART) {
+			/* preserve the original multi-part packing by preserving
+			 * the before and after padding between part and body */
+			len += msg->body->body.len - part->body.len;
 		}
 
 	} else if (msg->body->part_count<2) {
@@ -1372,7 +1404,7 @@ static unsigned int prep_reassemble_body_parts( struct sip_msg* msg,
 			/* separator and CT header */
 			len += 2 /* "--" */ + sizeof(OSS_BOUNDARY)-1 + CRLF_LEN +
 			 14/* "Content-Type: " */ + part->mime_s.len +
-			 CRLF_LEN + CRLF_LEN ;
+			 CRLF_LEN + part->headers.len + CRLF_LEN ;
 
 			/* part with dump function ? */
 			if (part->dump_f) {
@@ -1467,7 +1499,7 @@ static unsigned int prep_reassemble_body_parts( struct sip_msg* msg,
 				/* separator and CT header */
 				len += 2 /* "--" */ + msg->body->boundary.len +
 					CRLF_LEN + 14 /* "Content-Type: " */ + part->mime_s.len +
-					CRLF_LEN + CRLF_LEN ;
+					CRLF_LEN + part->headers.len + CRLF_LEN ;
 				/* simpy copy the body of the part */
 				if (part->dump_f) {
 					if (part->dump_f( part->parsed ,msg, &part->dump)<0) {
@@ -1538,6 +1570,7 @@ void reassemble_body_parts( struct sip_msg* msg, char* new_buf,
 	struct lump* lump;
 	unsigned int size;
 	unsigned int offset;
+	int padding=0;
 
 	if (msg->body->updated_part_count==0) {
 
@@ -1562,10 +1595,25 @@ void reassemble_body_parts( struct sip_msg* msg, char* new_buf,
 		LM_DBG("handing part with flags %x, mime %.*s, dump function %p\n",
 			part->flags, part->mime_s.len, part->mime_s.s, part->dump_f);
 
+		/* handle the special case of preserving a single part which was
+		 * received packed as multipart -> copy the boundries as
+		 * received */
+		if ( msg->body->flags & SIP_BODY_RCV_MULTIPART &&
+		msg->body->part_count==1 &&
+		(part->flags & SIP_BODY_PART_FLAG_NEW)==0 ) {
+			/* copy whatever is between the beginning of the msg body 
+			 * and the part body*/
+			memcpy(new_buf+*new_offs, msg->body->body.s,
+				part->body.s-msg->body->body.s );
+			*new_offs += part->body.s-msg->body->body.s;
+			padding = 1;
+		}
+
 		if (part->dump_f) {
 			/* the dump function was triggered when the length was computed
 			 * and the resulting buffer was linked as 'dump' (and we need
 			 * to free it now) */
+			/* copy the new body of the part */
 			memcpy(new_buf+*new_offs, part->dump.s, part->dump.len );
 			*new_offs += part->dump.len;
 			pkg_free(part->dump.s);
@@ -1597,6 +1645,16 @@ void reassemble_body_parts( struct sip_msg* msg, char* new_buf,
 			}
 		}
 
+		if (padding) {
+			/* copy whatever is between the end of the part body 
+			 * and the end of the msg body*/
+			memcpy(new_buf+*new_offs, part->body.s+part->body.len,
+				(msg->body->body.s+msg->body->body.len)-
+				(part->body.s+part->body.len) );
+			*new_offs += (msg->body->body.s+msg->body->body.len)-
+				(part->body.s+part->body.len);
+		}
+
 	} else if (msg->body->part_count<2) {
 
 		/* transition from 0/1 to multiple parts,
@@ -1625,8 +1683,17 @@ void reassemble_body_parts( struct sip_msg* msg, char* new_buf,
 			offset += 2 + sizeof(OSS_BOUNDARY)-1 + CRLF_LEN + 14;
 			memcpy(new_buf+offset, part->mime_s.s , part->mime_s.len);
 			offset += part->mime_s.len;
-			memcpy(new_buf+offset, CRLF CRLF , CRLF_LEN+CRLF_LEN);
-			offset += CRLF_LEN + CRLF_LEN ;
+			if (part->headers.len==0) {
+				memcpy(new_buf+offset, CRLF CRLF , CRLF_LEN+CRLF_LEN);
+				offset += CRLF_LEN + CRLF_LEN ;
+			} else {
+				memcpy(new_buf+offset, CRLF , CRLF_LEN);
+				offset += CRLF_LEN;
+				memcpy(new_buf+offset, part->headers.s , part->headers.len);
+				offset += part->headers.len ;
+				memcpy(new_buf+offset, CRLF , CRLF_LEN);
+				offset += CRLF_LEN;
+			}
 
 			/* part with dump function ? */
 			if (part->dump_f) {
@@ -1710,9 +1777,18 @@ void reassemble_body_parts( struct sip_msg* msg, char* new_buf,
 				offset += CRLF_LEN + 14 ;
 				memcpy(new_buf+offset, part->mime_s.s , part->mime_s.len);
 				offset += part->mime_s.len;
-				memcpy(new_buf+offset, CRLF CRLF , CRLF_LEN+CRLF_LEN);
-				offset += CRLF_LEN + CRLF_LEN ;
-				/* simpy copy the body of the part */
+				if (part->headers.len==0) {
+					memcpy(new_buf+offset, CRLF CRLF , CRLF_LEN+CRLF_LEN);
+					offset += CRLF_LEN + CRLF_LEN ;
+				} else {
+					memcpy(new_buf+offset, CRLF , CRLF_LEN);
+					offset += CRLF_LEN;
+					memcpy(new_buf+offset, part->headers.s , part->headers.len);
+					offset += part->headers.len ;
+					memcpy(new_buf+offset, CRLF , CRLF_LEN);
+					offset += CRLF_LEN;
+				}
+				/* simply copy the body of the part */
 				if (part->dump_f) {
 					memcpy(new_buf+offset, part->dump.s, part->dump.len );
 					offset += part->dump.len;
@@ -1787,6 +1863,7 @@ static inline int calculate_body_diff(struct sip_msg *msg,
 													struct socket_info *sock )
 {
 	if (msg->body==NULL) {
+		/* no body parsed, no advanced ops done, just dummy lumps over body */
 		return lumps_len(msg, msg->body_lumps, sock, -1);
 	} else {
 		return ((int)prep_reassemble_body_parts( msg, sock) - msg->body->body.len);
@@ -1801,19 +1878,20 @@ static inline int calculate_body_diff(struct sip_msg *msg,
  */
 static inline void apply_msg_changes(struct sip_msg *msg,
 							char *new_buf, unsigned int *new_offs,
-							unsigned int *orig_offs, struct socket_info *sock)
+							unsigned int *orig_offs, struct socket_info *sock,
+							unsigned int max_offset)
 {
 	unsigned int size;
 
 	/* apply changes over the SIP headers */
 	process_lumps(msg, msg->add_rm, new_buf, new_offs, orig_offs, sock, -1);
 	if (msg->body==NULL) {
-		/* no parsed body, no advanced ops done, just dummy lumps over body */
+		/* no body parsed, no advanced ops done, just dummy lumps over body */
 		process_lumps(msg, msg->body_lumps, new_buf, new_offs,
-			orig_offs, sock, -1);
+			orig_offs, sock, max_offset);
 		/* copy the rest of the message */
-		memcpy(new_buf+*new_offs, msg->buf+*orig_offs, msg->len-*orig_offs);
-		*new_offs += msg->len-*orig_offs;
+		memcpy(new_buf+*new_offs, msg->buf+*orig_offs, max_offset-*orig_offs);
+		*new_offs += max_offset-*orig_offs;
 	} else {
 		/* copy whatever is left in the original buffer (up to the body) */
 		size = (msg->body->part_count) ?
@@ -2003,13 +2081,13 @@ int is_del_via1_lump(struct sip_msg* msg)
 char * build_req_buf_from_sip_req( struct sip_msg* msg,
 								unsigned int *returned_len,
 								struct socket_info* send_sock, int proto,
-								unsigned int flags)
+								str *via_params, unsigned int flags)
 {
 	unsigned int len, new_len, received_len, rport_len, uri_len, via_len, body_delta;
 	char *line_buf, *received_buf, *rport_buf, *new_buf, *buf, *id_buf;
 	unsigned int offset, s_offset, size, id_len;
 	struct lump *anchor, *via_insert_param;
-	str branch, extra_params;
+	str branch, extra_params, body;
 	struct hostport hp;
 
 	id_buf=0;
@@ -2056,14 +2134,32 @@ char * build_req_buf_from_sip_req( struct sip_msg* msg,
 		}
 		LM_DBG("id added: <%.*s>, rcv proto=%d\n",
 				(int)id_len, id_buf, msg->rcv.proto);
-		extra_params.s=id_buf;
-		extra_params.len=id_len;
+		/* if there was already something there, simply copy them */
+		if (via_params && via_params->len != 0) {
+			extra_params.len = id_len + via_params->len;
+			extra_params.s=pkg_malloc(extra_params.len);
+			if(extra_params.s==0) {
+				LM_ERR("extra params building failed\n");
+				pkg_free(id_buf);
+				goto error;
+			}
+			memcpy(extra_params.s, via_params->s, via_params->len);
+			memcpy(extra_params.s + via_params->len, id_buf, id_len);
+		} else {
+			extra_params.s=id_buf;
+			extra_params.len=id_len;
+		}
 	}
 
 	/* check whether to add rport parameter to local via */
 	if(msg->msg_flags&FL_FORCE_LOCAL_RPORT) {
 		id_buf=extra_params.s;
 		id_len=extra_params.len;
+		if (via_params && !extra_params.len) {
+			/* if no other parameters were added yet, consider via_params */
+			extra_params.len = via_params->len;
+			/* otherwise, the via_params were already copied in the id block */
+		}
 		extra_params.len += RPORT_LEN-1; /* last char in RPORT define is '='
 										which is not added, but the new buffer
 										will be null terminated */
@@ -2077,7 +2173,8 @@ char * build_req_buf_from_sip_req( struct sip_msg* msg,
 		if(id_buf!=0) {
 			memcpy(extra_params.s, id_buf, id_len);
 			pkg_free(id_buf);
-		}
+		} else if (via_params)
+			memcpy(extra_params.s, via_params->s, via_params->len);
 		memcpy(extra_params.s+id_len, RPORT, RPORT_LEN-1);
 		extra_params.s[extra_params.len]='\0';
 		LM_DBG("extra param added: <%.*s>\n",extra_params.len, extra_params.s);
@@ -2087,7 +2184,7 @@ char * build_req_buf_from_sip_req( struct sip_msg* msg,
 	branch.len=msg->add_to_branch_len;
 	set_hostport(&hp, msg);
 	line_buf = via_builder( &via_len, send_sock, &branch,
-							extra_params.len?&extra_params:0, proto, &hp);
+						extra_params.len?&extra_params:via_params, proto, &hp);
 	if (!line_buf){
 		LM_ERR("no via received!\n");
 		goto error00;
@@ -2172,6 +2269,10 @@ char * build_req_buf_from_sip_req( struct sip_msg* msg,
 	}
 
 build_msg:
+	/* adjust len to the useful part of the message */
+	if (get_body(msg, &body) == 0 && body.len)
+		len -= (msg->buf + msg->len - body.s - body.len);
+
 	/* compute new msg len and fix overlapping zones*/
 	new_len=len+body_delta+lumps_len(msg, msg->add_rm, send_sock,-1);
 #ifdef XL_DEBUG
@@ -2206,9 +2307,9 @@ build_msg:
 	}
 
 	/* apply changes over SIP hdrs and body */
-	apply_msg_changes( msg, new_buf, &offset, &s_offset, send_sock);
+	apply_msg_changes( msg, new_buf, &offset, &s_offset, send_sock, len);
 	if (offset!=new_len) {
-		LM_BUG("len mistmatch : calculated %d, written %d\n", new_len, offset);
+		LM_BUG("len mismatch : calculated %d, written %d\n", new_len, offset);
 		abort();
 	}
 
@@ -2240,6 +2341,7 @@ char * build_res_buf_from_sip_res( struct sip_msg* msg,
 	unsigned int new_len, body_delta, len;
 	char *new_buf, *buf;
 	unsigned int offset, s_offset;
+	str body;
 
 	buf=msg->buf;
 	len=msg->len;
@@ -2273,6 +2375,9 @@ char * build_res_buf_from_sip_res( struct sip_msg* msg,
 		}
 	}
 
+	/* adjust len to the useful part of the message */
+	if (get_body(msg, &body) == 0 && body.len)
+		len -= (msg->buf + msg->len - body.s - body.len);
 	new_len=len+body_delta+lumps_len(msg, msg->add_rm, sock, -1);
 
 	LM_DBG(" old size: %d, new size: %d\n", len, new_len);
@@ -2285,9 +2390,9 @@ char * build_res_buf_from_sip_res( struct sip_msg* msg,
 	offset=s_offset=0;
 
 	/* apply changes over SIP hdrs and body */
-	apply_msg_changes( msg, new_buf, &offset, &s_offset, sock);
+	apply_msg_changes( msg, new_buf, &offset, &s_offset, sock, len);
 	if (offset!=new_len) {
-		LM_BUG("len mistmatch : calculated %d, written %d\n", new_len, offset);
+		LM_BUG("len mismatch : calculated %d, written %d\n", new_len, offset);
 		abort();
 	}
 
