@@ -118,7 +118,7 @@ static mi_response_t *tls_reload(const mi_params_t *params,
 								struct mi_handler *async_hdl);
 static mi_response_t *tls_list(const mi_params_t *params,
 								struct mi_handler *async_hdl);
-static int list_domain(mi_item_t *resp_obj, struct tls_domain *d);
+static int list_domain(mi_item_t *domains_arr, struct tls_domain *d);
 
 /* DB handler */
 static db_con_t *db_hdl = 0;
@@ -649,87 +649,29 @@ error:
    is not the certificate_verification one!). */
 int verify_callback(int pre_verify_ok, X509_STORE_CTX *ctx) {
 	char buf[256];
-	X509 *err_cert;
-	int err, depth;
+	X509 *cert;
+	int depth, err;
 
 	depth = X509_STORE_CTX_get_error_depth(ctx);
-	LM_NOTICE("depth = %d\n",depth);
-	if ( depth > VERIFY_DEPTH_S ) {
-		LM_NOTICE("cert chain too long ( depth > VERIFY_DEPTH_S)\n");
-		pre_verify_ok=0;
+
+	if (pre_verify_ok) {
+		LM_NOTICE("depth = %d, verify success\n", depth);
+	} else {
+		LM_NOTICE("depth = %d, verify failure\n", depth);
+
+		cert = X509_STORE_CTX_get_current_cert(ctx);
+		err = X509_STORE_CTX_get_error(ctx);
+
+		X509_NAME_oneline(X509_get_subject_name(cert), buf, sizeof buf);
+		LM_NOTICE("subject = %s\n", buf);
+
+		X509_NAME_oneline(X509_get_issuer_name(cert), buf, sizeof buf);
+		LM_NOTICE("issuer  = %s\n", buf);
+
+		LM_NOTICE("verify error: %s [error=%d]\n", X509_verify_cert_error_string(err), err);
 	}
 
-	if( pre_verify_ok ) {
-		LM_NOTICE("preverify is good: verify return: %d\n", pre_verify_ok);
-		return pre_verify_ok;
-	}
-
-	err_cert = X509_STORE_CTX_get_current_cert(ctx);
-	err = X509_STORE_CTX_get_error(ctx);
-	X509_NAME_oneline(X509_get_subject_name(err_cert),buf,sizeof buf);
-
-	LM_NOTICE("subject = %s\n", buf);
-	LM_NOTICE("verify error:num=%d:%s\n",
-			err, X509_verify_cert_error_string(err));
-
-	switch (err) {
-		case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT:
-			X509_NAME_oneline(X509_get_issuer_name(err_cert),
-					buf,sizeof buf);
-			LM_NOTICE("issuer= %s\n",buf);
-			break;
-		case X509_V_ERR_ERROR_IN_CERT_NOT_BEFORE_FIELD:
-		case X509_V_ERR_CERT_NOT_YET_VALID:
-			LM_NOTICE("notBefore\n");
-			break;
-		case X509_V_ERR_ERROR_IN_CERT_NOT_AFTER_FIELD:
-		case X509_V_ERR_CERT_HAS_EXPIRED:
-			LM_NOTICE("notAfter\n");
-			break;
-		case X509_V_ERR_CERT_SIGNATURE_FAILURE:
-		case X509_V_ERR_UNABLE_TO_DECRYPT_CERT_SIGNATURE:
-			LM_NOTICE("unable to decrypt cert "
-					"signature\n");
-			break;
-		case X509_V_ERR_UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY:
-			LM_NOTICE("unable to decode issuer "
-					"public key\n");
-			break;
-		case X509_V_ERR_OUT_OF_MEM:
-			LM_NOTICE("out of memory \n");
-			break;
-		case X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT:
-		case X509_V_ERR_SELF_SIGNED_CERT_IN_CHAIN:
-			LM_NOTICE("Self signed certificate "
-					"issue\n");
-			break;
-		case X509_V_ERR_CERT_CHAIN_TOO_LONG:
-			LM_NOTICE("certificate chain too long\n");
-			break;
-		case X509_V_ERR_INVALID_CA:
-			LM_NOTICE("invalid CA\n");
-			break;
-		case X509_V_ERR_PATH_LENGTH_EXCEEDED:
-			LM_NOTICE("path length exceeded\n");
-			break;
-		case X509_V_ERR_INVALID_PURPOSE:
-			LM_NOTICE("invalid purpose\n");
-			break;
-		case X509_V_ERR_CERT_UNTRUSTED:
-			LM_NOTICE("certificate untrusted\n");
-			break;
-		case X509_V_ERR_CERT_REJECTED:
-			LM_NOTICE("certificate rejected\n");
-			break;
-
-		default:
-			LM_NOTICE("something wrong with the cert"
-					" ... error code is %d (check x509_vfy.h)\n", err);
-			break;
-	}
-
-	LM_NOTICE("verify return:%d\n", pre_verify_ok);
-	return(pre_verify_ok);
+	return pre_verify_ok;
 }
 
 /* This callback is called during Client Hello processing in order to
@@ -2132,16 +2074,10 @@ static int tls_get_send_timeout(void)
 }
 
 /* lists client or server domains*/
-static int list_domain(mi_item_t *resp_obj, struct tls_domain *d)
+static int list_domain(mi_item_t *domains_arr, struct tls_domain *d)
 {
+	mi_item_t *domain_item, *addrf_arr, *domf_arr;
 	struct str_list *filt;
-
-	mi_item_t *domains_arr, *domain_item;
-	mi_item_t *addrf_arr, *domf_arr;
-
-	domains_arr = add_mi_array(resp_obj, MI_SSTR("Domains"));
-	if (!domains_arr)
-		goto error;
 
 	while (d) {
 		domain_item = add_mi_object(domains_arr, NULL, 0);
@@ -2174,7 +2110,7 @@ static int list_domain(mi_item_t *resp_obj, struct tls_domain *d)
 			goto error;
 
 		for (filt = d->match_domains; filt; filt = filt->next)
-			if (add_mi_string(addrf_arr, 0, 0, filt->s.s, filt->s.len) < 0)
+			if (add_mi_string(domf_arr, 0, 0, filt->s.s, filt->s.len) < 0)
 				goto error;
 
 		switch (d->method) {
@@ -2256,7 +2192,7 @@ static mi_response_t *tls_list(const mi_params_t *params,
 								struct mi_handler *async_hdl)
 {
 	mi_response_t *resp;
-	mi_item_t *resp_obj;
+	mi_item_t *resp_obj, *domains_arr;
 
 	resp = init_mi_result_object(&resp_obj);
 	if (!resp)
@@ -2265,10 +2201,14 @@ static mi_response_t *tls_list(const mi_params_t *params,
 	if (dom_lock)
 		lock_start_read(dom_lock);
 
-	if (list_domain(resp_obj, *tls_client_domains) < 0)
+	domains_arr = add_mi_array(resp_obj, MI_SSTR("Domains"));
+	if (!domains_arr)
 		goto error;
 
-	if (list_domain(resp_obj, *tls_server_domains) < 0)
+	if (list_domain(domains_arr, *tls_client_domains) < 0)
+		goto error;
+
+	if (list_domain(domains_arr, *tls_server_domains) < 0)
 		goto error;
 
 	if (dom_lock)
