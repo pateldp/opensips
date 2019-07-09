@@ -98,8 +98,8 @@ unsigned long hp_rpm_get_frags(struct hp_block *hpb);
 
 	#define update_stats_shm_frag_detach(frag) \
 		do { \
-			update_stat(shm_used, (frag)->size); \
-			update_stat(shm_rused, (frag)->size + FRAG_OVERHEAD); \
+			update_stat(shm_used, (int)(frag)->size); \
+			update_stat(shm_rused, (int)(frag)->size + FRAG_OVERHEAD); \
 		} while (0)
 
 	#define update_stats_shm_frag_split(...) \
@@ -117,8 +117,8 @@ unsigned long hp_rpm_get_frags(struct hp_block *hpb);
 
 	#define update_stats_rpm_frag_detach(frag) \
 		do { \
-			update_stat(rpm_used, (frag)->size); \
-			update_stat(rpm_rused, (frag)->size + FRAG_OVERHEAD); \
+			update_stat(rpm_used, (int)(frag)->size); \
+			update_stat(rpm_rused, (int)(frag)->size + FRAG_OVERHEAD); \
 		} while (0)
 
 	#define update_stats_rpm_frag_split(...) \
