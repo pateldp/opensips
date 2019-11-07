@@ -228,7 +228,7 @@ ifelse(USE_NAT,`yes',`
 	if (has_totag()) {
 
 		# handle hop-by-hop ACK (no routing required)
-		if ( is_method("ACK") && t_check_trans() ) {
+		if ( is_method("ACK") && !t_check_trans() ) {
 			t_relay();
 			exit;
 		}
